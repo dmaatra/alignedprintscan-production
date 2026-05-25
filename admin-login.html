@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Login | Aligned Print & Scan</title>
+  <meta name="robots" content="noindex,nofollow" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="admin-auth-body">
+  <main class="admin-login-shell">
+    <section class="admin-login-card reveal visible">
+      <img src="assets/images/logo-symbol.webp" alt="Aligned Print & Scan symbol" class="admin-login-mark" />
+      <p class="eyebrow">Owner Access</p>
+      <h1>Admin Login</h1>
+      <p class="lead dark">Sign in to review service requests, uploaded files, request status, and internal profitability estimates.</p>
+
+      <form id="adminLoginForm" class="admin-login-form">
+        <label for="adminEmail">Email</label>
+        <input id="adminEmail" name="email" type="email" autocomplete="email" required placeholder="hello@alignedprintscan.com" />
+
+        <label for="adminPassword">Password</label>
+        <input id="adminPassword" name="password" type="password" autocomplete="current-password" required placeholder="Your Supabase Auth password" />
+
+        <button class="btn primary full" type="submit">Sign In</button>
+        <p id="adminLoginStatus" class="form-submit-status" aria-live="polite"></p>
+      </form>
+
+      <div class="admin-login-note">
+        <strong>Private page.</strong> This login is for internal Aligned Print & Scan operations only.
+      </div>
+    </section>
+  </main>
+  <script src="assets/js/admin.js"></script>
+</body>
+</html>
