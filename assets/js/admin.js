@@ -177,7 +177,7 @@ async function selectRequest(id) {
       <div>
         <span class="small-label">Client</span>
         <h3>${customer?.first_name || ''} ${customer?.last_name || ''}</h3>
-        <p>${customer?.email || ''}<br>${customer?.phone || ''}<br><span class="admin-muted">Preferred: ${customer?.preferred_contact || 'Not specified'}</span></p>
+        <p>${customer?.email || ''}<br>${customer?.phone || ''}</p>
       </div>
       <div>
         <span class="small-label">Service</span>
@@ -273,49 +273,55 @@ async function calculateRouteEstimate() {
   const start = document.getElementById('routeStart')?.value?.trim();
   const end = document.getElementById('routeEnd')?.value?.trim();
   const status = document.getElementById('routeStatus');
+
   if (!start || !end) {
     if (status) status.textContent = 'Enter both a starting address and destination address first.';
     return;
   }
-  if (!adminClient) return;
+
   if (status) status.textContent = 'Calculating route…';
+
   try {
     const { data, error } = await adminClient.functions.invoke('route-distance', {
+      headers: {
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_ANON_KEY
+      },
       body: { start, end }
     });
+
     if (error) throw error;
     if (!data?.ok) throw new Error(data?.error || 'Route could not be calculated.');
-    const miles = Number(data.roundtrip_miles || 0);
-    const minutes = Number(data.roundtrip_minutes || 0);
-    const milesInput = document.getElementById('costMiles');
-    const minutesInput = document.getElementById('timeTravelMinutes');
-    if (milesInput) milesInput.value = miles.toFixed(1);
-    if (minutesInput) minutesInput.value = Math.round(minutes);
-    if (status) status.textContent = `Route estimate applied: ${miles.toFixed(1)} round-trip miles · ${Math.round(minutes)} round-trip minutes.`;
+
+    document.getElementById('costMiles').value = Number(data.roundtrip_miles || 0).toFixed(1);
+    document.getElementById('timeTravel').value = (Number(data.roundtrip_minutes || 0) / 60).toFixed(2);
+
+    if (status) {
+      status.textContent = `Route estimate applied: ${Number(data.roundtrip_miles || 0).toFixed(1)} round-trip miles.`;
+    }
+
     calculateProfit();
   } catch (err) {
     console.error(err);
-    if (status) status.textContent = 'Route estimate unavailable. Check the ORS API key/function setup or enter miles/minutes manually.';
+    if (status) status.textContent = 'Route estimate unavailable. Enter miles/time manually.';
   }
 }
 
 function calculateProfit() {
   const val = (id) => Number(document.getElementById(id)?.value || 0) || 0;
-  const revenue = val('revTotal') + val('revPrint') + val('revNotarial') + val('revAddons');
+  const revenue = val('revTotal') + val('revPrint') + val('revAddons');
   const mileageCost = val('costMiles') * val('costPerMile');
   const processing = revenue * (val('costPercent') / 100) + val('costFixed');
-  const directCosts = mileageCost + val('costTolls') + val('costPrintScan') + val('costWitness') + processing;
-  const time = (val('timeTravelMinutes') + val('timeServiceMinutes') + val('timeAdminMinutes')) / 60;
+  const directCosts = mileageCost + val('costTolls') + val('costSupplies') + val('costPlatform') + processing;
+  const time = val('timeTravel') + val('timeService') + val('timeAdmin');
   const net = revenue - directCosts;
   const hourly = time > 0 ? net / time : 0;
   const margin = revenue > 0 ? (net / revenue) * 100 : 0;
   const targetMinimum = directCosts + (time * val('targetHourly'));
-  const dispatchProfit = val('revDispatch') - mileageCost - val('costTolls');
   setText('profitNet', money(net));
   setText('profitHourly', money(hourly) + '/hr');
   setText('profitMargin', margin.toFixed(1) + '%');
   setText('profitMinimum', money(targetMinimum));
-  setText('dispatchProfit', money(dispatchProfit));
   const decision = $('#profitDecision');
   if (decision) {
     decision.className = 'profit-decision';
@@ -332,7 +338,6 @@ function calculateProfit() {
   }
 }
 
-
 async function initDashboard() {
   if (!$('#requestList')) return;
   if (!adminClient) return;
@@ -347,10 +352,10 @@ async function initDashboard() {
     window.location.href = 'admin-login.html';
   });
   $('#refreshRequests')?.addEventListener('click', loadRequests);
+      document.getElementById('calculateRouteBtn')?.addEventListener('click', calculateRouteEstimate);
   $('#requestFilter')?.addEventListener('change', renderRequestList);
   $('#statusFilter')?.addEventListener('change', renderRequestList);
   $$('#profitability input').forEach(input => input.addEventListener('input', calculateProfit));
-  $('#calculateRouteBtn')?.addEventListener('click', calculateRouteEstimate);
   calculateProfit();
   await loadRequests();
   subscribeRealtime();
