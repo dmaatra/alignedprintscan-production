@@ -283,10 +283,6 @@ async function calculateRouteEstimate() {
 
   try {
     const { data, error } = await adminClient.functions.invoke('route-distance', {
-      headers: {
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        apikey: SUPABASE_ANON_KEY
-      },
       body: { start, end }
     });
 
