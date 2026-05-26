@@ -282,9 +282,20 @@ async function calculateRouteEstimate() {
   if (status) status.textContent = 'Calculating route…';
 
   try {
-    const { data, error } = await adminClient.functions.invoke('route-distance', {
-      body: { start, end }
-    });
+   const { data: sessionData, error: sessionError } = await adminClient.auth.getSession();
+
+  if (sessionError || !sessionData?.session?.access_token) {
+    throw new Error('Admin session expired. Please log in again.');
+  }
+
+  const accessToken = sessionData.session.access_token;
+
+  const { data, error } = await adminClient.functions.invoke('route-distance', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    },
+    body: { start, end }
+});
 
     if (error) throw error;
     if (!data?.ok) throw new Error(data?.error || 'Route could not be calculated.');
