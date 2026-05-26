@@ -290,15 +290,24 @@ async function calculateRouteEstimate() {
 
   const accessToken = sessionData.session.access_token;
 
-  const { data, error } = await adminClient.functions.invoke('route-distance', {
-    headers: {
-      Authorization: `Bearer ${accessToken}`
-    },
-    body: { start, end }
+  const routeResponse = await fetch(`${SUPABASE_URL}/functions/v1/route-distance`, {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ start, end })
 });
 
-    if (error) throw error;
-    if (!data?.ok) throw new Error(data?.error || 'Route could not be calculated.');
+const data = await routeResponse.json();
+
+if (!routeResponse.ok) {
+  throw new Error(data?.error || data?.message || 'Route could not be calculated.');
+}
+
+if (!data?.ok) {
+  throw new Error(data?.error || 'Route could not be calculated.');
+}
 
     document.getElementById('costMiles').value = Number(data.roundtrip_miles || 0).toFixed(1);
     document.getElementById('timeTravel').value = (Number(data.roundtrip_minutes || 0) / 60).toFixed(2);
