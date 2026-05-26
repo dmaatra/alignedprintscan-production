@@ -292,10 +292,11 @@ async function calculateRouteEstimate() {
 
   const routeResponse = await fetch(`${SUPABASE_URL}/functions/v1/route-distance`, {
   method: 'POST',
-  headers: {
-    Authorization: `Bearer ${accessToken}`,
-    'Content-Type': 'application/json'
-  },
+headers: {
+  Authorization: `Bearer ${accessToken}`,
+  apikey: SUPABASE_ANON_KEY,
+  'Content-Type': 'application/json'
+},
   body: JSON.stringify({ start, end })
 });
 
