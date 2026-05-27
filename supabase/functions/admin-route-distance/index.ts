@@ -39,7 +39,7 @@ export default {
   1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
   2. Make an HTTP request:
 
-  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/send-request-email' \
+  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/admin-route-distance' \
     --header 'apiKey: sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH' \
     --data '{"name":"Functions"}'
 

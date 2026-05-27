@@ -290,7 +290,7 @@ async function calculateRouteEstimate() {
 
   const accessToken = sessionData.session.access_token;
 
-  const routeResponse = await fetch(`${SUPABASE_URL}/functions/v1/route-distance`, {
+  const routeResponse = await fetch(`${SUPABASE_URL}/functions/v1/admin-route-distance`, {
   method: 'POST',
 headers: {
   Authorization: `Bearer ${accessToken}`,
