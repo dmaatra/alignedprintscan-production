@@ -1,5 +1,5 @@
-const SUPABASE_URL='https://sfsdniavqldgbiretply.supabase.co';
-const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmc2RuaWF2cWxkZ2JpcmV0cGx5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTY5MTEsImV4cCI6MjA5MDk5MjkxMX0.3tcbpUVDq9J80f5CdngDxdJ1T70vlouCrfGuv55JCco';
+const SUPABASE_URL = 'https://sfsdniavqldgbiretply.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmc2RuaWF2cWxkZ2JpcmV0cGx5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTY5MTEsImV4cCI6MjA5MDk5MjkxMX0.3tcbpUVDq9J80f5CdngDxdJ1T70vlouCrfGuv55JCco';
 const supabaseClient=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
 
 const menuBtn=document.querySelector('.menu-btn');const navLinks=document.querySelector('.nav-links');if(menuBtn){menuBtn.addEventListener('click',()=>navLinks.classList.toggle('open'))}
@@ -212,54 +212,114 @@ function initWizard(){
 initWizard();
 
 
-const successBox=qs('#successDetails');
-if(successBox){
-  const params=new URLSearchParams(location.search);
-  const saved=JSON.parse(localStorage.getItem('aligned_last_request')||'{}');
+
+async function submitSupportTicket(event){
+  event.preventDefault();
+  const form=event.currentTarget;
+  const status=qs('#supportStatus');
+  if(status)status.textContent='Submitting your support request…';
+  if(!supabaseClient){if(status)status.textContent='Support system is not connected yet. Please email hello@alignedprintscan.com.';return;}
+  const payload={
+    first_name:form.firstName.value.trim(),
+    last_name:form.lastName.value.trim(),
+    company:form.company.value.trim()||null,
+    email:form.email.value.trim(),
+    reference_number:form.referenceNumber.value.trim()||null,
+    reason:form.reason.value||'other',
+    message:form.message.value.trim(),
+    status:'new'
+  };
+  const {error}=await supabaseClient.from('support_tickets').insert(payload);
+  if(error){console.error(error);if(status)status.textContent='We could not submit your support request. Please email hello@alignedprintscan.com.';return;}
+  form.reset();
+  if(status)status.textContent='Thank you. Your support request has been received. We will follow up within two business days.';
+}
+const supportForm=qs('#supportForm');
+if(supportForm) supportForm.addEventListener('submit',submitSupportTicket);
+
+const publicStatusCopy={
+  under_review:{eyebrow:'Request Received',headline:'We’re Reviewing Your Request',lead:'Thank you. Your request has been received and is being reviewed for service fit, availability, document needs, and next steps.',title:'Request Received — Under Review',body:'Your appointment or order is not confirmed yet. We will review the details and follow up with a professional quote, preparation instructions, or any needed clarification.'},
+  quote_ready:{eyebrow:'Quote Ready',headline:'Your Quote Is Ready for Review',lead:'Your request has been reviewed and an itemized quote has been prepared for your approval.',title:'Quote Ready — Awaiting Approval',body:'Please review the invoice details carefully. If everything looks correct, continue to secure payment. If changes are needed, contact support with your reference number.'},
+  awaiting_approval:{eyebrow:'Quote Ready',headline:'Please Review Your Quote',lead:'Your itemized quote is ready. Review the services, fees, and preparation details before payment.',title:'Quote Ready — Awaiting Approval',body:'This stage gives you time to confirm the details before payment. Your appointment or production work is not confirmed until payment and scheduling requirements are complete.'},
+  awaiting_payment:{eyebrow:'Awaiting Payment',headline:'Secure Payment Required',lead:'Your quote has been approved or prepared for payment. Complete secure payment to move your request toward confirmation.',title:'Awaiting Payment',body:'Once payment is received, we will continue with appointment confirmation, production scheduling, or fulfillment instructions.'},
+  payment_received:{eyebrow:'Payment Received',headline:'Payment Received',lead:'Thank you. Payment has been received and your request is moving into confirmation.',title:'Payment Received — Appointment Confirmation',body:'We will confirm appointment details, platform instructions, delivery timing, or production next steps based on your service type.'},
+  appointment_confirmed:{eyebrow:'Appointment Confirmed',headline:'Your Appointment Is Confirmed',lead:'Your request is confirmed. Please review the preparation details so your appointment or fulfillment can proceed smoothly.',title:'Confirmed — Appointment Details',body:'Please have required identification, documents, technology, witnesses, or access details ready according to your service type.'},
+  completed:{eyebrow:'Completed',headline:'Service Completed',lead:'Thank you for trusting Aligned Print & Scan. Your invoice/receipt details are available for your records.',title:'Completed — Receipt & Review',body:'We appreciate your business and would be grateful for a review if you were pleased with your experience.'},
+  cancelled:{eyebrow:'Request Closed',headline:'Request Cancelled',lead:'This request is currently marked cancelled.',title:'Cancelled',body:'If you believe this is an error or would like to submit a new request, please contact support.'},
+  declined:{eyebrow:'Request Closed',headline:'Request Declined',lead:'This request is currently marked declined.',title:'Declined',body:'If circumstances have changed, you may submit a new request or contact support for clarification.'}
+};
+function statusCopy(status){return publicStatusCopy[status]||publicStatusCopy.under_review;}
+function invoiceList(items=[]){
+  if(!items.length)return '<p class="admin-muted">Invoice line items are pending review.</p>';
+  const rows=items.map(i=>`<div class="invoice-public-row"><span>${escapePublic(i.description||'Service')}</span><strong>${money(Number(i.line_total||0))}</strong></div>`).join('');
+  const total=items.reduce((s,i)=>s+Number(i.line_total||0),0);
+  return `<div class="invoice-public-list">${rows}<div class="invoice-public-total"><span>Total</span><strong>${money(total)}</strong></div></div>`;
+}
+function escapePublic(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+async function getPublicStatus(requestId,ref){
+  if(!supabaseClient)return null;
+  try{
+    const {data,error}=await supabaseClient.functions.invoke('get-request-status',{body:{request_id:requestId||null,reference_number:ref||null}});
+    if(error)throw error;
+    return data;
+  }catch(err){console.warn('Status function unavailable. Using local confirmation fallback.',err);return null;}
+}
+async function startEmbeddedPayment(requestId){
+  const box=qs('#embeddedPaymentBox');
+  if(box)box.innerHTML='<p class="admin-muted">Preparing secure payment…</p>';
+  try{
+    const {data,error}=await supabaseClient.functions.invoke('create-embedded-checkout',{body:{request_id:requestId}});
+    if(error)throw error;
+    if(!data?.client_secret)throw new Error('Missing Stripe client secret.');
+    const stripe=Stripe(data.publishable_key);
+    const checkout=await stripe.initEmbeddedCheckout({clientSecret:data.client_secret});
+    checkout.mount('#embeddedPaymentBox');
+  }catch(err){
+    console.error(err);
+    if(box)box.innerHTML='<div class="email-notice"><h3>Secure payment is not available yet</h3><p>Your invoice is saved, but embedded payment is not fully connected. Please contact Aligned Print & Scan for payment instructions.</p></div>';
+  }
+}
+function renderSuccessFallback(params,saved){
   const service=params.get('service')||saved.service||'request';
   const ref=params.get('ref')||saved.ref||'APS-REQUEST';
   const labels={ron:'Remote Online Notary request',mobile:'Mobile Notary request',print:'Print & Scan request'};
-  const serviceNext={
-    ron:{
-      title:'Remote Online Notary: What Happens Next',
-      items:[
-        'We will review your document type, signer details, uploaded files, and requested time window.',
-        'After review, you will receive instructions to complete scheduling/payment and continue through our approved Remote Online Notary platform.',
-        'Please keep your government-issued photo ID, camera-enabled device, microphone, and stable internet connection available for your session.'
-      ]
-    },
-    mobile:{
-      title:'Mobile Notary: What Happens Next',
-      items:[
-        'We will review your address, document needs, signer details, and any print/scan add-ons.',
-        'If accepted, you will receive a quote/payment link for the required dispatch and preparation payment before travel begins.',
-        'Remaining balances are collected before services continue once appointment readiness is confirmed on arrival.'
-      ]
-    },
-    print:{
-      title:'Print & Scan: What Happens Next',
-      items:[
-        'We will review your uploaded files, print preferences, scan needs, and fulfillment details.',
-        'If everything is complete, you will receive pricing/payment instructions before printing, scanning, delivery, or fulfillment begins.',
-        'Requests requiring delivery or mobile notary add-ons will be reviewed before confirmation.'
-      ]
-    }
-  };
-  const next=serviceNext[service]||serviceNext.print;
-  successBox.innerHTML=`
-    <div class="success-ref">${ref}</div>
-    <div class="success-grid">
-      <div><span class="small-label">Selected Service</span><strong>${labels[service]||'Service request'}</strong></div>
-      <div><span class="small-label">Estimated Total</span><strong>${saved.total||'Pending review'}</strong></div>
-      <div><span class="small-label">Status</span><strong>Under Review</strong></div>
-    </div>
-    <div class="email-notice">
-      <h3>Check your email</h3>
-      <p>A confirmation email will be sent from <strong>hello@alignedprintscan.com</strong>. Please check your inbox, junk, or spam folder.</p>
-    </div>
-    <div class="next-panel">
-      <h3>${next.title}</h3>
-      <ol>${next.items.map(i=>`<li>${i}</li>`).join('')}</ol>
-    </div>
-  `;
+  return {request:{id:saved.requestId||null,status:'under_review',service_type:service,estimated_total:saved.total||null,quote_amount:null,invoice_number:null,receipt_url:null,prep_video_url:null,review_link_google:null,review_link_yelp:null},reference_number:ref,items:[],label:labels[service]||'Service Request'};
 }
+async function initSuccessPage(){
+  const successBox=qs('#successDetails');
+  if(!successBox)return;
+  const params=new URLSearchParams(location.search);
+  const saved=JSON.parse(localStorage.getItem('aligned_last_request')||'{}');
+  const requestId=params.get('request_id')||params.get('id')||saved.requestId||null;
+  const ref=params.get('ref')||saved.ref||null;
+  const result=await getPublicStatus(requestId,ref) || renderSuccessFallback(params,saved);
+  const request=result.request||{};
+  const items=result.items||[];
+  const reference=result.reference_number||ref||'APS-REQUEST';
+  const status=request.status||'under_review';
+  const copy=statusCopy(status);
+  const quoteAmount=Number(request.quote_amount||request.estimated_total||0)||0;
+  qs('#successEyebrow').textContent=copy.eyebrow;
+  qs('#successHeadline').textContent=copy.headline;
+  qs('#successLead').textContent=copy.lead;
+  const canPay=['quote_ready','awaiting_approval','awaiting_payment'].includes(status)&&quoteAmount>0&&request.id;
+  const completed=status==='completed';
+  const reviewButtons=completed?`<div class="cta-row review-buttons"><a class="btn primary" href="${request.review_link_google||'https://www.google.com/search?q=Aligned+Print+%26+Scan+reviews'}" target="_blank" rel="noopener">Leave a Google Review</a><a class="btn secondary" href="${request.review_link_yelp||'#'}">Yelp Review</a></div>`:'';
+  const prepVideo=request.prep_video_url?`<div class="next-panel"><h3>Appointment Preparation Video</h3><p>Watch this preparation guide before your session or appointment.</p><div class="video-embed"><iframe src="${escapePublic(request.prep_video_url)}" title="Preparation video" allowfullscreen></iframe></div></div>`:'';
+  successBox.innerHTML=`
+    <div class="success-ref">${escapePublic(reference)}</div>
+    <div class="success-grid">
+      <div><span class="small-label">Selected Service</span><strong>${serviceLabel(request.service_type)||result.label||'Service Request'}</strong></div>
+      <div><span class="small-label">Invoice Total</span><strong>${quoteAmount?money(quoteAmount):'Pending review'}</strong></div>
+      <div><span class="small-label">Current Status</span><strong>${copy.title}</strong></div>
+    </div>
+    <div class="email-notice"><h3>${copy.title}</h3><p>${copy.body}</p></div>
+    <div class="next-panel"><h3>Itemized Invoice / Quote</h3>${invoiceList(items)}${request.invoice_number?`<p class="admin-muted">Invoice Number: <strong>${escapePublic(request.invoice_number)}</strong></p>`:''}${request.receipt_url?`<p><a class="btn dark" href="${escapePublic(request.receipt_url)}" target="_blank" rel="noopener">Open Receipt</a></p>`:''}</div>
+    ${canPay?`<div class="next-panel"><h3>Secure Embedded Payment</h3><p>Complete payment securely to continue with appointment confirmation, production, or fulfillment.</p><div id="embeddedPaymentBox" class="embedded-payment-box"><button id="startPaymentBtn" class="btn primary" type="button">Proceed to Secure Payment</button></div></div>`:''}
+    ${prepVideo}
+    ${completed?`<div class="next-panel"><h3>Thank You for Choosing Aligned Print & Scan</h3><p>Your service has been completed. Please keep this page for your invoice/receipt reference. We appreciate your trust and welcome your feedback.</p>${reviewButtons}</div>`:''}
+    <div class="timeline-list"><h3>Service Timeline</h3><div><span>01</span><p>Request received and reviewed for service fit, timing, and document needs.</p></div><div><span>02</span><p>Quote or invoice issued with next-step instructions.</p></div><div><span>03</span><p>Payment and appointment/fulfillment details confirmed.</p></div></div>
+  `;
+  qs('#startPaymentBtn')?.addEventListener('click',()=>startEmbeddedPayment(request.id));
+}
+initSuccessPage();

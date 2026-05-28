@@ -22,8 +22,10 @@
     </div>
     <nav class="admin-nav">
       <a href="#requests" class="active">Requests</a>
-      <a href="#profitability">Profitability</a>
+      <a href="#invoiceWorkspace">Invoices</a>
+      <a href="#supportDesk">Support</a>
       <a href="#uploads">Files</a>
+      <a href="support.html">Support Page</a>
       <a href="index.html">Public Site</a>
     </nav>
     <button id="signOutBtn" class="btn secondary admin-signout" type="button">Sign Out</button>
@@ -34,7 +36,7 @@
       <div>
         <p class="eyebrow">Private Dashboard</p>
         <h1>Request Command Center</h1>
-        <p>Review incoming requests, open uploaded files, update status, and estimate job profitability without digging through Supabase tables.</p>
+        <p>Review requests, prepare professional invoices, send payment links, track support tickets, update statuses, and archive completed work without digging through Supabase tables.</p>
       </div>
       <div class="admin-live-card">
         <span class="live-dot"></span>
@@ -47,8 +49,8 @@
 
     <section class="admin-stats-grid">
       <div class="admin-stat"><span>New / Under Review</span><strong id="statNew">0</strong></div>
-      <div class="admin-stat"><span>Total Requests</span><strong id="statTotal">0</strong></div>
-      <div class="admin-stat"><span>Estimated Revenue</span><strong id="statRevenue">$0.00</strong></div>
+      <div class="admin-stat"><span>Active Requests</span><strong id="statTotal">0</strong></div>
+      <div class="admin-stat"><span>Open Request Value</span><strong id="statRevenue">$0.00</strong></div>
       <div class="admin-stat"><span>Selected Request</span><strong id="statSelected">None</strong></div>
     </section>
 
@@ -58,7 +60,7 @@
           <h2>Incoming Requests</h2>
           <button id="refreshRequests" class="btn dark" type="button">Refresh</button>
         </div>
-        <div class="admin-filters">
+        <div class="admin-filters stacked-filters">
           <select id="requestFilter">
             <option value="all">All services</option>
             <option value="ron">RON</option>
@@ -68,10 +70,19 @@
           <select id="statusFilter">
             <option value="all">All statuses</option>
             <option value="under_review">Under Review</option>
-            <option value="quote_sent">Quote Sent</option>
-            <option value="payment_pending">Payment Pending</option>
-            <option value="scheduled">Scheduled</option>
+            <option value="quote_ready">Quote Ready</option>
+            <option value="awaiting_approval">Awaiting Approval</option>
+            <option value="awaiting_payment">Awaiting Payment</option>
+            <option value="payment_received">Payment Received</option>
+            <option value="appointment_confirmed">Appointment Confirmed</option>
             <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="declined">Declined</option>
+          </select>
+          <select id="archiveFilter">
+            <option value="active">Active requests</option>
+            <option value="archived">Archived requests</option>
+            <option value="all">Active + archived</option>
           </select>
         </div>
         <div id="requestList" class="request-list"></div>
@@ -83,72 +94,46 @@
           <span id="detailRef" class="success-ref">Select a request</span>
         </div>
         <div id="requestDetail" class="request-detail-empty">
-          Select a request to view client details, service information, uploaded files, and internal notes.
+          Select a request to view client details, service information, uploaded files, invoice controls, and status actions.
         </div>
       </div>
     </section>
 
-    <section class="admin-panel" id="profitability">
+    <section class="admin-panel" id="invoiceWorkspace">
       <div class="admin-panel-head">
         <div>
-          <p class="eyebrow">Internal Calculator</p>
-          <h2>Travel & Profitability Calculator</h2>
+          <p class="eyebrow">Invoice & Payment System</p>
+          <h2>Premium Client Workflow</h2>
         </div>
-        <span class="admin-private-badge">Internal Use Only</span>
+        <span class="admin-private-badge">Stripe + Resend Ready</span>
       </div>
-      <p class="admin-muted">Use this to decide whether a mobile, print, scan, or hybrid job is worth accepting before sending the final quote.</p>
-      <div class="route-panel">
-        <div class="profit-form">
-          <h3>Route Assist</h3>
-          <p class="admin-muted">Optional: enter addresses and use OpenRouteService to estimate round-trip miles and minutes for internal quoting. Your starting address stays private and is never shown to the client.</p>
-          <label>Starting Address</label><input id="routeStart" type="text" placeholder="Your private starting point">
-          <label>Destination / Service Address</label><input id="routeEnd" type="text" placeholder="Client service address">
-          <button class="btn secondary" id="calculateRouteBtn" type="button">Calculate Route</button>
-          <div id="routeStatus" class="admin-muted small-admin-note">OpenRouteService requires the route-distance Edge Function and ORS API key secret.</div>
-        </div>
+      <p class="admin-muted">Select a request above, add invoice line items, save the invoice, and send a branded quote/payment email. Embedded Stripe payment appears on the customer status page once the payment function is deployed.</p>
+      <div class="workflow-list">
+        <div><span>01</span><strong>Request Received — Under Review</strong><p>Client submits intake and sees their reference number.</p></div>
+        <div><span>02</span><strong>Quote Ready — Awaiting Approval</strong><p>You prepare invoice line items and send the quote email.</p></div>
+        <div><span>03</span><strong>Awaiting Payment</strong><p>Client reviews and pays through your branded status page.</p></div>
+        <div><span>04</span><strong>Payment Received — Appointment Confirmation</strong><p>Payment is recorded and appointment details are confirmed.</p></div>
+        <div><span>05</span><strong>Completed — Receipt & Review</strong><p>Client can reference the invoice/receipt and leave a review.</p></div>
       </div>
-      <div class="profit-grid">
-        <div class="profit-form">
-          <h3>Revenue</h3>
-          <label>Total client price / quote</label><input id="revTotal" type="number" min="0" step="0.01" value="85">
-          <label>Dispatch / travel payment collected upfront</label><input id="revDispatch" type="number" min="0" step="0.01" value="20">
-          <label>Print / scan revenue</label><input id="revPrint" type="number" min="0" step="0.01" value="0">
-          <label>Notarial acts revenue</label><input id="revNotarial" type="number" min="0" step="0.01" value="10">
-          <label>Witness / add-on revenue</label><input id="revAddons" type="number" min="0" step="0.01" value="0">
+    </section>
+
+    <section class="admin-panel" id="supportDesk">
+      <div class="admin-panel-head">
+        <div>
+          <p class="eyebrow">Client Care</p>
+          <h2>Customer Support</h2>
         </div>
-        <div class="profit-form">
-          <h3>Job Costs</h3>
-          <label>Round-trip miles</label><input id="costMiles" type="number" min="0" step="0.1" value="12">
-          <label>Cost per mile</label><input id="costPerMile" type="number" min="0" step="0.01" value="0.67">
-          <label>Tolls / parking</label><input id="costTolls" type="number" min="0" step="0.01" value="0">
-          <label>Scan / print job cost</label><input id="costPrintScan" type="number" min="0" step="0.01" value="0">
-          <label>Witness paid / outside helper</label><input id="costWitness" type="number" min="0" step="0.01" value="0">
-          <label>Payment processing %</label><input id="costPercent" type="number" min="0" step="0.01" value="2.9">
-          <label>Payment processing fixed fee</label><input id="costFixed" type="number" min="0" step="0.01" value="0.30">
-        </div>
-        <div class="profit-form">
-          <h3>Time</h3>
-          <label>Round-trip minutes</label><input id="timeTravelMinutes" type="number" min="0" step="1" value="30">
-          <label>Appointment / service minutes</label><input id="timeServiceMinutes" type="number" min="0" step="5" value="30">
-          <label>Prep / admin minutes</label><input id="timeAdminMinutes" type="number" min="0" step="5" value="15">
-          <label>Target hourly earnings</label><input id="targetHourly" type="number" min="0" step="1" value="45">
-        </div>
-        <div class="profit-results">
-          <span>Net Profit</span><strong id="profitNet">$0.00</strong>
-          <span>Hourly Earnings</span><strong id="profitHourly">$0.00/hr</strong>
-          <span>Profit Margin</span><strong id="profitMargin">0%</strong>
-          <span>Suggested Minimum Quote</span><strong id="profitMinimum">$0.00</strong>
-          <span>Dispatch Profitability</span><strong id="dispatchProfit">$0.00</strong>
-          <div id="profitDecision" class="profit-decision">Enter job details.</div>
-        </div>
+        <button id="refreshSupport" class="btn dark" type="button">Refresh</button>
       </div>
+      <p class="admin-muted">Support submissions from the customer support page appear here for follow-up and resolution tracking.</p>
+      <div id="supportTicketList" class="support-ticket-list"></div>
     </section>
 
     <section class="admin-panel" id="uploads">
       <div class="admin-panel-head">
         <h2>File Review Notes</h2>
       </div>
-      <p class="admin-muted">Uploaded file links are shown inside each request detail. Links are generated securely through Supabase and may expire depending on your storage settings.</p>
+      <p class="admin-muted">Uploaded file links are shown inside each request detail. Archiving a request does not delete the client’s uploaded files. Files remain attached for recordkeeping until you intentionally create a retention/deletion policy.</p>
     </section>
   </main>
 
