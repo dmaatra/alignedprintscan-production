@@ -17,7 +17,12 @@ add column if not exists prep_video_url text,
 add column if not exists invoice_status text default 'draft',
 add column if not exists stripe_checkout_session_id text,
 add column if not exists stripe_payment_intent_id text,
-add column if not exists paid_amount numeric;
+add column if not exists paid_amount numeric,
+add column if not exists invoice_due_at timestamptz,
+add column if not exists stripe_client_secret text,
+add column if not exists payment_link_url text,
+add column if not exists invoice_pdf_url text,
+add column if not exists receipt_pdf_url text;
 
 create table if not exists invoice_items (
   id uuid primary key default gen_random_uuid(),

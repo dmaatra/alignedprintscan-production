@@ -3,7 +3,31 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabaseClient=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
 
 const menuBtn=document.querySelector('.menu-btn');const navLinks=document.querySelector('.nav-links');if(menuBtn){menuBtn.addEventListener('click',()=>navLinks.classList.toggle('open'))}
-const obs=new IntersectionObserver((entries)=>{entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')})},{threshold:.12});document.querySelectorAll('.reveal').forEach(el=>obs.observe(el));
+// Premium scroll reveal animation with safe fallbacks.
+// Functional content is still forced visible if the observer ever misses it.
+let revealObserver=null;
+function initReveals(root=document){
+  const items=[...root.querySelectorAll('.reveal:not(.visible):not([data-reveal-bound])')];
+  if(!items.length) return;
+  if('IntersectionObserver' in window){
+    if(!revealObserver){
+      revealObserver=new IntersectionObserver((entries)=>{
+        entries.forEach(entry=>{
+          if(entry.isIntersecting){
+            entry.target.classList.add('visible');
+            revealObserver.unobserve(entry.target);
+          }
+        });
+      },{threshold:.08,rootMargin:'0px 0px -40px 0px'});
+    }
+    items.forEach(el=>{el.dataset.revealBound='true';revealObserver.observe(el);});
+  }else{
+    items.forEach(el=>el.classList.add('visible'));
+  }
+}
+initReveals();
+window.addEventListener('load',()=>initReveals());
+setTimeout(()=>document.querySelectorAll('.reveal:not(.visible)').forEach(el=>el.classList.add('visible')),1400);
 document.querySelectorAll('.faq-q').forEach(btn=>btn.addEventListener('click',()=>btn.parentElement.classList.toggle('open')));
 function money(n){return '$'+Number(n||0).toFixed(2)}
 function qs(sel,root=document){return root.querySelector(sel)}
@@ -235,7 +259,12 @@ async function submitSupportTicket(event){
   if(status)status.textContent='Thank you. Your support request has been received. We will follow up within two business days.';
 }
 const supportForm=qs('#supportForm');
-if(supportForm) supportForm.addEventListener('submit',submitSupportTicket);
+if(supportForm){
+  const params=new URLSearchParams(location.search);
+  const ref=params.get('ref')||params.get('reference')||'';
+  if(ref && supportForm.referenceNumber) supportForm.referenceNumber.value=ref;
+  supportForm.addEventListener('submit',submitSupportTicket);
+}
 
 const publicStatusCopy={
   under_review:{eyebrow:'Request Received',headline:'We’re Reviewing Your Request',lead:'Thank you. Your request has been received and is being reviewed for service fit, availability, document needs, and next steps.',title:'Request Received — Under Review',body:'Your appointment or order is not confirmed yet. We will review the details and follow up with a professional quote, preparation instructions, or any needed clarification.'},
@@ -245,6 +274,10 @@ const publicStatusCopy={
   payment_received:{eyebrow:'Payment Received',headline:'Payment Received',lead:'Thank you. Payment has been received and your request is moving into confirmation.',title:'Payment Received — Appointment Confirmation',body:'We will confirm appointment details, platform instructions, delivery timing, or production next steps based on your service type.'},
   appointment_confirmed:{eyebrow:'Appointment Confirmed',headline:'Your Appointment Is Confirmed',lead:'Your request is confirmed. Please review the preparation details so your appointment or fulfillment can proceed smoothly.',title:'Confirmed — Appointment Details',body:'Please have required identification, documents, technology, witnesses, or access details ready according to your service type.'},
   completed:{eyebrow:'Completed',headline:'Service Completed',lead:'Thank you for trusting Aligned Print & Scan. Your invoice/receipt details are available for your records.',title:'Completed — Receipt & Review',body:'We appreciate your business and would be grateful for a review if you were pleased with your experience.'},
+  quote_sent:{eyebrow:'Quote Sent',headline:'Your Quote Is Ready for Review',lead:'Your itemized quote has been sent and is ready for approval.',title:'Quote Ready — Awaiting Approval',body:'Please review the invoice details carefully. If everything looks correct, continue to secure payment. If changes are needed, contact support with your reference number.'},
+  payment_pending:{eyebrow:'Awaiting Payment',headline:'Secure Payment Required',lead:'Complete secure payment to move your request toward confirmation.',title:'Awaiting Payment',body:'Once payment is received, we will continue with appointment confirmation, production scheduling, or fulfillment instructions.'},
+  scheduled:{eyebrow:'Appointment Confirmed',headline:'Your Appointment Is Confirmed',lead:'Your appointment or fulfillment window has been scheduled.',title:'Confirmed — Appointment Details',body:'Please review all preparation details and have required identification, documents, technology, witnesses, or access details ready.'},
+  paid_confirmed:{eyebrow:'Payment Received',headline:'Payment Received',lead:'Thank you. Payment has been received and your request is moving into confirmation.',title:'Payment Received — Appointment Confirmation',body:'We will confirm appointment details, platform instructions, delivery timing, or production next steps based on your service type.'},
   cancelled:{eyebrow:'Request Closed',headline:'Request Cancelled',lead:'This request is currently marked cancelled.',title:'Cancelled',body:'If you believe this is an error or would like to submit a new request, please contact support.'},
   declined:{eyebrow:'Request Closed',headline:'Request Declined',lead:'This request is currently marked declined.',title:'Declined',body:'If circumstances have changed, you may submit a new request or contact support for clarification.'}
 };
@@ -256,6 +289,7 @@ function invoiceList(items=[]){
   return `<div class="invoice-public-list">${rows}<div class="invoice-public-total"><span>Total</span><strong>${money(total)}</strong></div></div>`;
 }
 function escapePublic(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+function refFromPublicId(id){return id?'APS-'+String(id).slice(0,8).toUpperCase():'APS-REQUEST';}
 async function getPublicStatus(requestId,ref){
   if(!supabaseClient)return null;
   try{
@@ -271,6 +305,7 @@ async function startEmbeddedPayment(requestId){
     const {data,error}=await supabaseClient.functions.invoke('create-embedded-checkout',{body:{request_id:requestId}});
     if(error)throw error;
     if(!data?.client_secret)throw new Error('Missing Stripe client secret.');
+    if(typeof Stripe==='undefined')throw new Error('Stripe.js has not loaded.');
     const stripe=Stripe(data.publishable_key);
     const checkout=await stripe.initEmbeddedCheckout({clientSecret:data.client_secret});
     checkout.mount('#embeddedPaymentBox');
@@ -283,43 +318,75 @@ function renderSuccessFallback(params,saved){
   const service=params.get('service')||saved.service||'request';
   const ref=params.get('ref')||saved.ref||'APS-REQUEST';
   const labels={ron:'Remote Online Notary request',mobile:'Mobile Notary request',print:'Print & Scan request'};
-  return {request:{id:saved.requestId||null,status:'under_review',service_type:service,estimated_total:saved.total||null,quote_amount:null,invoice_number:null,receipt_url:null,prep_video_url:null,review_link_google:null,review_link_yelp:null},reference_number:ref,items:[],label:labels[service]||'Service Request'};
+  return {
+    request:{
+      id:saved.requestId||null,
+      status:'under_review',
+      service_type:service,
+      estimated_total:saved.total||null,
+      quote_amount:null,
+      invoice_number:null,
+      invoice_pdf_url:null,
+      receipt_url:null,
+      receipt_pdf_url:null,
+      prep_video_url:null,
+      review_link_google:null,
+      review_link_yelp:null
+    },
+    reference_number:ref,
+    items:[],
+    label:labels[service]||'Service Request'
+  };
 }
 async function initSuccessPage(){
   const successBox=qs('#successDetails');
   if(!successBox)return;
   const params=new URLSearchParams(location.search);
-  const saved=JSON.parse(localStorage.getItem('aligned_last_request')||'{}');
+  let saved={};
+  try{ saved=JSON.parse(localStorage.getItem('aligned_last_request')||'{}'); }catch(_){}
   const requestId=params.get('request_id')||params.get('id')||saved.requestId||null;
   const ref=params.get('ref')||saved.ref||null;
   const result=await getPublicStatus(requestId,ref) || renderSuccessFallback(params,saved);
   const request=result.request||{};
   const items=result.items||[];
-  const reference=result.reference_number||ref||'APS-REQUEST';
+  const reference=result.reference_number||ref||refFromPublicId(request.id)||'APS-REQUEST';
   const status=request.status||'under_review';
   const copy=statusCopy(status);
   const quoteAmount=Number(request.quote_amount||request.estimated_total||0)||0;
-  qs('#successEyebrow').textContent=copy.eyebrow;
-  qs('#successHeadline').textContent=copy.headline;
-  qs('#successLead').textContent=copy.lead;
-  const canPay=['quote_ready','awaiting_approval','awaiting_payment'].includes(status)&&quoteAmount>0&&request.id;
+
+  const eyebrowEl=qs('#successEyebrow');
+  const headlineEl=qs('#successHeadline');
+  const leadEl=qs('#successLead');
+  if(eyebrowEl) eyebrowEl.textContent=copy.eyebrow;
+  if(headlineEl) headlineEl.textContent=copy.headline;
+  if(leadEl) leadEl.textContent=copy.lead;
+
+  const serviceName=serviceLabel(request.service_type)||result.label||'Service Request';
+  const canPay=['quote_ready','quote_sent','awaiting_approval','awaiting_payment','payment_pending'].includes(status)&&quoteAmount>0&&request.id;
   const completed=status==='completed';
-  const reviewButtons=completed?`<div class="cta-row review-buttons"><a class="btn primary" href="${request.review_link_google||'https://www.google.com/search?q=Aligned+Print+%26+Scan+reviews'}" target="_blank" rel="noopener">Leave a Google Review</a><a class="btn secondary" href="${request.review_link_yelp||'#'}">Yelp Review</a></div>`:'';
-  const prepVideo=request.prep_video_url?`<div class="next-panel"><h3>Appointment Preparation Video</h3><p>Watch this preparation guide before your session or appointment.</p><div class="video-embed"><iframe src="${escapePublic(request.prep_video_url)}" title="Preparation video" allowfullscreen></iframe></div></div>`:'';
+  const hasQuote=items.length || quoteAmount || request.invoice_number;
+  const statusClass=String(status||'under_review').replace(/[^a-z0-9_-]/gi,'-');
+
+  const reviewButtons=completed?`<div class="cta-row review-buttons"><a class="btn primary" href="${escapePublic(request.review_link_google||'https://www.google.com/search?q=Aligned+Print+%26+Scan+reviews')}" target="_blank" rel="noopener">Leave a Google Review</a><a class="btn secondary" href="${escapePublic(request.review_link_yelp||'support.html')}">Share Feedback</a></div>`:'';
+  const prepVideo=request.prep_video_url?`<div class="next-panel reveal"><h3>Appointment Preparation Video</h3><p>Watch this preparation guide before your session or appointment.</p><div class="video-embed"><iframe src="${escapePublic(request.prep_video_url)}" title="Preparation video" allowfullscreen></iframe></div></div>`:'';
+
   successBox.innerHTML=`
     <div class="success-ref">${escapePublic(reference)}</div>
     <div class="success-grid">
-      <div><span class="small-label">Selected Service</span><strong>${serviceLabel(request.service_type)||result.label||'Service Request'}</strong></div>
-      <div><span class="small-label">Invoice Total</span><strong>${quoteAmount?money(quoteAmount):'Pending review'}</strong></div>
-      <div><span class="small-label">Current Status</span><strong>${copy.title}</strong></div>
+      <div><span class="small-label">Selected Service</span><strong>${escapePublic(serviceName)}</strong></div>
+      <div><span class="small-label">${hasQuote?'Invoice Total':'Estimated Total'}</span><strong>${quoteAmount?money(quoteAmount):'Pending review'}</strong></div>
+      <div><span class="small-label">Current Status</span><strong>${escapePublic(copy.title)}</strong></div>
     </div>
-    <div class="email-notice"><h3>${copy.title}</h3><p>${copy.body}</p></div>
-    <div class="next-panel"><h3>Itemized Invoice / Quote</h3>${invoiceList(items)}${request.invoice_number?`<p class="admin-muted">Invoice Number: <strong>${escapePublic(request.invoice_number)}</strong></p>`:''}${request.receipt_url?`<p><a class="btn dark" href="${escapePublic(request.receipt_url)}" target="_blank" rel="noopener">Open Receipt</a></p>`:''}</div>
-    ${canPay?`<div class="next-panel"><h3>Secure Embedded Payment</h3><p>Complete payment securely to continue with appointment confirmation, production, or fulfillment.</p><div id="embeddedPaymentBox" class="embedded-payment-box"><button id="startPaymentBtn" class="btn primary" type="button">Proceed to Secure Payment</button></div></div>`:''}
+    <div class="email-notice status-${statusClass} reveal"><h3>${escapePublic(copy.title)}</h3><p>${escapePublic(copy.body)}</p></div>
+    ${hasQuote?`<div class="next-panel reveal"><h3>Itemized Invoice / Quote</h3>${invoiceList(items)}${request.invoice_number?`<p class="admin-muted">Invoice Number: <strong>${escapePublic(request.invoice_number)}</strong></p>`:''}${request.invoice_pdf_url?`<p><a class="btn secondary" href="${escapePublic(request.invoice_pdf_url)}" target="_blank" rel="noopener">Open Invoice PDF</a></p>`:''}${request.receipt_url||request.receipt_pdf_url?`<p><a class="btn dark" href="${escapePublic(request.receipt_url||request.receipt_pdf_url)}" target="_blank" rel="noopener">Open Receipt</a></p>`:''}</div>`:''}
+    ${canPay?`<div class="next-panel reveal"><h3>Review, Approve & Pay</h3><p>Please review your quote. Use secure embedded payment to continue. Need a correction? Send a support request with your reference number before paying.</p><div class="cta-row"><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Request an Edit</a></div><div id="embeddedPaymentBox" class="embedded-payment-box"><button id="startPaymentBtn" class="btn primary" type="button">Proceed to Secure Payment</button></div></div>`:''}
     ${prepVideo}
-    ${completed?`<div class="next-panel"><h3>Thank You for Choosing Aligned Print & Scan</h3><p>Your service has been completed. Please keep this page for your invoice/receipt reference. We appreciate your trust and welcome your feedback.</p>${reviewButtons}</div>`:''}
-    <div class="timeline-list"><h3>Service Timeline</h3><div><span>01</span><p>Request received and reviewed for service fit, timing, and document needs.</p></div><div><span>02</span><p>Quote or invoice issued with next-step instructions.</p></div><div><span>03</span><p>Payment and appointment/fulfillment details confirmed.</p></div></div>
+    ${completed?`<div class="next-panel reveal"><h3>Receipt & Review</h3><p>Your service has been completed. Please keep this page for your invoice/receipt reference. We appreciate your trust and welcome your feedback.</p>${reviewButtons}</div>`:''}
+    <div class="timeline-list reveal"><h3>${hasQuote?'What Happens Next':'General Review Process'}</h3><div><span>01</span><p>${hasQuote?'Review the itemized quote and service details before payment.':'Your request and uploaded documents are received securely.'}</p></div><div><span>02</span><p>${hasQuote?'Complete secure payment or request an edit if something needs to be adjusted.':'Aligned Print & Scan reviews the details, availability, fulfillment needs, and service requirements.'}</p></div><div><span>03</span><p>${hasQuote?'Once payment is received, appointment or fulfillment confirmation details will be provided.':'You receive the appropriate next step by email, such as a quote, payment link, RON platform instructions, or preparation checklist.'}</p></div></div>
+    <div class="next-panel support-panel reveal"><h3>Need Help?</h3><p>Questions about this request, invoice, or appointment? Contact customer support and include your reference number.</p><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Contact Customer Support</a></div>
   `;
   qs('#startPaymentBtn')?.addEventListener('click',()=>startEmbeddedPayment(request.id));
+  initReveals(successBox);
+  setTimeout(()=>successBox.querySelectorAll('.reveal:not(.visible)').forEach(el=>el.classList.add('visible')),1400);
 }
 initSuccessPage();
