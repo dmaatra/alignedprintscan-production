@@ -215,7 +215,7 @@ async function submitRequestToSupabase(e){
    }
    await sendRequestNotifications(requestId, ref);
    localStorage.setItem('aligned_last_request',JSON.stringify({ref,service:activeService,total:qs('#estimateTotal').textContent,name:f.firstName.value,email:f.email.value,phone:f.phone.value,requestId}));
-   window.location.href=`success.html?service=${activeService}&ref=${encodeURIComponent(ref)}`;
+   window.location.href=`success.html?request_id=${encodeURIComponent(requestId)}&service=${activeService}&ref=${encodeURIComponent(ref)}`;
  }catch(err){
    console.error(err);
    setSubmitState(false,'We could not submit the request. Please check your connection and try again, or contact us directly.');
@@ -248,8 +248,13 @@ async function submitSupportTicket(event){
     last_name:form.lastName.value.trim(),
     company:form.company.value.trim()||null,
     email:form.email.value.trim(),
+    phone:form.phone?.value?.trim()||null,
+    preferred_contact_method:form.preferredContact?.value||'email',
+    related_to_request:form.relatedToRequest?.value==='yes',
     reference_number:form.referenceNumber.value.trim()||null,
     reason:form.reason.value||'other',
+    issue_type:form.reason.value||'other',
+    urgency:form.urgency?.value||'standard',
     message:form.message.value.trim(),
     status:'new'
   };
@@ -290,6 +295,50 @@ function invoiceList(items=[]){
 }
 function escapePublic(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
 function refFromPublicId(id){return id?'APS-'+String(id).slice(0,8).toUpperCase():'APS-REQUEST';}
+
+function formatDateValue(value){
+  if(!value)return 'Not selected';
+  const d=new Date(value+'T12:00:00');
+  if(Number.isNaN(d.getTime())) return escapePublic(value);
+  return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+}
+function formatTimeWindow(value){return value?escapePublic(value):'Not selected';}
+function serviceDetailSummary(service, detail){
+  if(!detail)return '<p class="admin-muted">Specific service details are being reviewed.</p>';
+  const rows=[];
+  const add=(label,val)=>{ if(val!==null && val!==undefined && val!=='' && val!==false) rows.push(`<div><span class="small-label">${escapePublic(label)}</span><strong>${escapePublic(String(val))}</strong></div>`); };
+  if(service==='ron'){
+    add('Document Type', detail.document_type);
+    add('Signers', detail.number_of_signers);
+    add('Notarizations', detail.number_of_notarizations);
+    add('Valid ID Confirmed', detail.valid_id_confirmed?'Yes':null);
+    add('Tech Ready', detail.tech_ready?'Yes':null);
+  } else if(service==='mobile'){
+    const address=[detail.street_address,detail.city,detail.state,detail.zip].filter(Boolean).join(', ');
+    add('Service Address', address);
+    add('Signers', detail.number_of_signers);
+    add('Notarizations', detail.number_of_notarizations);
+    add('Witnesses Needed', detail.witnesses_needed?'Yes':'No');
+    add('Print Add-On', detail.print_add_on?'Yes':null);
+    add('Scan-Back Needed', detail.scan_back_needed?'Yes':null);
+  } else if(service==='print'){
+    add('Fulfillment', detail.fulfillment_type);
+    add('Delivery Address', detail.delivery_address);
+    add('B/W Pages', detail.black_white_pages);
+    add('Color Pages', detail.color_pages);
+    add('Paper Size', detail.paper_size);
+    add('Print Sides', detail.print_sides);
+    add('Paper Type', detail.paper_type);
+    add('Scan Pages', detail.scan_pages);
+  }
+  return rows.length?`<div class="request-public-detail-grid">${rows.join('')}</div>`:'<p class="admin-muted">Specific service details are being reviewed.</p>';
+}
+async function submitQuoteDecision(requestId, reference, action, message=''){
+  if(!supabaseClient) throw new Error('System is not connected.');
+  const {data,error}=await supabaseClient.functions.invoke('client-quote-action',{body:{request_id:requestId,reference_number:reference,action,message}});
+  if(error) throw error;
+  return data;
+}
 async function getPublicStatus(requestId,ref){
   if(!supabaseClient)return null;
   try{
@@ -362,7 +411,6 @@ async function initSuccessPage(){
   if(leadEl) leadEl.textContent=copy.lead;
 
   const serviceName=serviceLabel(request.service_type)||result.label||'Service Request';
-  const canPay=['quote_ready','quote_sent','awaiting_approval','awaiting_payment','payment_pending'].includes(status)&&quoteAmount>0&&request.id;
   const completed=status==='completed';
   const hasQuote=items.length || quoteAmount || request.invoice_number;
   const statusClass=String(status||'under_review').replace(/[^a-z0-9_-]/gi,'-');
@@ -370,21 +418,51 @@ async function initSuccessPage(){
   const reviewButtons=completed?`<div class="cta-row review-buttons"><a class="btn primary" href="${escapePublic(request.review_link_google||'https://www.google.com/search?q=Aligned+Print+%26+Scan+reviews')}" target="_blank" rel="noopener">Leave a Google Review</a><a class="btn secondary" href="${escapePublic(request.review_link_yelp||'support.html')}">Share Feedback</a></div>`:'';
   const prepVideo=request.prep_video_url?`<div class="next-panel reveal"><h3>Appointment Preparation Video</h3><p>Watch this preparation guide before your session or appointment.</p><div class="video-embed"><iframe src="${escapePublic(request.prep_video_url)}" title="Preparation video" allowfullscreen></iframe></div></div>`:'';
 
+  const detail=result.service_detail||null;
+  const fileCount=Number(result.file_count||0);
+  const requestedDate=formatDateValue(request.preferred_date);
+  const requestedTime=formatTimeWindow(request.preferred_time_window);
+  const quoteNote=request.quote_notes||request.customer_message||'';
+  const canApprove=['quote_ready','quote_sent','awaiting_approval'].includes(status)&&hasQuote&&request.id;
+  const canPay=['awaiting_payment','payment_pending'].includes(status)&&quoteAmount>0&&request.id;
+
   successBox.innerHTML=`
-    <div class="success-ref">${escapePublic(reference)}</div>
-    <div class="success-grid">
+    <div class="success-ref reveal">${escapePublic(reference)}</div>
+    <div class="success-grid reveal">
       <div><span class="small-label">Selected Service</span><strong>${escapePublic(serviceName)}</strong></div>
       <div><span class="small-label">${hasQuote?'Invoice Total':'Estimated Total'}</span><strong>${quoteAmount?money(quoteAmount):'Pending review'}</strong></div>
       <div><span class="small-label">Current Status</span><strong>${escapePublic(copy.title)}</strong></div>
     </div>
+    <div class="request-public-summary reveal">
+      <h3>Request Details</h3>
+      <div class="request-public-detail-grid">
+        <div><span class="small-label">Requested Date</span><strong>${requestedDate}</strong></div>
+        <div><span class="small-label">Requested Time</span><strong>${requestedTime}</strong></div>
+        <div><span class="small-label">Uploaded Files</span><strong>${fileCount?`${fileCount} received`:'None listed'}</strong></div>
+      </div>
+      ${serviceDetailSummary(request.service_type, detail)}
+    </div>
     <div class="email-notice status-${statusClass} reveal"><h3>${escapePublic(copy.title)}</h3><p>${escapePublic(copy.body)}</p></div>
-    ${hasQuote?`<div class="next-panel reveal"><h3>Itemized Invoice / Quote</h3>${invoiceList(items)}${request.invoice_number?`<p class="admin-muted">Invoice Number: <strong>${escapePublic(request.invoice_number)}</strong></p>`:''}${request.invoice_pdf_url?`<p><a class="btn secondary" href="${escapePublic(request.invoice_pdf_url)}" target="_blank" rel="noopener">Open Invoice PDF</a></p>`:''}${request.receipt_url||request.receipt_pdf_url?`<p><a class="btn dark" href="${escapePublic(request.receipt_url||request.receipt_pdf_url)}" target="_blank" rel="noopener">Open Receipt</a></p>`:''}</div>`:''}
-    ${canPay?`<div class="next-panel reveal"><h3>Review, Approve & Pay</h3><p>Please review your quote. Use secure embedded payment to continue. Need a correction? Send a support request with your reference number before paying.</p><div class="cta-row"><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Request an Edit</a></div><div id="embeddedPaymentBox" class="embedded-payment-box"><button id="startPaymentBtn" class="btn primary" type="button">Proceed to Secure Payment</button></div></div>`:''}
+    ${hasQuote?`<div class="next-panel reveal"><h3>Itemized Invoice / Quote</h3>${invoiceList(items)}${request.invoice_number?`<p class="admin-muted">Invoice Number: <strong>${escapePublic(request.invoice_number)}</strong></p>`:''}${quoteNote?`<div class="email-notice slim-note"><h3>Client Note</h3><p>${escapePublic(quoteNote)}</p></div>`:''}${request.invoice_pdf_url?`<p><a class="btn secondary" href="${escapePublic(request.invoice_pdf_url)}" target="_blank" rel="noopener">Open Invoice PDF</a></p>`:''}${request.receipt_url||request.receipt_pdf_url?`<p><a class="btn dark" href="${escapePublic(request.receipt_url||request.receipt_pdf_url)}" target="_blank" rel="noopener">Open Receipt</a></p>`:''}</div>`:''}
+    ${canApprove?`<div class="next-panel reveal"><h3>Review Quote</h3><p>Please review the itemized quote and service details. Approving the quote moves your request to the secure payment step. If anything needs to change, request an edit before paying.</p><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" class="form-submit-status" role="status" aria-live="polite"></div></div>`:''}
+    ${canPay?`<div class="next-panel reveal"><h3>Secure Payment</h3><p>Your quote is approved and ready for secure payment. Payment confirms your request for the next scheduling or fulfillment step.</p><div class="cta-row"><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request an Edit Before Payment</a></div><div id="embeddedPaymentBox" class="embedded-payment-box"><button id="startPaymentBtn" class="btn primary" type="button">Proceed to Secure Payment</button></div></div>`:''}
     ${prepVideo}
     ${completed?`<div class="next-panel reveal"><h3>Receipt & Review</h3><p>Your service has been completed. Please keep this page for your invoice/receipt reference. We appreciate your trust and welcome your feedback.</p>${reviewButtons}</div>`:''}
-    <div class="timeline-list reveal"><h3>${hasQuote?'What Happens Next':'General Review Process'}</h3><div><span>01</span><p>${hasQuote?'Review the itemized quote and service details before payment.':'Your request and uploaded documents are received securely.'}</p></div><div><span>02</span><p>${hasQuote?'Complete secure payment or request an edit if something needs to be adjusted.':'Aligned Print & Scan reviews the details, availability, fulfillment needs, and service requirements.'}</p></div><div><span>03</span><p>${hasQuote?'Once payment is received, appointment or fulfillment confirmation details will be provided.':'You receive the appropriate next step by email, such as a quote, payment link, RON platform instructions, or preparation checklist.'}</p></div></div>
+    <div class="timeline-list reveal"><h3>${hasQuote?'What Happens Next':'General Review Process'}</h3><div><span>01</span><p>${hasQuote?'Review the itemized quote and service details before payment.':'Your request and uploaded documents are received securely.'}</p></div><div><span>02</span><p>${hasQuote?'Approve the quote, request an edit, or proceed to secure payment when payment is available.':'Aligned Print & Scan reviews the details, availability, fulfillment needs, and service requirements.'}</p></div><div><span>03</span><p>${hasQuote?'Once payment is received, appointment or fulfillment confirmation details will be provided.':'You receive the appropriate next step by email, such as a quote, payment link, RON platform instructions, or preparation checklist.'}</p></div></div>
     <div class="next-panel support-panel reveal"><h3>Need Help?</h3><p>Questions about this request, invoice, or appointment? Contact customer support and include your reference number.</p><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Contact Customer Support</a></div>
   `;
+  qs('#approveQuoteBtn')?.addEventListener('click',async()=>{
+    const statusBox=qs('#quoteActionStatus');
+    try{
+      if(statusBox) statusBox.textContent='Approving your quote…';
+      await submitQuoteDecision(request.id, reference, 'approve');
+      if(statusBox) statusBox.textContent='Quote approved. Refreshing secure payment options…';
+      setTimeout(()=>location.reload(),900);
+    }catch(err){
+      console.error(err);
+      if(statusBox) statusBox.textContent='We could not approve the quote online. Please contact customer support with your reference number.';
+    }
+  });
   qs('#startPaymentBtn')?.addEventListener('click',()=>startEmbeddedPayment(request.id));
   initReveals(successBox);
   setTimeout(()=>successBox.querySelectorAll('.reveal:not(.visible)').forEach(el=>el.classList.add('visible')),1400);

@@ -21,7 +21,12 @@ const statusLabel = (s) => ({
   declined: 'Declined',
   quote_sent: 'Quote Sent',
   payment_pending: 'Payment Pending',
-  scheduled: 'Scheduled'
+  scheduled: 'Scheduled',
+  changes_requested: 'Changes Requested',
+  new: 'New',
+  in_progress: 'In Progress',
+  resolved: 'Resolved',
+  waiting_on_customer: 'Waiting on Customer'
 }[s] || String(s || 'under_review').replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase()));
 
 let requests = [];
@@ -380,20 +385,36 @@ function renderSupportTickets() {
   const list = $('#supportTicketList');
   if (!list) return;
   if (!supportTickets.length) { list.innerHTML = '<div class="request-empty">No support tickets yet.</div>'; return; }
-  list.innerHTML = supportTickets.map(t => `
-    <div class="support-ticket-card">
-      <div><span class="request-ref">${t.reference_number || 'GENERAL SUPPORT'}</span><h3>${escapeHtml(t.first_name)} ${escapeHtml(t.last_name)}</h3><p>${escapeHtml(t.email)}${t.company ? ' · ' + escapeHtml(t.company) : ''}</p></div>
+  list.innerHTML = supportTickets.map(t => {
+    const ref = t.reference_number || 'GENERAL SUPPORT';
+    const linked = ref !== 'GENERAL SUPPORT' ? requests.find(r => refFromId(r.id) === ref || refFromId(r.id).toLowerCase() === String(ref).toLowerCase()) : null;
+    return `
+    <div class="support-ticket-card ${t.urgency && t.urgency !== 'standard' ? 'urgent-ticket' : ''}">
+      <div class="support-ticket-head"><span class="request-ref">${escapeHtml(ref)}</span><span class="status-pill">${statusLabel(t.status || 'new')}</span></div>
+      <h3>${escapeHtml(t.first_name)} ${escapeHtml(t.last_name)}</h3>
+      <p><strong>${escapeHtml(t.email)}</strong>${t.phone ? ' · ' + escapeHtml(t.phone) : ''}${t.preferred_contact_method ? ' · Prefers ' + escapeHtml(t.preferred_contact_method) : ''}${t.company ? '<br>' + escapeHtml(t.company) : ''}</p>
+      <div class="support-ticket-meta">
+        <span>${escapeHtml((t.issue_type || t.reason || 'support').replaceAll('_',' '))}</span>
+        <span>${escapeHtml((t.urgency || 'standard').replaceAll('_',' '))}</span>
+        ${linked ? `<span>${serviceLabel(linked.service_type)} · ${statusLabel(linked.status)}</span>` : ''}
+      </div>
+      ${linked ? `<div class="linked-request-mini"><strong>Linked Request</strong><p>${refFromId(linked.id)} · ${money(displayValue(linked))} · ${linked.preferred_date || 'No date'} ${linked.preferred_time_window || ''}</p><button class="btn secondary open-linked-request" data-id="${linked.id}" type="button">Open Request</button></div>` : ''}
       <p>${escapeHtml(t.message)}</p>
+      <label>Internal notes<textarea class="support-internal-note" data-id="${t.id}" placeholder="Private follow-up notes…">${escapeHtml(t.internal_notes || '')}</textarea></label>
       <div class="status-actions">
         <button class="btn dark support-status" data-id="${t.id}" data-status="in_progress" type="button">In Progress</button>
+        <button class="btn dark support-status" data-id="${t.id}" data-status="waiting_on_customer" type="button">Waiting on Customer</button>
         <button class="btn dark support-status" data-id="${t.id}" data-status="resolved" type="button">Resolved</button>
+        <button class="btn secondary support-save-note" data-id="${t.id}" type="button">Save Note</button>
         <button class="btn dark support-archive" data-id="${t.id}" type="button">Archive</button>
       </div>
-      <small>${t.created_at ? new Date(t.created_at).toLocaleString() : ''} · ${statusLabel(t.status || 'new')}</small>
-    </div>
-  `).join('');
+      <small>${t.created_at ? new Date(t.created_at).toLocaleString() : ''}</small>
+    </div>`;
+  }).join('');
   $$('.support-status', list).forEach(btn => btn.addEventListener('click', () => updateSupportTicket(btn.dataset.id, { status: btn.dataset.status })));
+  $$('.support-save-note', list).forEach(btn => btn.addEventListener('click', () => updateSupportTicket(btn.dataset.id, { internal_notes: $(`.support-internal-note[data-id="${btn.dataset.id}"]`)?.value || '' })));
   $$('.support-archive', list).forEach(btn => btn.addEventListener('click', () => updateSupportTicket(btn.dataset.id, { archived_at: new Date().toISOString() })));
+  $$('.open-linked-request', list).forEach(btn => btn.addEventListener('click', () => selectRequest(btn.dataset.id)));
 }
 async function updateSupportTicket(id, update) {
   const { error } = await adminClient.from('support_tickets').update(update).eq('id', id);

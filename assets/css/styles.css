@@ -133,3 +133,16 @@ button[disabled],.btn.disabled{opacity:.55;cursor:not-allowed;filter:saturate(.7
 @media (prefers-reduced-motion: reduce){
   .reveal{opacity:1 !important;transform:none !important;transition:none !important}
 }
+
+
+/* V14 client portal, support desk, and navigation polish */
+.nav-links{gap:clamp(14px,1.4vw,26px)}
+.nav-cta{white-space:normal;text-align:center;line-height:1.25;min-width:150px;display:inline-flex;align-items:center;justify-content:center}
+.request-public-summary,.next-panel{background:#fffaf2;border:1px solid rgba(200,169,107,.26);border-radius:26px;padding:28px;margin:22px 0;box-shadow:0 12px 34px rgba(22,28,77,.055)}
+.request-public-summary h3,.next-panel h3{font-family:Montserrat,sans-serif;color:var(--blue);font-size:1.05rem;text-transform:uppercase;letter-spacing:.14em;margin:0 0 16px}
+.request-public-detail-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
+.request-public-detail-grid>div{background:#fff;border:1px solid rgba(22,28,77,.08);border-radius:18px;padding:16px}
+.request-public-detail-grid strong{display:block;color:var(--blue);font-size:.98rem;margin-top:4px}.slim-note{padding:18px;margin-top:16px}.slim-note h3{font-size:.86rem;margin-bottom:8px}.support-panel{background:white}.support-ticket-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.support-ticket-meta{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.support-ticket-meta span{border-radius:999px;background:white;border:1px solid rgba(22,28,77,.08);padding:6px 10px;text-transform:uppercase;letter-spacing:.08em;font-size:.7rem;font-weight:900;color:var(--blue)}.linked-request-mini{background:white;border:1px solid rgba(200,169,107,.25);border-radius:18px;padding:14px;margin:14px 0}.linked-request-mini p{margin:6px 0 12px}.urgent-ticket{border-color:rgba(200,169,107,.55);box-shadow:0 14px 38px rgba(200,169,107,.14)}.support-internal-note{min-height:92px;margin-top:8px}
+.reveal{transform:translateY(34px) scale(.985);transition:opacity .8s cubic-bezier(.2,.8,.2,1),transform .8s cubic-bezier(.2,.8,.2,1),filter .8s ease;filter:blur(2px)}.reveal.visible{transform:translateY(0) scale(1);filter:blur(0)}
+.success-grid.reveal.visible,.request-public-summary.reveal.visible,.next-panel.reveal.visible{transition-delay:.05s}
+@media(max-width:900px){.request-public-detail-grid{grid-template-columns:1fr}.nav-cta{min-width:auto}.nav-links{gap:10px}}

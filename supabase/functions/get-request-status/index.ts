@@ -47,7 +47,18 @@ Deno.serve(async (req) => {
 
     const itemsRes = await supabaseFetch(`invoice_items?select=description,quantity,unit_price,line_total,item_type&service_request_id=eq.${id}&order=created_at.asc`);
     const items = itemsRes.ok ? await itemsRes.json() : [];
-    return json({ ok: true, request, items, reference_number: refFromId(id) });
+    const detailTable = request.service_type === "ron" ? "ron_requests" : request.service_type === "mobile" ? "mobile_notary_requests" : request.service_type === "print" ? "print_scan_requests" : null;
+    let service_detail = null;
+    if (detailTable) {
+      const detailRes = await supabaseFetch(`${detailTable}?select=*&service_request_id=eq.${id}`);
+      if (detailRes.ok) {
+        const detailRows = await detailRes.json();
+        service_detail = detailRows?.[0] || null;
+      }
+    }
+    const filesRes = await supabaseFetch(`request_files?select=id&service_request_id=eq.${id}`);
+    const fileRows = filesRes.ok ? await filesRes.json() : [];
+    return json({ ok: true, request, items, service_detail, file_count: Array.isArray(fileRows) ? fileRows.length : 0, reference_number: refFromId(id) });
   } catch (err) {
     return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 400);
   }
