@@ -348,7 +348,18 @@ async function getPublicStatus(requestId,ref){
   }catch(err){console.warn('Status function unavailable. Using local confirmation fallback.',err);return null;}
 }
 async function startEmbeddedPayment(requestId){
+  if(!requestId){
+    const params=new URLSearchParams(window.location.search);
+    requestId=params.get('request_id');
+  }
+
+  if(!requestId){
+    alert('Missing request reference. Please reopen your quote link from your email.');
+    return;
+  }
+
   const box=qs('#embeddedPaymentBox');
+  
   if(box)box.innerHTML='<p class="admin-muted">Preparing secure payment…</p>';
   try{
     const {data,error}=await supabaseClient.functions.invoke('create-embedded-checkout',{body:{request_id:requestId}});
