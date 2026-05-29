@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Dashboard | Aligned Print & Scan</title>
+  <meta name="robots" content="noindex,nofollow" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <meta property="og:site_name" content="Aligned Print & Scan">
+  <meta property="og:image" content="https://alignedprintscan.com/assets/images/logo-symbol.webp">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:image" content="https://alignedprintscan.com/assets/images/logo-symbol.webp">
+  <link rel="icon" type="image/webp" href="assets/images/logo-symbol.webp">
+  <link rel="apple-touch-icon" href="assets/images/logo-symbol.webp">
+</head>
+<body class="admin-body">
+  <aside class="admin-sidebar">
+    <div class="admin-brand">
+      <img src="assets/images/logo-symbol.webp" alt="Aligned symbol" />
+      <div>
+        <strong>Aligned</strong>
+        <span>Operations</span>
+      </div>
+    </div>
+    <nav class="admin-nav">
+      <a href="#requests" class="active">Requests</a>
+      <a href="#invoiceWorkspace">Invoices</a>
+      <a href="#supportDesk">Support</a>
+      <a href="#uploads">Files</a>
+      <a href="support.html">Support Page</a>
+      <a href="index.html">Public Site</a>
+    </nav>
+    <button id="signOutBtn" class="btn secondary admin-signout" type="button">Sign Out</button>
+  </aside>
+
+  <main class="admin-main">
+    <section class="admin-hero" id="requests">
+      <div>
+        <p class="eyebrow">Private Dashboard</p>
+        <h1>Request Command Center</h1>
+        <p>Review requests, prepare professional invoices, send payment links, track support tickets, update statuses, and archive completed work without digging through Supabase tables.</p>
+      </div>
+      <div class="admin-live-card">
+        <span class="live-dot"></span>
+        <div>
+          <strong>Realtime monitoring</strong>
+          <p id="adminLiveStatus">Checking session…</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="admin-stats-grid">
+      <div class="admin-stat"><span>New / Under Review</span><strong id="statNew">0</strong></div>
+      <div class="admin-stat"><span>Active Requests</span><strong id="statTotal">0</strong></div>
+      <div class="admin-stat"><span>Open Request Value</span><strong id="statRevenue">$0.00</strong></div>
+      <div class="admin-stat"><span>Selected Request</span><strong id="statSelected">None</strong></div>
+    </section>
+
+    <section class="admin-panel-grid">
+      <div class="admin-panel request-list-panel">
+        <div class="admin-panel-head">
+          <h2>Incoming Requests</h2>
+          <button id="refreshRequests" class="btn dark" type="button">Refresh</button>
+        </div>
+        <div class="admin-filters stacked-filters">
+          <select id="requestFilter">
+            <option value="all">All services</option>
+            <option value="ron">RON</option>
+            <option value="mobile">Mobile</option>
+            <option value="print">Print & Scan</option>
+          </select>
+          <select id="statusFilter">
+            <option value="all">All statuses</option>
+            <option value="under_review">Under Review</option>
+            <option value="quote_ready">Quote Ready</option>
+            <option value="awaiting_approval">Awaiting Approval</option>
+            <option value="awaiting_payment">Awaiting Payment</option>
+            <option value="payment_received">Payment Received</option>
+            <option value="appointment_confirmed">Appointment Confirmed</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="declined">Declined</option>
+          </select>
+          <select id="archiveFilter">
+            <option value="active">Active requests</option>
+            <option value="archived">Archived requests</option>
+            <option value="all">Active + archived</option>
+          </select>
+        </div>
+        <div id="requestList" class="request-list"></div>
+      </div>
+
+      <div class="admin-panel request-detail-panel">
+        <div class="admin-panel-head">
+          <h2>Request Details</h2>
+          <span id="detailRef" class="success-ref">Select a request</span>
+        </div>
+        <div id="requestDetail" class="request-detail-empty">
+          Select a request to view client details, service information, uploaded files, invoice controls, and status actions.
+        </div>
+      </div>
+    </section>
+
+    <section class="admin-panel" id="invoiceWorkspace">
+      <div class="admin-panel-head">
+        <div>
+          <p class="eyebrow">Invoice & Payment System</p>
+          <h2>Premium Client Workflow</h2>
+        </div>
+        <span class="admin-private-badge">Stripe + Resend Ready</span>
+      </div>
+      <p class="admin-muted">Select a request above, add invoice line items, save the invoice, and send a branded quote/payment email. Embedded Stripe payment appears on the customer status page once the payment function is deployed.</p>
+      <div class="workflow-list">
+        <div><span>01</span><strong>Request Received — Under Review</strong><p>Client submits intake and sees their reference number.</p></div>
+        <div><span>02</span><strong>Quote Ready — Awaiting Approval</strong><p>You prepare invoice line items and send the quote email.</p></div>
+        <div><span>03</span><strong>Awaiting Payment</strong><p>Client reviews and pays through your branded status page.</p></div>
+        <div><span>04</span><strong>Payment Received — Appointment Confirmation</strong><p>Payment is recorded and appointment details are confirmed.</p></div>
+        <div><span>05</span><strong>Completed — Receipt & Review</strong><p>Client can reference the invoice/receipt and leave a review.</p></div>
+      </div>
+    </section>
+
+    <section class="admin-panel" id="supportDesk">
+      <div class="admin-panel-head">
+        <div>
+          <p class="eyebrow">Client Care</p>
+          <h2>Customer Support</h2>
+        </div>
+        <button id="refreshSupport" class="btn dark" type="button">Refresh</button>
+      </div>
+      <p class="admin-muted">Support submissions from the customer support page appear here for follow-up and resolution tracking.</p>
+      <div id="supportTicketList" class="support-ticket-list"></div>
+    </section>
+
+    <section class="admin-panel" id="uploads">
+      <div class="admin-panel-head">
+        <h2>File Review Notes</h2>
+      </div>
+      <p class="admin-muted">Uploaded file links are shown inside each request detail. Archiving a request does not delete the client’s uploaded files. Files remain attached for recordkeeping until you intentionally create a retention/deletion policy.</p>
+    </section>
+  </main>
+
+  <div id="newRequestToast" class="admin-toast" role="status" aria-live="polite">New request received.</div>
+  <script src="assets/js/admin.js"></script>
+</body>
+</html>
