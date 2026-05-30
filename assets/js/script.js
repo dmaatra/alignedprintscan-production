@@ -359,7 +359,7 @@ async function getPublicStatus(requestId,ref){
   }
 
   const box = qs('#embeddedPaymentBox');
-  if(box) box.innerHTML = '<p class="admin-muted">Preparing secure payment…</p>';
+  if(box) box.replaceChildren();
 
   try{
     const {data,error} = await supabaseClient.functions.invoke('create-embedded-checkout',{
@@ -376,6 +376,8 @@ async function getPublicStatus(requestId,ref){
     const checkout = await stripe.initEmbeddedCheckout({
       clientSecret: data.client_secret
     });
+    
+    if(box) box.replaceChildren();
 
     checkout.mount('#embeddedPaymentBox');
   }catch(err){
