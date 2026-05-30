@@ -347,10 +347,10 @@ async function getPublicStatus(requestId,ref){
     return data;
   }catch(err){console.warn('Status function unavailable. Using local confirmation fallback.',err);return null;}
 }
-async function startEmbeddedPayment(requestId){
+ async function startEmbeddedPayment(requestId){
   if(!requestId){
-    const params=new URLSearchParams(window.location.search);
-    requestId=params.get('request_id');
+    const params = new URLSearchParams(window.location.search);
+    requestId = params.get('request_id');
   }
 
   if(!requestId){
@@ -358,20 +358,29 @@ async function startEmbeddedPayment(requestId){
     return;
   }
 
-  const box=qs('#embeddedPaymentBox');
-  
-  if(box)box.innerHTML='<p class="admin-muted">Preparing secure payment…</p>';
+  const box = qs('#embeddedPaymentBox');
+  if(box) box.innerHTML = '<p class="admin-muted">Preparing secure payment…</p>';
+
   try{
-    const {data,error}=await supabaseClient.functions.invoke('create-embedded-checkout',{body:{request_id:requestId}});
-    if(error)throw error;
-    if(!data?.client_secret)throw new Error('Missing Stripe client secret.');
-    if(typeof Stripe==='undefined')throw new Error('Stripe.js has not loaded.');
-    const stripe=Stripe(data.publishable_key);
-    const checkout=await stripe.initEmbeddedCheckout({clientSecret:data.client_secret});
+    const {data,error} = await supabaseClient.functions.invoke('create-embedded-checkout',{
+      body:{ request_id: requestId }
+    });
+
+    if(error) throw error;
+    if(!data?.client_secret) throw new Error('Missing Stripe client secret.');
+    if(typeof Stripe === 'undefined') throw new Error('Stripe.js has not loaded.');
+
+    const stripe = Stripe(data.publishable_key);
+    const checkout = await stripe.initEmbeddedCheckout({
+      clientSecret: data.client_secret
+    });
+
     checkout.mount('#embeddedPaymentBox');
   }catch(err){
     console.error(err);
-    if(box)box.innerHTML='<div class="email-notice"><h3>Secure payment is not available yet</h3><p>Your invoice is saved, but embedded payment is not fully connected. Please contact Aligned Print & Scan for payment instructions.</p></div>';
+    if(box){
+      box.innerHTML = '<div class="email-notice"><h3>Secure payment is not available yet</h3><p>Your invoice is saved, but embedded payment is not fully connected. Please contact Aligned Print & Scan for payment instructions.</p></div>';
+    }
   }
 }
 function renderSuccessFallback(params,saved){
