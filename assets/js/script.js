@@ -363,7 +363,9 @@ async function getPublicStatus(requestId,ref){
 
   try{
     const {data,error} = await supabaseClient.functions.invoke('create-embedded-checkout',{
-      body:{ request_id: requestId }
+      body:{
+  request_id: requestId || new URLSearchParams(window.location.search).get('request_id')
+}
     });
 
     if(error) throw error;
