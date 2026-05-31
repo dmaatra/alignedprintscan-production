@@ -51,3 +51,8 @@ entrypoint = "./functions/send-invoice-email/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/stripe-webhook/index.ts"
+
+[functions.send-order-email]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/send-order-email/index.ts"

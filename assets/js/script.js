@@ -389,12 +389,36 @@ async function getPublicStatus(requestId,ref){
     if(box) box.replaceChildren();
 
     checkout.mount('#embeddedPaymentBox');
+    startStatusPolling(requestId, 'awaiting_payment');
   }catch(err){
     console.error(err);
+    const msg = err?.message || err?.context?.error || err?.details || 'Secure payment is not available yet.';
     if(box){
-      box.innerHTML = '<div class="email-notice"><h3>Secure payment is not available yet</h3><p>Your invoice is saved, but embedded payment is not fully connected. Please contact Aligned Print & Scan for payment instructions.</p></div>';
+      box.innerHTML = `<div class="payment-error-note"><h3>Secure payment is not available yet</h3><p>${escapePublic(msg)}</p><p>Please contact Aligned Print & Scan with your APS reference if this continues.</p></div>`;
     }
   }
+}
+
+async function startStatusPolling(requestId, currentStatus){
+  if(!requestId || window.__alignedStatusPolling) return;
+  window.__alignedStatusPolling = true;
+  let attempts = 0;
+  const maxAttempts = 40;
+  const timer = setInterval(async()=>{
+    attempts += 1;
+    try{
+      const result = await getPublicStatus(requestId, null);
+      const nextStatus = result?.request?.status;
+      if(nextStatus && nextStatus !== currentStatus){
+        clearInterval(timer);
+        const url = new URL(window.location.href);
+        url.searchParams.set('request_id', requestId);
+        if(result.reference_number) url.searchParams.set('ref', result.reference_number);
+        window.location.href = url.toString();
+      }
+      if(attempts >= maxAttempts){ clearInterval(timer); window.__alignedStatusPolling = false; }
+    }catch(_){ if(attempts >= maxAttempts){ clearInterval(timer); window.__alignedStatusPolling = false; } }
+  }, 3500);
 }
 function renderSuccessFallback(params,saved){
   const service=params.get('service')||saved.service||'request';
@@ -530,6 +554,9 @@ async function initSuccessPage(){
     }
   });
   qs('#startPaymentBtn')?.addEventListener('click',()=>startEmbeddedPayment(request.id));
+  if((new URLSearchParams(location.search)).get('session_id') || ['awaiting_payment','payment_pending'].includes(status)){
+    startStatusPolling(request.id, status);
+  }
   initReveals(successBox);
   setTimeout(()=>successBox.querySelectorAll('.reveal:not(.visible)').forEach(el=>el.classList.add('visible')),1400);
 }

@@ -304,9 +304,17 @@ async function updateRequestStatus(status) {
     service_request_id: selectedRequest.id,
     status,
     message: note || `Status changed to ${statusLabel(status)} from admin dashboard.`,
-    sent_email: false,
+    sent_email: ['payment_received','appointment_confirmed','completed','digital_delivery_sent','ready_for_delivery'].includes(status),
     sent_sms: false
   });
+  if(['payment_received','appointment_confirmed','completed','digital_delivery_sent','ready_for_delivery'].includes(status)){
+    try{
+      await adminClient.functions.invoke('send-order-email',{body:{request_id:selectedRequest.id,status,note}});
+    }catch(emailErr){
+      console.warn('Status email could not be sent:', emailErr);
+      showToast('Status updated, but the customer email could not be sent.');
+    }
+  }
   Object.assign(selectedRequest, update);
   renderRequestList(); renderStats();
   showToast(`Status updated: ${statusLabel(status)}`);
