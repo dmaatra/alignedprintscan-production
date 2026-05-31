@@ -1,46 +1,11 @@
-// Follow this setup guide to integrate the Deno language server with your editor:
-// https://deno.land/manual/getting_started/setup_your_environment
-// This enables autocomplete, go to definition, etc.
-
-// Setup type definitions for built-in Supabase Runtime APIs
-import "@supabase/functions-js/edge-runtime.d.ts";
-import { withSupabase } from "@supabase/server";
-
-console.log("Hello from Functions!");
-
-// This endpoint uses 'publishable' | 'secret' access, apiKey is required.
-// Use publishable for Client-facing, key-validated endpoints
-// Use secret for Server-to-server, internal calls
-export default {
-  fetch: withSupabase({ auth: ["publishable", "secret"] }, async (req, ctx) => {
-    // Called by another service with a secret key
-    // ctx.supabaseAdmin bypasses RLS — use for privileged operations
-    /*
-    if (ctx.authMode === "secret") {
-      const { user_id } = await req.json();
-      const { data } = await ctx.supabaseAdmin.auth.admin.getUserById(user_id);
-
-      return Response.json({
-        email: data?.user?.email,
-      });
-    }
-    */
-
-    const { name } = await req.json();
-
-    return Response.json({
-      message: `Hello ${name}!`,
-    });
-  }),
-};
-
-/* To invoke locally:
-
-  1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
-  2. Make an HTTP request:
-
-  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/send-request-email' \
-    --header 'apiKey: sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH' \
-    --data '{"name":"Functions"}'
-
-*/
+const corsHeaders = {"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS"};
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
+const SITE_URL = Deno.env.get("SITE_URL") || "https://alignedprintscan.com";
+const FROM_EMAIL = Deno.env.get("FROM_EMAIL") || "Aligned Print & Scan <hello@alignedprintscan.com>";
+const SUPPORT_EMAIL = Deno.env.get("SUPPORT_EMAIL") || "hello@alignedprintscan.com";
+const SUPPORT_PHONE = Deno.env.get("SUPPORT_PHONE") || "(469) 383-8879";
+const LOGO_URL = Deno.env.get("EMAIL_LOGO_URL") || `${SITE_URL}/assets/images/logo-full.webp`;
+function json(body: unknown, status=200){return new Response(JSON.stringify(body),{status,headers:{...corsHeaders,"Content-Type":"application/json"}})}
+function esc(v: unknown){return String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]||c))}
+function shell(body:string,preheader:string){return `<!doctype html><html><body style="margin:0;background:#f6f3ee;font-family:Arial,Helvetica,sans-serif;color:#2d2d2d;line-height:1.6"><div style="display:none;max-height:0;overflow:hidden">${esc(preheader)}</div><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f6f3ee;padding:28px 12px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:680px;background:#fff;border-radius:24px;overflow:hidden;border:1px solid #e7dcc5"><tr><td style="background:#161c4d;padding:28px 34px;text-align:center"><img src="${LOGO_URL}" alt="Aligned Print & Scan" style="max-width:190px;margin:0 auto 12px;display:block"><div style="height:2px;background:#c8a96b;width:120px;margin:0 auto"></div></td></tr><tr><td style="padding:34px">${body}</td></tr><tr><td style="padding:26px 34px;background:#fffaf2;border-top:1px solid #e7dcc5;color:#5b5a61;font-size:14px"><strong style="color:#161c4d">Need assistance?</strong><br>If you have additional questions, contact customer support and include your APS reference number.<br><br><a href="mailto:${SUPPORT_EMAIL}" style="color:#161c4d;font-weight:bold">${SUPPORT_EMAIL}</a><br>${SUPPORT_PHONE}<br>Waxahachie, Texas<br><br><a href="${SITE_URL}/support.html" style="color:#c8a96b;font-weight:bold">Customer Support</a><div style="margin-top:18px;color:#8a8072">Aligned Print & Scan LLC · Remote Online & Mobile Notary Services · Professional Print, Scan & Document Support</div></td></tr></table></td></tr></table></body></html>`}
+Deno.serve(async(req)=>{if(req.method==="OPTIONS")return new Response("ok",{headers:corsHeaders});try{if(!RESEND_API_KEY)throw new Error("RESEND_API_KEY is not configured.");const body=await req.json();const email=body.email||body.customer?.email;const first=body.first_name||body.firstName||body.customer?.first_name||"there";const ref=body.reference_number||body.ref||"APS-REQUEST";const statusUrl=`${SITE_URL}/success.html?request_id=${body.request_id||""}&ref=${encodeURIComponent(ref)}`;if(!email)throw new Error("Customer email missing.");const html=shell(`<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Request Received</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Request Was Received</h1><p>Hello ${esc(first)},</p><p>Thank you for choosing Aligned Print & Scan. Your request has been securely received and is now under review.</p><div style="display:inline-block;background:#f6f3ee;border-radius:999px;padding:8px 14px;color:#161c4d;font-weight:800;margin:8px 0">${esc(ref)}</div><p>We will review the service details, documents, availability, and any preparation requirements before sending your next step.</p><p><a href="${statusUrl}" style="display:inline-block;background:#c8a96b;color:#111522;padding:14px 22px;border-radius:999px;text-decoration:none;font-weight:bold">View Request Status</a></p>`,`Request received: ${ref}`);const res=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${RESEND_API_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({from:FROM_EMAIL,to:[email],subject:`Request received: ${ref}`,html})});const jsonRes=await res.json();if(!res.ok)throw new Error(jsonRes?.message||"Resend email failed.");return json({ok:true,id:jsonRes.id});}catch(err){return json({ok:false,error:err instanceof Error?err.message:String(err)},400)}});

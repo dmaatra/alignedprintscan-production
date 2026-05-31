@@ -1,36 +1,15 @@
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "https://sfsdniavqldgbiretply.supabase.co";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-
-async function supabaseFetch(path: string, init: RequestInit = {}) {
-  return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...init,
-    headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation", ...(init.headers || {}) },
-  });
-}
-
-Deno.serve(async (req) => {
-  try {
-    const event = await req.json();
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
-      const requestId = session.metadata?.request_id;
-      if (requestId) {
-        await supabaseFetch(`service_requests?id=eq.${requestId}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            status: "payment_received",
-            payment_status: "paid",
-            paid_at: new Date().toISOString(),
-            stripe_checkout_session_id: session.id,
-            stripe_payment_intent_id: session.payment_intent || null,
-            paid_amount: Number(session.amount_total || 0) / 100
-          })
-        });
-        await supabaseFetch(`request_status_updates`, { method: "POST", body: JSON.stringify({ service_request_id: requestId, status: "payment_received", message: "Stripe payment received.", sent_email: false, sent_sms: false }) });
-      }
-    }
-    return new Response(JSON.stringify({ received: true }), { headers: { "Content-Type": "application/json" } });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), { status: 400, headers: { "Content-Type": "application/json" } });
-  }
-});
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
+const SITE_URL = Deno.env.get("SITE_URL") || "https://alignedprintscan.com";
+const FROM_EMAIL = Deno.env.get("FROM_EMAIL") || "Aligned Print & Scan <hello@alignedprintscan.com>";
+const SUPPORT_EMAIL = Deno.env.get("SUPPORT_EMAIL") || "hello@alignedprintscan.com";
+const SUPPORT_PHONE = Deno.env.get("SUPPORT_PHONE") || "(469) 383-8879";
+const LOGO_URL = Deno.env.get("EMAIL_LOGO_URL") || `${SITE_URL}/assets/images/logo-full.webp`;
+async function supabaseFetch(path: string, init: RequestInit = {}) {return fetch(`${SUPABASE_URL}/rest/v1/${path}`,{...init,headers:{apikey:SERVICE_ROLE_KEY,Authorization:`Bearer ${SERVICE_ROLE_KEY}`,"Content-Type":"application/json",Prefer:"return=representation",...(init.headers||{})}})}
+function refFromId(id:string){return id?"APS-"+id.slice(0,8).toUpperCase():"APS-REQUEST"}
+function esc(v:unknown){return String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]||c))}
+function money(v:unknown){return `$${Number(v||0).toFixed(2)}`}
+function emailShell(body:string,preheader:string){return `<!doctype html><html><body style="margin:0;background:#f6f3ee;font-family:Arial,Helvetica,sans-serif;color:#2d2d2d;line-height:1.6"><div style="display:none;max-height:0;overflow:hidden">${esc(preheader)}</div><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f6f3ee;padding:28px 12px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:680px;background:#fff;border-radius:24px;overflow:hidden;border:1px solid #e7dcc5"><tr><td style="background:#161c4d;padding:28px 34px;text-align:center"><img src="${LOGO_URL}" alt="Aligned Print & Scan" style="max-width:190px;margin:0 auto 12px;display:block"><div style="height:2px;background:#c8a96b;width:120px;margin:0 auto"></div></td></tr><tr><td style="padding:34px">${body}</td></tr><tr><td style="padding:26px 34px;background:#fffaf2;border-top:1px solid #e7dcc5;color:#5b5a61;font-size:14px"><strong style="color:#161c4d">Need assistance?</strong><br>If you have additional questions, contact customer support and include your APS reference number.<br><br><a href="mailto:${SUPPORT_EMAIL}" style="color:#161c4d;font-weight:bold">${SUPPORT_EMAIL}</a><br>${SUPPORT_PHONE}<br>Waxahachie, Texas<br><br><a href="${SITE_URL}/support.html" style="color:#c8a96b;font-weight:bold">Customer Support</a><div style="margin-top:18px;color:#8a8072">Aligned Print & Scan LLC · Remote Online & Mobile Notary Services · Professional Print, Scan & Document Support</div></td></tr></table></td></tr></table></body></html>`}
+async function sendReceiptEmail(requestId:string, session:any){if(!RESEND_API_KEY)return;const reqRes=await supabaseFetch(`service_requests?select=id,service_type,invoice_number,customers(first_name,last_name,email)&id=eq.${requestId}`);if(!reqRes.ok)return;const rows=await reqRes.json();const request=rows?.[0];const customer=Array.isArray(request?.customers)?request.customers[0]:request?.customers;if(!customer?.email)return;const ref=session.metadata?.reference_number||refFromId(requestId);const statusUrl=`${SITE_URL}/success.html?request_id=${requestId}&ref=${encodeURIComponent(ref)}&session_id=${session.id}`;const amount=Number(session.amount_total||0)/100;const body=`<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Payment Received</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Payment Has Been Received</h1><p>Hello ${esc(customer.first_name||"there")},</p><p>Thank you. Your payment for <strong>${esc(ref)}</strong> has been received and your request is moving to appointment confirmation or fulfillment.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Amount Paid:</strong> ${money(amount)}<br><strong style="color:#161c4d">Invoice:</strong> ${esc(request.invoice_number||"Pending")}<br><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}</div><p>Keep this email for your records. Your client status page will show the current next step and confirmation details.</p><p><a href="${statusUrl}" style="display:inline-block;background:#c8a96b;color:#111522;padding:14px 22px;border-radius:999px;text-decoration:none;font-weight:bold">View Confirmation & Receipt</a></p>`;await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${RESEND_API_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({from:FROM_EMAIL,to:[customer.email],subject:`Payment received: ${ref}`,html:emailShell(body,`Payment received: ${ref}`)})});}
+Deno.serve(async(req)=>{try{const event=await req.json();if(event.type==="checkout.session.completed"){const session=event.data.object;const requestId=session.metadata?.request_id;if(requestId){const ref=session.metadata?.reference_number||refFromId(requestId);const amount=Number(session.amount_total||0)/100;await supabaseFetch(`service_requests?id=eq.${requestId}`,{method:"PATCH",body:JSON.stringify({status:"payment_received",payment_status:"paid",paid_at:new Date().toISOString(),stripe_checkout_session_id:session.id,stripe_payment_intent_id:session.payment_intent||null,paid_amount:amount,receipt_url:session.url||null})});await supabaseFetch(`request_status_updates`,{method:"POST",body:JSON.stringify({service_request_id:requestId,status:"payment_received",message:`Stripe payment received for ${ref}.`,sent_email:!!RESEND_API_KEY,sent_sms:false})});await sendReceiptEmail(requestId,session);}}return new Response(JSON.stringify({received:true}),{headers:{"Content-Type":"application/json"}})}catch(err){return new Response(JSON.stringify({error:err instanceof Error?err.message:String(err)}),{status:400,headers:{"Content-Type":"application/json"}})}});
