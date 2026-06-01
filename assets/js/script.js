@@ -500,8 +500,14 @@ async function initSuccessPage(){
   const request=result.request||{};
   const items=result.items||[];
   const reference=result.reference_number||ref||refFromPublicId(request.id)||'APS-REQUEST';
+  const sessionId = new URLSearchParams(window.location.search).get('session_id');
   const status=request.status||'under_review';
-  const copy=statusCopy(status);
+
+  // STRIPE RETURN FALLBACK
+  // If Stripe returns to success.html before the webhook finishes, show a polished
+  // payment-submitted message immediately while polling the database for the webhook update.
+  const displayStatus = (sessionId && ['awaiting_payment','payment_pending'].includes(status)) ? 'payment_submitted' : status;
+  const copy=statusCopy(displayStatus);
   const quoteAmount=Number(request.quote_amount||request.estimated_total||0)||0;
 
   const eyebrowEl=qs('#successEyebrow');
@@ -512,9 +518,9 @@ async function initSuccessPage(){
   if(leadEl) leadEl.textContent=copy.lead;
 
   const serviceName=serviceLabel(request.service_type)||result.label||'Service Request';
-  const completed=status==='completed';
+  const completed=displayStatus==='completed';
   const hasQuote=items.length || quoteAmount || request.invoice_number;
-  const statusClass=String(status||'under_review').replace(/[^a-z0-9_-]/gi,'-');
+  const statusClass=String(displayStatus||'under_review').replace(/[^a-z0-9_-]/gi,'-');
 
   const reviewButtons=completed?`<div class="cta-row review-buttons"><a class="btn primary" href="${escapePublic(request.review_link_google||'https://www.google.com/search?q=Aligned+Print+%26+Scan+reviews')}" target="_blank" rel="noopener">Leave a Google Review</a><a class="btn secondary" href="${escapePublic(request.review_link_yelp||'support.html')}">Share Feedback</a></div>`:'';
   const prepVideo=request.prep_video_url?`<div class="next-panel reveal"><h3>Appointment Preparation Video</h3><p>Watch this preparation guide before your session or appointment.</p><div class="video-embed"><iframe src="${escapePublic(request.prep_video_url)}" title="Preparation video" allowfullscreen></iframe></div></div>`:'';
@@ -525,11 +531,11 @@ async function initSuccessPage(){
   const requestedTime=formatTimeWindow(request.preferred_time_window);
   const quoteNote=request.quote_notes||request.customer_message||'';
   const canApprove=['quote_ready','quote_sent','awaiting_approval'].includes(status)&&hasQuote&&request.id;
-  const canPay=['awaiting_payment','payment_pending'].includes(status)&&quoteAmount>0&&request.id;
+  const canPay=!sessionId && ['awaiting_payment','payment_pending'].includes(status)&&quoteAmount>0&&request.id;
 
   successBox.innerHTML=`
     <div class="success-ref reveal">${escapePublic(reference)}</div>
-    ${statusTimeline(status)}
+    ${statusTimeline(displayStatus)}
     <div class="success-grid reveal">
       <div><span class="small-label">Selected Service</span><strong>${escapePublic(serviceName)}</strong></div>
       <div><span class="small-label">${hasQuote?'Invoice Total':'Estimated Total'}</span><strong>${quoteAmount?money(quoteAmount):'Pending review'}</strong></div>
@@ -550,8 +556,8 @@ async function initSuccessPage(){
     ${hasQuote?`<div class="next-panel invoice-panel reveal"><h3>Prepared Service Quote</h3><p class="premium-intro">Please review each service item below before approving or paying. This itemized quote separates service fees, appointment support, document handling, delivery, scan, print, or RON preparation where applicable.</p>${invoiceList(items)}${request.invoice_number?`<p class="admin-muted">Invoice Number: <strong>${escapePublic(request.invoice_number)}</strong></p>`:''}${quoteNote?`<div class="email-notice slim-note"><h3>Client Note</h3><p>${escapePublic(quoteNote)}</p></div>`:''}${request.invoice_pdf_url?`<p><a class="btn secondary" href="${escapePublic(request.invoice_pdf_url)}" target="_blank" rel="noopener">Open Invoice PDF</a></p>`:''}${request.receipt_url||request.receipt_pdf_url?`<p><a class="btn dark" href="${escapePublic(request.receipt_url||request.receipt_pdf_url)}" target="_blank" rel="noopener">Open Receipt</a></p>`:''}</div>`:''}
     ${canApprove?`<div class="next-panel reveal"><h3>Review Quote</h3><p>Please review the itemized quote and service details. Approving the quote moves your request to the secure payment step. If anything needs to change, request an edit before paying.</p><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" class="form-submit-status" role="status" aria-live="polite"></div></div>`:''}
     ${canPay?`<div class="next-panel payment-panel reveal"><h3>Secure Payment</h3><p>Your quote has been approved. Complete secure payment below to confirm your request and move to scheduling or fulfillment.</p><div class="payment-summary-card"><div><span class="small-label">Service</span><strong>${escapePublic(serviceName)}</strong></div><div><span class="small-label">Reference</span><strong>${escapePublic(reference)}</strong></div><div><span class="small-label">Invoice</span><strong>${escapePublic(request.invoice_number||'Pending')}</strong></div><div><span class="small-label">Total Due</span><strong>${money(quoteAmount)}</strong></div></div><div class="cta-row"><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request an Edit Before Payment</a></div><div id="embeddedPaymentBox" class="embedded-payment-box"><button id="startPaymentBtn" class="btn primary" type="button">Proceed to Secure Payment</button></div><p class="secure-note">Payments are processed securely through Stripe. Aligned Print & Scan does not store card details.</p></div>`:''}
-    ${receiptPanel(request, reference)}
-    ${appointmentDetailsPanel(request)}
+    ${receiptPanel({...request, status: displayStatus}, reference)}
+    ${appointmentDetailsPanel({...request, status: displayStatus})}
     ${ronNextStepPanel(request, detail)}
     ${prepVideo}
     ${completed?`<div class="next-panel reveal"><h3>Receipt & Review</h3><p>Your service has been completed. Please keep this page for your invoice/receipt reference. We appreciate your trust and welcome your feedback.</p>${reviewButtons}</div>`:''}
@@ -571,7 +577,7 @@ async function initSuccessPage(){
     }
   });
   qs('#startPaymentBtn')?.addEventListener('click',()=>startEmbeddedPayment(request.id));
-  if((new URLSearchParams(location.search)).get('session_id') || ['awaiting_payment','payment_pending'].includes(status)){
+  if(sessionId || ['awaiting_payment','payment_pending'].includes(status)){
     startStatusPolling(request.id, status);
   }
   initReveals(successBox);

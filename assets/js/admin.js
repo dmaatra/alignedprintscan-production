@@ -237,7 +237,7 @@ async function selectRequest(id) {
 
   detail.innerHTML = `
     <div class="admin-detail-grid">
-      <div><span class="small-label">Client</span><h3>${escapeHtml(customer?.first_name || '')} ${escapeHtml(customer?.last_name || '')}</h3><p>${escapeHtml(customer?.email || '')}<br>${escapeHtml(customer?.phone || '')}</p></div>
+      <div><span class="small-label">Client</span><h3>${escapeHtml(customer?.first_name || '')} ${escapeHtml(customer?.last_name || '')}</h3><p>${escapeHtml(customer?.email || '')}<br>${escapeHtml(customer?.phone || '')}<br><strong>Prefers:</strong> ${escapeHtml(customer?.preferred_contact || 'Not provided')}</p></div>
       <div><span class="small-label">Service</span><h3>${serviceLabel(selectedRequest.service_type)}</h3><p>${selectedRequest.preferred_date || 'No preferred date'} · ${selectedRequest.preferred_time_window || 'No time selected'}</p></div>
       <div><span class="small-label">Current Value</span><h3>${money(displayValue(selectedRequest))}</h3><p>${statusLabel(selectedRequest.status)}${isArchived(selectedRequest) ? ' · Archived' : ''}</p></div>
     </div>
@@ -262,8 +262,8 @@ async function selectRequest(id) {
       <h3>Appointment / Fulfillment Details</h3>
       <p class="admin-muted">Update these before marking the appointment confirmed. These details appear on the customer's status page and in the appointment confirmation email.</p>
       <div class="admin-detail-grid appointment-fields">
-        <label>Appointment Date<input id="appointmentDate" type="date" value="${escapeHtml(selectedRequest.appointment_date || '')}"></label>
-        <label>Appointment Time<input id="appointmentTime" type="text" placeholder="Example: 6:30 PM CST" value="${escapeHtml(selectedRequest.appointment_time || '')}"></label>
+        <label>Appointment Date<input id="appointmentDate" type="date" value="${escapeHtml(selectedRequest.appointment_date || selectedRequest.preferred_date || '')}"></label>
+        <label>Appointment Time<input id="appointmentTime" type="text" placeholder="Example: 6:30 PM CST" value="${escapeHtml(selectedRequest.appointment_time || selectedRequest.preferred_time_window || '')}"></label>
         <label>Platform / Method<input id="appointmentPlatform" type="text" placeholder="Proof, BlueNotary, Mobile, Digital delivery" value="${escapeHtml(selectedRequest.appointment_platform || '')}"></label>
       </div>
       <label>Appointment Location or Secure Session Link</label>
@@ -316,19 +316,40 @@ async function selectRequest(id) {
   $('#archiveRequestBtn')?.addEventListener('click', toggleArchiveRequest);
 }
 async function saveAppointmentDetails() {
+  // APPOINTMENT DETAILS
+  // The dashboard shows the customer's requested date/time as a starting point.
+  // Blank fields should NOT wipe existing database values.
   if (!selectedRequest) return;
+
+  const dateValue = $('#appointmentDate')?.value || selectedRequest.appointment_date || selectedRequest.preferred_date || null;
+  const timeValue = $('#appointmentTime')?.value || selectedRequest.appointment_time || selectedRequest.preferred_time_window || null;
+  const platformValue = $('#appointmentPlatform')?.value || selectedRequest.appointment_platform || null;
+  const linkValue = $('#appointmentLink')?.value || selectedRequest.appointment_link || selectedRequest.ron_session_url || null;
+  const instructionsValue = $('#appointmentInstructions')?.value || selectedRequest.appointment_instructions || null;
+  const lineNoteValue = $('#appointmentLineItemsNote')?.value || selectedRequest.appointment_line_items_note || null;
+  const balanceValue = $('#balanceDueAtAppointment')?.value;
+
   const update = {
-    appointment_date: $('#appointmentDate')?.value || null,
-    appointment_time: $('#appointmentTime')?.value || null,
-    appointment_platform: $('#appointmentPlatform')?.value || null,
-    appointment_link: $('#appointmentLink')?.value || null,
-    appointment_instructions: $('#appointmentInstructions')?.value || null,
-    balance_due_at_appointment: Number($('#balanceDueAtAppointment')?.value || 0) || 0,
-    appointment_line_items_note: $('#appointmentLineItemsNote')?.value || null,
-    ron_session_url: $('#appointmentLink')?.value || selectedRequest.ron_session_url || null
+    appointment_date: dateValue,
+    appointment_time: timeValue,
+    appointment_platform: platformValue,
+    appointment_link: linkValue,
+    appointment_instructions: instructionsValue,
+    balance_due_at_appointment: balanceValue === '' ? Number(selectedRequest.balance_due_at_appointment || 0) : (Number(balanceValue || 0) || 0),
+    appointment_line_items_note: lineNoteValue,
+    ron_session_url: linkValue || selectedRequest.ron_session_url || null
   };
-  const { error } = await adminClient.from('service_requests').update(update).eq('id', selectedRequest.id);
-  if (error) { alert(error.message); return false; }
+
+  const { error } = await adminClient
+    .from('service_requests')
+    .update(update)
+    .eq('id', selectedRequest.id);
+
+  if (error) {
+    alert(error.message);
+    return false;
+  }
+
   await adminClient.from('request_status_updates').insert({
     service_request_id: selectedRequest.id,
     status: selectedRequest.status || 'under_review',
@@ -336,48 +357,68 @@ async function saveAppointmentDetails() {
     sent_email: false,
     sent_sms: false
   });
+
   Object.assign(selectedRequest, update);
   showToast('Appointment details saved.');
   return true;
 }
 
 async function updateRequestStatus(status) {
+  // STATUS UPDATE + EMAILS
+  // Uses the deployed Edge Function so status, history, customer email,
+  // admin email, and success page movement stay in sync.
   if (!selectedRequest) return;
+
   const note = $('#adminStatusNote')?.value || '';
+
   if (status === 'appointment_confirmed') {
     const saved = await saveAppointmentDetails();
     if (saved === false) return;
   }
-  const update = { status };
+
+  const appointmentPayload = {
+    appointment_date: $('#appointmentDate')?.value || selectedRequest.appointment_date || selectedRequest.preferred_date || null,
+    appointment_time: $('#appointmentTime')?.value || selectedRequest.appointment_time || selectedRequest.preferred_time_window || null,
+    appointment_platform: $('#appointmentPlatform')?.value || selectedRequest.appointment_platform || null,
+    appointment_link: $('#appointmentLink')?.value || selectedRequest.appointment_link || selectedRequest.ron_session_url || null,
+    appointment_instructions: $('#appointmentInstructions')?.value || selectedRequest.appointment_instructions || null,
+    balance_due_at_appointment: $('#balanceDueAtAppointment')?.value || selectedRequest.balance_due_at_appointment || 0,
+    appointment_line_items_note: $('#appointmentLineItemsNote')?.value || selectedRequest.appointment_line_items_note || null
+  };
+
+  try {
+    const { data, error } = await adminClient.functions.invoke('update-request-status', {
+      body: {
+        request_id: selectedRequest.id,
+        status,
+        note,
+        paid_amount: Number(selectedRequest.quote_amount || selectedRequest.estimated_total || 0) || null,
+        appointment: appointmentPayload
+      }
+    });
+
+    if (error) throw error;
+    if (data && data.ok === false) throw new Error(data.error || 'Status update failed.');
+  } catch (err) {
+    console.error(err);
+    alert('Status update failed. Confirm update-request-status is deployed and all SQL migrations are run.');
+    return;
+  }
+
+  Object.assign(selectedRequest, { status, ...appointmentPayload });
   if (status === 'payment_received') {
-    update.paid_at = new Date().toISOString();
-    update.payment_status = 'paid';
-    update.paid_amount = Number(selectedRequest.quote_amount || selectedRequest.estimated_total || 0) || null;
+    selectedRequest.payment_status = 'paid';
+    selectedRequest.paid_at = new Date().toISOString();
   }
-  if (status === 'appointment_confirmed') update.appointment_confirmed_at = new Date().toISOString();
-  const { error } = await adminClient.from('service_requests').update(update).eq('id', selectedRequest.id);
-  if (error) { alert(error.message); return; }
-  await adminClient.from('request_status_updates').insert({
-    service_request_id: selectedRequest.id,
-    status,
-    message: note || `Status changed to ${statusLabel(status)} from admin dashboard.`,
-    sent_email: ['quote_ready','awaiting_approval','payment_received','appointment_confirmed','completed','digital_delivery_sent','ready_for_delivery'].includes(status),
-    sent_sms: false
-  });
-  try{
-    if(['quote_ready','awaiting_approval'].includes(status)){
-      await adminClient.functions.invoke('send-invoice-email',{body:{request_id:selectedRequest.id, reference_number: refFromId(selectedRequest.id)}});
-    } else if(['payment_received','appointment_confirmed','completed','digital_delivery_sent','ready_for_delivery'].includes(status)){
-      await adminClient.functions.invoke('send-order-email',{body:{request_id:selectedRequest.id,status,note}});
-    }
-  }catch(emailErr){
-    console.warn('Status email could not be sent:', emailErr);
-    showToast('Status updated, but the customer email could not be sent.');
+  if (status === 'appointment_confirmed') {
+    selectedRequest.appointment_confirmed_at = new Date().toISOString();
   }
-  Object.assign(selectedRequest, update);
-  renderRequestList(); renderStats();
-  showToast(`Status updated: ${statusLabel(status)}`);
+
+  await loadRequests();
+  await selectRequest(selectedRequest.id);
+  showToast(`Status updated and emails queued: ${statusLabel(status)}`);
 }
+
 async function saveInvoice() {
   if (!selectedRequest) return;
   const items = invoiceRowsFromDom();

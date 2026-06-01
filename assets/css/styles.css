@@ -217,3 +217,35 @@ button.btn.secondary:hover{
     transform-origin: top center;
   }
 }
+
+/* 2026-06 workflow fix: keep Stripe embedded checkout inside the mobile viewport. */
+.payment-panel,
+.payment-panel .next-panel,
+.payment-panel .embedded-payment-box {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+#embeddedPaymentBox,
+#embeddedPaymentBox > div,
+#embeddedPaymentBox iframe {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+@media (max-width: 600px) {
+  .payment-panel {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  .payment-panel .embedded-payment-box {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 10px !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+}

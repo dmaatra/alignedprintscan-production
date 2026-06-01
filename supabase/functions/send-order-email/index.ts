@@ -1,24 +1,227 @@
-const corsHeaders = {"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS"};
+// Aligned Print & Scan — Branded order-status emails
+// Purpose: Send customer + admin emails for every client workflow phase.
+// Phases handled here: quote_ready/awaiting_approval, payment_received,
+// appointment_confirmed, completed, and general status updates.
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "https://sfsdniavqldgbiretply.supabase.co";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
 const SITE_URL = Deno.env.get("SITE_URL") || "https://alignedprintscan.com";
-const FROM_EMAIL = Deno.env.get("FROM_EMAIL") || "Aligned Print & Scan <hello@alignedprintscan.com>";
 const SUPPORT_EMAIL = Deno.env.get("SUPPORT_EMAIL") || "hello@alignedprintscan.com";
+const ADMIN_EMAIL = Deno.env.get("ADMIN_EMAIL") || SUPPORT_EMAIL;
+const FROM_EMAIL = Deno.env.get("FROM_EMAIL") || `Aligned Print & Scan <${SUPPORT_EMAIL}>`;
 const SUPPORT_PHONE = Deno.env.get("SUPPORT_PHONE") || "(469) 383-8879";
 const LOGO_URL = Deno.env.get("EMAIL_LOGO_URL") || `${SITE_URL}/assets/images/logo-full.webp`;
-function json(body: unknown, status=200){return new Response(JSON.stringify(body),{status,headers:{...corsHeaders,"Content-Type":"application/json"}})}
-function esc(v: unknown){return String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]||c))}
-function money(v: unknown){return `$${Number(v||0).toFixed(2)}`}
-function refFromId(id:string){return id?"APS-"+id.slice(0,8).toUpperCase():"APS-REQUEST"}
-async function supabaseFetch(path: string, init: RequestInit = {}){return fetch(`${SUPABASE_URL}/rest/v1/${path}`,{...init,headers:{apikey:SERVICE_ROLE_KEY,Authorization:`Bearer ${SERVICE_ROLE_KEY}`,"Content-Type":"application/json",Prefer:"return=representation",...(init.headers||{})}})}
-function shell(body:string,preheader:string){return `<!doctype html><html><body style="margin:0;background:#f6f3ee;font-family:Arial,Helvetica,sans-serif;color:#2d2d2d;line-height:1.6"><div style="display:none;max-height:0;overflow:hidden">${esc(preheader)}</div><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f6f3ee;padding:28px 12px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:680px;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #e7dcc5"><tr><td style="background:#ffffff;padding:30px 34px 20px;text-align:center;border-bottom:4px solid #c8a96b"><img src="${LOGO_URL}" alt="Aligned Print & Scan" style="max-width:210px;margin:0 auto 14px;display:block"><div style="font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#161c4d;font-weight:800">Remote & Mobile Notary · Print, Scan & Document Support</div></td></tr><tr><td style="padding:34px;background:#ffffff;color:#2d2d2d">${body}</td></tr><tr><td style="padding:26px 34px;background:#fffaf2;border-top:1px solid #e7dcc5;color:#5b5a61;font-size:14px"><strong style="color:#161c4d">Need assistance?</strong><br>Contact customer support and include your APS reference number.<br><br><a href="mailto:${SUPPORT_EMAIL}" style="color:#161c4d;font-weight:bold">${SUPPORT_EMAIL}</a><br>${SUPPORT_PHONE}<br>Waxahachie, Texas<br><br><a href="${SITE_URL}/support.html" style="color:#c8a96b;font-weight:bold">Customer Support</a><div style="margin-top:18px;color:#8a8072">Aligned Print & Scan LLC</div></td></tr></table></td></tr></table></body></html>`}
-function itemTable(items:any[], total:number){if(!items?.length)return "";const rows=items.map(i=>`<tr><td style="padding:12px;border-bottom:1px solid #eee">${esc(i.description||"Service")}</td><td style="padding:12px;border-bottom:1px solid #eee;text-align:right">${esc(i.quantity||1)}</td><td style="padding:12px;border-bottom:1px solid #eee;text-align:right">${money(i.unit_price)}</td><td style="padding:12px;border-bottom:1px solid #eee;text-align:right"><strong>${money(i.line_total||(Number(i.quantity||1)*Number(i.unit_price||0)))}</strong></td></tr>`).join("");return `<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:collapse;border:1px solid #eee;border-radius:14px;overflow:hidden;margin:18px 0"><thead><tr style="background:#161c4d;color:#fff"><th align="left" style="padding:12px">Service Item</th><th align="right" style="padding:12px">Qty</th><th align="right" style="padding:12px">Rate</th><th align="right" style="padding:12px">Total</th></tr></thead><tbody>${rows}</tbody><tfoot><tr style="background:#fffaf2;color:#161c4d"><td colspan="3" style="padding:14px;text-align:right"><strong>Total</strong></td><td style="padding:14px;text-align:right"><strong>${money(total)}</strong></td></tr></tfoot></table>`}
-function appointmentBlock(r:any){const details=[['Date',r.appointment_date],['Time',r.appointment_time],['Platform / Method',r.appointment_platform],['Location / Session Link',r.appointment_link||r.ron_session_url]].filter(([,v])=>v);const rows=details.map(([k,v])=>`<tr><td style="padding:10px;border-bottom:1px solid #eee;color:#161c4d;font-weight:bold">${esc(k)}</td><td style="padding:10px;border-bottom:1px solid #eee">${String(v).startsWith('http')?`<a href="${esc(v)}">Open secure link</a>`:esc(v)}</td></tr>`).join('');return `<div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><h2 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 10px">Appointment Details</h2>${rows?`<table width="100%" cellpadding="0" cellspacing="0" role="presentation">${rows}</table>`:`<p>Appointment details are being finalized.</p>`}${r.appointment_instructions?`<p><strong>Preparation notes:</strong><br>${esc(r.appointment_instructions)}</p>`:''}${Number(r.balance_due_at_appointment||0)>0?`<p><strong>Due at appointment:</strong> ${money(r.balance_due_at_appointment)}</p>`:''}${r.appointment_line_items_note?`<p><strong>Additional onsite items:</strong><br>${esc(r.appointment_line_items_note)}</p>`:''}</div>`}
-function contentForStatus(status:string, request:any, ref:string, note:string, total:number, items:any[]){const statusUrl=`${SITE_URL}/success.html?request_id=${request.id}&ref=${encodeURIComponent(ref)}`;const service={ron:"Remote Online Notary",mobile:"Mobile Notary",print:"Print & Scan"}[request.service_type]||"Service Request";const baseBtn=`<p><a href="${statusUrl}" style="display:inline-block;background:#c8a96b;color:#111522;padding:14px 22px;border-radius:999px;text-decoration:none;font-weight:bold">View Updated Status</a></p>`;
-if(status==="quote_ready"||status==="awaiting_approval")return {subject:`Quote ready: ${ref}`,pre:`Your quote is ready for review.`,includeItems:true,html:`<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Quote Ready</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Quote Is Ready</h1><p>Hello ${esc(request.customer_first||"there")},</p><p>Your ${esc(service)} request has been reviewed. Please review the request summary and itemized quote, then approve or request changes from your secure status page.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}<br><strong style="color:#161c4d">Service:</strong> ${esc(service)}<br><strong style="color:#161c4d">Quote Total:</strong> ${money(total)}</div>${request.quote_notes?`<p><strong>Quote note:</strong> ${esc(request.quote_notes)}</p>`:''}${baseBtn}`};
-if(status==="payment_received")return {subject:`Payment received: ${ref}`,pre:`Payment received: ${ref}`,includeItems:false,html:`<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Payment Received</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Payment Has Been Received</h1><p>Hello ${esc(request.customer_first||"there")},</p><p>Thank you. Your payment for <strong>${esc(ref)}</strong> has been received. Please watch for your appointment confirmation email with the final date, time, link/location, and preparation instructions.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Amount Recorded:</strong> ${money(total)}<br><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}</div>${note?`<p><strong>Note:</strong> ${esc(note)}</p>`:""}${baseBtn}`};
-if(status==="appointment_confirmed")return {subject:`Appointment confirmed: ${ref}`,pre:`Appointment confirmed: ${ref}`,includeItems:false,html:`<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Appointment Confirmed</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Appointment Is Confirmed</h1><p>Hello ${esc(request.customer_first||"there")},</p><p>Your ${esc(service)} appointment has been confirmed. Please review the appointment details below and keep this email for reference.</p>${appointmentBlock(request)}${note?`<p><strong>Admin note:</strong> ${esc(note)}</p>`:""}${baseBtn}`};
-if(status==="completed")return {subject:`Service completed: ${ref}`,pre:`Service completed: ${ref}`,includeItems:false,html:`<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Service Completed</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Service Is Complete</h1><p>Hello ${esc(request.customer_first||"there")},</p><p>Thank you for choosing Aligned Print & Scan. Your request <strong>${esc(ref)}</strong> has been marked complete. Your status page remains available for confirmation details and review options.</p>${note?`<p><strong>Completion note:</strong> ${esc(note)}</p>`:""}${baseBtn}`};
-return {subject:`Status update: ${ref}`,pre:`Status update: ${ref}`,includeItems:false,html:`<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Status Update</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Request Has Been Updated</h1><p>Hello ${esc(request.customer_first||"there")},</p><p>Your ${esc(service)} request <strong>${esc(ref)}</strong> has been updated.</p>${note?`<p><strong>Update:</strong> ${esc(note)}</p>`:""}${baseBtn}`}}
-Deno.serve(async(req)=>{if(req.method==="OPTIONS")return new Response("ok",{headers:corsHeaders});try{if(!RESEND_API_KEY)throw new Error("RESEND_API_KEY is not configured.");const {request_id,status="status_update",note=""}=await req.json();if(!request_id)throw new Error("Missing request_id.");const reqRes=await supabaseFetch(`service_requests?select=id,service_type,status,quote_amount,estimated_total,paid_amount,invoice_number,quote_notes,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,ron_session_url,customers(first_name,last_name,email)&id=eq.${request_id}`);const rows=await reqRes.json();const request=rows?.[0];if(!request)throw new Error("Request not found.");const customer=Array.isArray(request.customers)?request.customers[0]:request.customers;if(!customer?.email)throw new Error("Customer email missing.");request.customer_first=customer.first_name||"there";const itemsRes=await supabaseFetch(`invoice_items?select=description,quantity,unit_price,line_total,item_type&service_request_id=eq.${request_id}&order=created_at.asc`);const items=itemsRes.ok?await itemsRes.json():[];const total=Number(request.paid_amount||request.quote_amount||request.estimated_total||0);const ref=refFromId(request_id);const content=contentForStatus(status,request,ref,String(note||""),total,items);const html=shell(`${content.html}${content.includeItems?itemTable(items,total):''}`,content.pre);const send=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${RESEND_API_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({from:FROM_EMAIL,to:[customer.email],subject:content.subject,html})});const sent=await send.json();if(!send.ok)throw new Error(sent?.message||"Resend email failed.");await supabaseFetch(`request_status_updates`,{method:"POST",body:JSON.stringify({service_request_id:request_id,status,message:`Customer email sent: ${content.subject}`,sent_email:true,sent_sms:false})});return json({ok:true,id:sent.id});}catch(err){return json({ok:false,error:err instanceof Error?err.message:String(err)},400)}});
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+}
+
+function esc(value: unknown) {
+  return String(value ?? "").replace(/[&<>'"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c] || c));
+}
+
+function money(value: unknown) {
+  return `$${Number(value || 0).toFixed(2)}`;
+}
+
+function refFromId(id: string) {
+  return id ? `APS-${id.slice(0, 8).toUpperCase()}` : "APS-REQUEST";
+}
+
+function serviceLabel(service: string) {
+  return ({ ron: "Remote Online Notary", mobile: "Mobile Notary", print: "Print & Scan" } as Record<string, string>)[service] || "Service Request";
+}
+
+async function supabaseFetch(path: string, init: RequestInit = {}) {
+  return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+      ...(init.headers || {}),
+    },
+  });
+}
+
+async function readJsonOrEmpty(response: Response) {
+  if (!response.ok) return null;
+  try { return await response.json(); } catch (_) { return null; }
+}
+
+async function sendEmail(to: string | string[], subject: string, html: string) {
+  if (!RESEND_API_KEY) throw new Error("RESEND_API_KEY is not configured.");
+  const recipients = Array.isArray(to) ? to.filter(Boolean) : [to].filter(Boolean);
+  if (!recipients.length) return null;
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from: FROM_EMAIL, to: recipients, subject, html }),
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result?.message || "Resend email failed.");
+  return result;
+}
+
+function emailShell(body: string, preheader: string) {
+  return `<!doctype html><html><head><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"></head><body style="margin:0;background:#f6f3ee;font-family:Arial,Helvetica,sans-serif;color:#2d2d2d;line-height:1.6"><div style="display:none;max-height:0;overflow:hidden">${esc(preheader)}</div><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f6f3ee;padding:28px 12px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:680px;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #e7dcc5"><tr><td style="background:#ffffff;padding:30px 34px 20px;text-align:center;border-bottom:4px solid #c8a96b"><img src="${LOGO_URL}" alt="Aligned Print & Scan" style="max-width:210px;margin:0 auto 14px;display:block"><div style="font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#161c4d;font-weight:800">Remote & Mobile Notary · Print, Scan & Document Support</div></td></tr><tr><td style="padding:34px;background:#ffffff;color:#2d2d2d">${body}</td></tr><tr><td style="padding:26px 34px;background:#fffaf2;border-top:1px solid #e7dcc5;color:#5b5a61;font-size:14px"><strong style="color:#161c4d">Need assistance?</strong><br>Contact customer support and include your APS reference number.<br><br><a href="mailto:${SUPPORT_EMAIL}" style="color:#161c4d;font-weight:bold">${SUPPORT_EMAIL}</a><br>${SUPPORT_PHONE}<br>Waxahachie, Texas<br><br><a href="${SITE_URL}/support.html" style="color:#c8a96b;font-weight:bold">Customer Support</a><div style="margin-top:18px;color:#8a8072">Aligned Print & Scan LLC</div></td></tr></table></td></tr></table></body></html>`;
+}
+
+function button(url: string, label: string) {
+  return `<p><a href="${esc(url)}" style="display:inline-block;background:#c8a96b;color:#111522;padding:14px 22px;border-radius:999px;text-decoration:none;font-weight:bold">${esc(label)}</a></p>`;
+}
+
+function itemTable(items: any[], total: number) {
+  if (!Array.isArray(items) || !items.length) return "";
+
+  const rows = items.map((item) => {
+    const quantity = Number(item.quantity || 1);
+    const unit = Number(item.unit_price || 0);
+    const lineTotal = Number(item.line_total || quantity * unit || 0);
+    return `<tr><td style="padding:12px;border-bottom:1px solid #eee">${esc(item.description || "Service")}</td><td style="padding:12px;border-bottom:1px solid #eee;text-align:right">${esc(quantity)}</td><td style="padding:12px;border-bottom:1px solid #eee;text-align:right">${money(unit)}</td><td style="padding:12px;border-bottom:1px solid #eee;text-align:right"><strong>${money(lineTotal)}</strong></td></tr>`;
+  }).join("");
+
+  return `<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:collapse;border:1px solid #eee;border-radius:14px;overflow:hidden;margin:18px 0"><thead><tr style="background:#161c4d;color:#fff"><th align="left" style="padding:12px">Service Item</th><th align="right" style="padding:12px">Qty</th><th align="right" style="padding:12px">Rate</th><th align="right" style="padding:12px">Total</th></tr></thead><tbody>${rows}</tbody><tfoot><tr style="background:#fffaf2;color:#161c4d"><td colspan="3" style="padding:14px;text-align:right"><strong>Total</strong></td><td style="padding:14px;text-align:right"><strong>${money(total)}</strong></td></tr></tfoot></table>`;
+}
+
+function appointmentBlock(request: any) {
+  const details = [
+    ["Date", request.appointment_date],
+    ["Time", request.appointment_time],
+    ["Platform / Method", request.appointment_platform],
+    ["Location", request.appointment_location],
+    ["Secure Link", request.appointment_link || request.ron_session_url],
+  ].filter(([, value]) => value);
+
+  const rows = details.map(([label, value]) => {
+    const text = String(value || "");
+    const display = text.startsWith("http") ? `<a href="${esc(text)}" style="color:#161c4d;font-weight:bold">Open secure link</a>` : esc(text);
+    return `<tr><td style="padding:10px;border-bottom:1px solid #eee;color:#161c4d;font-weight:bold">${esc(label)}</td><td style="padding:10px;border-bottom:1px solid #eee">${display}</td></tr>`;
+  }).join("");
+
+  return `<div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><h2 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 10px">Appointment Details</h2>${rows ? `<table width="100%" cellpadding="0" cellspacing="0" role="presentation">${rows}</table>` : `<p>Appointment details are being finalized.</p>`}${request.appointment_instructions ? `<p><strong>Preparation notes:</strong><br>${esc(request.appointment_instructions)}</p>` : ""}${Number(request.balance_due_at_appointment || 0) > 0 ? `<p><strong>Due at appointment:</strong> ${money(request.balance_due_at_appointment)}</p>` : ""}${request.appointment_line_items_note ? `<p><strong>Additional onsite items:</strong><br>${esc(request.appointment_line_items_note)}</p>` : ""}</div>`;
+}
+
+function requestSummary(request: any, customer: any, ref: string, total: number) {
+  return `<div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}<br><strong style="color:#161c4d">Client:</strong> ${esc([customer?.first_name, customer?.last_name].filter(Boolean).join(" ") || "Client")}<br><strong style="color:#161c4d">Service:</strong> ${esc(serviceLabel(request.service_type))}<br><strong style="color:#161c4d">Requested Date:</strong> ${esc(request.preferred_date || "Not provided")}<br><strong style="color:#161c4d">Requested Time:</strong> ${esc(request.preferred_time_window || "Not provided")}<br><strong style="color:#161c4d">Preferred Contact:</strong> ${esc(customer?.preferred_contact || "Not provided")}<br><strong style="color:#161c4d">Quote Total:</strong> ${money(total)}</div>`;
+}
+
+function buildCustomerContent(status: string, request: any, customer: any, items: any[], note: string) {
+  const ref = refFromId(request.id);
+  const total = Number(request.quote_amount || request.paid_amount || request.estimated_total || 0);
+  const statusUrl = `${SITE_URL}/success.html?request_id=${request.id}&ref=${encodeURIComponent(ref)}`;
+  const first = customer?.first_name || "there";
+  const service = serviceLabel(request.service_type);
+
+  if (["quote_ready", "awaiting_approval"].includes(status)) {
+    return {
+      subject: `Quote ready: ${ref}`,
+      preheader: `Your Aligned Print & Scan quote is ready for review.`,
+      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Quote Ready</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Quote Is Ready</h1><p>Hello ${esc(first)},</p><p>Your ${esc(service)} request has been reviewed. Please review the request summary and itemized quote, then approve or request changes from your secure status page.</p>${requestSummary(request, customer, ref, total)}${itemTable(items, total)}${request.quote_notes ? `<p><strong>Quote note:</strong> ${esc(request.quote_notes)}</p>` : ""}${button(statusUrl, "Review Quote")}`,
+    };
+  }
+
+  if (status === "payment_received") {
+    return {
+      subject: `Payment received: ${ref}`,
+      preheader: `Your payment has been received.`,
+      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Payment Received</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Payment Has Been Received</h1><p>Hello ${esc(first)},</p><p>Thank you. Your payment for <strong>${esc(ref)}</strong> has been received and recorded. Please watch for your appointment confirmation email with the final date, time, link/location, and preparation instructions.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Amount Recorded:</strong> ${money(request.paid_amount || total)}<br><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}</div>${note ? `<p><strong>Note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Payment Status")}`,
+    };
+  }
+
+  if (status === "appointment_confirmed") {
+    return {
+      subject: `Appointment confirmed: ${ref}`,
+      preheader: `Your appointment details are confirmed.`,
+      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Appointment Confirmed</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Appointment Is Confirmed</h1><p>Hello ${esc(first)},</p><p>Your ${esc(service)} appointment has been confirmed. Please review the appointment details below and keep this email for reference.</p>${appointmentBlock(request)}${note ? `<p><strong>Admin note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Appointment Details")}`,
+    };
+  }
+
+  if (status === "completed") {
+    return {
+      subject: `Service completed: ${ref}`,
+      preheader: `Your Aligned Print & Scan request is complete.`,
+      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Service Completed</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Service Is Complete</h1><p>Hello ${esc(first)},</p><p>Thank you for choosing Aligned Print & Scan. Your request <strong>${esc(ref)}</strong> has been marked complete. Your secure status page remains available for confirmation details, support options, and review links.</p>${note ? `<p><strong>Completion note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Completed Request")}`,
+    };
+  }
+
+  return {
+    subject: `Status update: ${ref}`,
+    preheader: `Your request status has been updated.`,
+    html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Status Update</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Request Has Been Updated</h1><p>Hello ${esc(first)},</p><p>Your ${esc(service)} request has been updated to <strong>${esc(status.replaceAll("_", " "))}</strong>.</p>${note ? `<p><strong>Note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Updated Status")}`,
+  };
+}
+
+function buildAdminContent(status: string, request: any, customer: any, note: string) {
+  const ref = refFromId(request.id);
+  const statusUrl = `${SITE_URL}/success.html?request_id=${request.id}&ref=${encodeURIComponent(ref)}`;
+  const adminUrl = `${SITE_URL}/admin-dashboard.html`;
+  const clientName = [customer?.first_name, customer?.last_name].filter(Boolean).join(" ") || "Client";
+
+  return {
+    subject: `Admin update — ${status.replaceAll("_", " ")}: ${ref}`,
+    preheader: `Admin movement recorded for ${ref}.`,
+    html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Admin Notification</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Order Movement Recorded</h1><p>An order status changed and may need admin attention.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}<br><strong style="color:#161c4d">Client:</strong> ${esc(clientName)}<br><strong style="color:#161c4d">Email:</strong> ${esc(customer?.email || "Not provided")}<br><strong style="color:#161c4d">Phone:</strong> ${esc(customer?.phone || "Not provided")}<br><strong style="color:#161c4d">Preferred Contact:</strong> ${esc(customer?.preferred_contact || "Not provided")}<br><strong style="color:#161c4d">Service:</strong> ${esc(serviceLabel(request.service_type))}<br><strong style="color:#161c4d">Status:</strong> ${esc(status.replaceAll("_", " "))}</div>${note ? `<p><strong>Note:</strong> ${esc(note)}</p>` : ""}${button(adminUrl, "Open Admin Dashboard")}${button(statusUrl, "Open Customer Status Page")}`,
+  };
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  try {
+    const body = await req.json();
+    const requestId = String(body.request_id || "").trim();
+    const status = String(body.status || "status_update").trim();
+    const note = String(body.note || "").trim();
+
+    if (!requestId) throw new Error("Missing request_id.");
+
+    const requestRes = await supabaseFetch(`service_requests?select=*&id=eq.${requestId}&limit=1`);
+    if (!requestRes.ok) throw new Error(await requestRes.text());
+    const requestRows = await requestRes.json();
+    const request = requestRows?.[0];
+    if (!request) throw new Error("Request not found.");
+
+    let customer: any = null;
+    if (request.customer_id) {
+      const customerRes = await supabaseFetch(`customers?select=*&id=eq.${request.customer_id}&limit=1`);
+      const customerRows = await readJsonOrEmpty(customerRes);
+      customer = customerRows?.[0] || null;
+    }
+    if (!customer?.email) throw new Error("Customer email missing.");
+
+    const itemsRes = await supabaseFetch(`invoice_items?select=*&service_request_id=eq.${requestId}&order=created_at.asc`);
+    const items = (await readJsonOrEmpty(itemsRes)) || [];
+
+    const customerContent = buildCustomerContent(status, request, customer, items, note);
+    const adminContent = buildAdminContent(status, request, customer, note);
+
+    const customerSend = await sendEmail(customer.email, customerContent.subject, emailShell(customerContent.html, customerContent.preheader));
+    const adminSend = await sendEmail(ADMIN_EMAIL, adminContent.subject, emailShell(adminContent.html, adminContent.preheader));
+
+    await supabaseFetch("request_status_updates", {
+      method: "POST",
+      body: JSON.stringify({
+        service_request_id: requestId,
+        status,
+        message: `Emails sent. Customer: ${customerContent.subject}. Admin: ${adminContent.subject}.`,
+        sent_email: true,
+        sent_sms: false,
+      }),
+    });
+
+    return json({ ok: true, customer_email_id: customerSend?.id, admin_email_id: adminSend?.id, status });
+  } catch (err) {
+    return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
