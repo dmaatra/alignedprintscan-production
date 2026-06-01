@@ -21,6 +21,7 @@ const statusLabel = (s) => ({
   declined: 'Declined',
   quote_sent: 'Quote Sent',
   payment_pending: 'Payment Pending',
+  payment_submitted: 'Payment Submitted',
   scheduled: 'Scheduled',
   changes_requested: 'Changes Requested',
   new: 'New',

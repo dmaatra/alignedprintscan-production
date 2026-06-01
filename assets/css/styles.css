@@ -190,3 +190,30 @@ button.btn.secondary:hover{
   padding:18px;
   width:100%;
 }
+
+/* Mobile-safe Stripe embedded checkout containment */
+.payment-panel, .payment-panel * { box-sizing: border-box; }
+.payment-panel { overflow-x: hidden; }
+.payment-panel .embedded-payment-box {
+  width: 100%;
+  max-width: min(760px, 100%);
+  overflow: hidden;
+}
+.payment-panel .embedded-payment-box iframe {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+@media(max-width:600px){
+  .payment-panel .embedded-payment-box{
+    padding: 12px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    border-radius: 22px;
+    max-width: calc(100vw - 40px);
+  }
+  .payment-panel .embedded-payment-box iframe{
+    transform-origin: top center;
+  }
+}

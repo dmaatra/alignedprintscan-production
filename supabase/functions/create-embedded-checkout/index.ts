@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
     const customer = Array.isArray(request.customers) ? request.customers[0] : request.customers;
     const params = new URLSearchParams();
     params.set("mode", "payment");
-    params.set("ui_mode", "embedded_page");
+    params.set("ui_mode", "embedded");
     params.set("return_url", `${SITE_URL}/success.html?request_id=${request_id}&ref=${encodeURIComponent(ref)}&session_id={CHECKOUT_SESSION_ID}`);
     params.set("metadata[request_id]", request_id);
     params.set("metadata[reference_number]", ref);
