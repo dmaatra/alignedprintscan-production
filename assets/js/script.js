@@ -460,6 +460,19 @@ function ronNextStepPanel(request, detail){
   const sessionLink=detail?.session_link || request.ron_session_url || '';
   return `<div class="next-panel ron-appointment-panel reveal"><h3>RON Appointment Preparation</h3><p>Your Remote Online Notary session details will appear here once scheduling is confirmed.</p><div class="request-public-detail-grid"><div><span class="small-label">Platform</span><strong>${escapePublic(platform)}</strong></div><div><span class="small-label">Session Link</span><strong>${sessionLink?`<a href="${escapePublic(sessionLink)}" target="_blank" rel="noopener">Open Secure Session</a>`:'Pending'}</strong></div><div><span class="small-label">Appointment Status</span><strong>${escapePublic(statusLabel(request.status||'under_review'))}</strong></div></div><ul class="premium-checklist"><li>Have your valid ID ready.</li><li>Join from a quiet, well-lit place.</li><li>Use a device with camera, microphone, and stable internet.</li><li>Do not sign documents before the notarial session unless instructed.</li></ul></div>`;
 }
+
+function appointmentDetailsPanel(request){
+  if(!['appointment_confirmed','scheduled','completed'].includes(request.status||'')) return '';
+  const date=request.appointment_date?formatDateValue(request.appointment_date):'Confirmed date pending';
+  const time=request.appointment_time||'Confirmed time pending';
+  const platform=request.appointment_platform||((request.service_type==='ron')?'RON platform':'Service method pending');
+  const link=request.appointment_link||request.ron_session_url||'';
+  const instructions=request.appointment_instructions||'';
+  const due=Number(request.balance_due_at_appointment||0)||0;
+  const addNote=request.appointment_line_items_note||'';
+  return `<div class="next-panel appointment-confirmed-panel reveal"><h3>Appointment Details</h3><p>Your appointment or fulfillment details are listed below. Please review carefully before your session or service time.</p><div class="request-public-detail-grid"><div><span class="small-label">Date</span><strong>${escapePublic(date)}</strong></div><div><span class="small-label">Time</span><strong>${escapePublic(time)}</strong></div><div><span class="small-label">Method / Platform</span><strong>${escapePublic(platform)}</strong></div>${link?`<div><span class="small-label">Location / Secure Link</span><strong><a href="${escapePublic(link)}" target="_blank" rel="noopener">Open Details</a></strong></div>`:''}${due?`<div><span class="small-label">Due at Appointment</span><strong>${money(due)}</strong></div>`:''}</div>${instructions?`<div class="email-notice slim-note"><h3>Preparation Instructions</h3><p>${escapePublic(instructions)}</p></div>`:''}${addNote?`<div class="email-notice slim-note"><h3>Additional / Onsite Items</h3><p>${escapePublic(addNote)}</p></div>`:''}</div>`;
+}
+
 function receiptPanel(request, reference){
   if(!['payment_submitted','payment_received','paid_confirmed','scheduling','appointment_confirmed','scheduled','completed'].includes(request.status||'')) return '';
   const amount=Number(request.paid_amount||request.quote_amount||request.estimated_total||0)||0;
@@ -538,6 +551,7 @@ async function initSuccessPage(){
     ${canApprove?`<div class="next-panel reveal"><h3>Review Quote</h3><p>Please review the itemized quote and service details. Approving the quote moves your request to the secure payment step. If anything needs to change, request an edit before paying.</p><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" class="form-submit-status" role="status" aria-live="polite"></div></div>`:''}
     ${canPay?`<div class="next-panel payment-panel reveal"><h3>Secure Payment</h3><p>Your quote has been approved. Complete secure payment below to confirm your request and move to scheduling or fulfillment.</p><div class="payment-summary-card"><div><span class="small-label">Service</span><strong>${escapePublic(serviceName)}</strong></div><div><span class="small-label">Reference</span><strong>${escapePublic(reference)}</strong></div><div><span class="small-label">Invoice</span><strong>${escapePublic(request.invoice_number||'Pending')}</strong></div><div><span class="small-label">Total Due</span><strong>${money(quoteAmount)}</strong></div></div><div class="cta-row"><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request an Edit Before Payment</a></div><div id="embeddedPaymentBox" class="embedded-payment-box"><button id="startPaymentBtn" class="btn primary" type="button">Proceed to Secure Payment</button></div><p class="secure-note">Payments are processed securely through Stripe. Aligned Print & Scan does not store card details.</p></div>`:''}
     ${receiptPanel(request, reference)}
+    ${appointmentDetailsPanel(request)}
     ${ronNextStepPanel(request, detail)}
     ${prepVideo}
     ${completed?`<div class="next-panel reveal"><h3>Receipt & Review</h3><p>Your service has been completed. Please keep this page for your invoice/receipt reference. We appreciate your trust and welcome your feedback.</p>${reviewButtons}</div>`:''}

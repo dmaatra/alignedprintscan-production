@@ -11,7 +11,7 @@ function refFromId(id: string) {
   return id ? "APS-" + id.slice(0, 8).toUpperCase() : "APS-REQUEST";
 }
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" } });
 }
 async function supabaseFetch(path: string, init: RequestInit = {}) {
   return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
     }
     if (!id) return json({ ok: false, error: "Request reference not found." }, 404);
 
-    const reqRes = await supabaseFetch(`service_requests?select=id,created_at,service_type,status,preferred_date,preferred_time_window,estimated_total,quote_amount,quote_notes,invoice_number,invoice_status,invoice_url,invoice_pdf_url,receipt_url,receipt_pdf_url,payment_status,paid_at,paid_amount,stripe_checkout_session_id,stripe_payment_intent_id,ron_session_url,appointment_confirmed_at,customer_message,review_link_google,review_link_yelp,prep_video_url,customers(first_name,last_name,email,phone)&id=eq.${id}`);
+    const reqRes = await supabaseFetch(`service_requests?select=id,created_at,service_type,status,preferred_date,preferred_time_window,estimated_total,quote_amount,quote_notes,invoice_number,invoice_status,invoice_url,invoice_pdf_url,receipt_url,receipt_pdf_url,payment_status,paid_at,paid_amount,stripe_checkout_session_id,stripe_payment_intent_id,ron_session_url,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,customers(first_name,last_name,email,phone)&id=eq.${id}`);
     if (!reqRes.ok) throw new Error(await reqRes.text());
     const requestRows = await reqRes.json();
     const request = requestRows?.[0];

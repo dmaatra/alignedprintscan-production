@@ -258,6 +258,27 @@ async function selectRequest(id) {
       <p class="admin-muted small-admin-note">Embedded Stripe payment is created from the customer status page after the Stripe Edge Function is deployed and your live keys are saved as environment secrets.</p>
     </div>
 
+    <div class="admin-detail-section appointment-editor-card">
+      <h3>Appointment / Fulfillment Details</h3>
+      <p class="admin-muted">Update these before marking the appointment confirmed. These details appear on the customer's status page and in the appointment confirmation email.</p>
+      <div class="admin-detail-grid appointment-fields">
+        <label>Appointment Date<input id="appointmentDate" type="date" value="${escapeHtml(selectedRequest.appointment_date || '')}"></label>
+        <label>Appointment Time<input id="appointmentTime" type="text" placeholder="Example: 6:30 PM CST" value="${escapeHtml(selectedRequest.appointment_time || '')}"></label>
+        <label>Platform / Method<input id="appointmentPlatform" type="text" placeholder="Proof, BlueNotary, Mobile, Digital delivery" value="${escapeHtml(selectedRequest.appointment_platform || '')}"></label>
+      </div>
+      <label>Appointment Location or Secure Session Link</label>
+      <input id="appointmentLink" type="text" placeholder="RON session URL, meeting link, or appointment address" value="${escapeHtml(selectedRequest.appointment_link || selectedRequest.ron_session_url || '')}">
+      <label>Appointment Instructions</label>
+      <textarea id="appointmentInstructions" placeholder="ID requirements, parking notes, RON prep, upload instructions, etc.">${escapeHtml(selectedRequest.appointment_instructions || '')}</textarea>
+      <label>Due at Appointment / Additional Onsite Fees</label>
+      <input id="balanceDueAtAppointment" type="number" min="0" step="0.01" value="${Number(selectedRequest.balance_due_at_appointment || 0).toFixed(2)}">
+      <label>Onsite / Additional Line Item Note</label>
+      <textarea id="appointmentLineItemsNote" placeholder="Example: Additional notarizations, extra prints, witnesses, scan-backs, travel overage, etc.">${escapeHtml(selectedRequest.appointment_line_items_note || '')}</textarea>
+      <div class="status-actions invoice-actions">
+        <button id="saveAppointmentBtn" class="btn primary" type="button">Save Appointment Details</button>
+      </div>
+    </div>
+
     <div class="admin-detail-section">
       <h3>Service Details</h3>${detailMap(serviceDetails)}
     </div>
@@ -289,15 +310,50 @@ async function selectRequest(id) {
   $$('.status-actions button[data-status]', detail).forEach(btn => btn.addEventListener('click', () => updateRequestStatus(btn.dataset.status)));
   $('#addInvoiceRow')?.addEventListener('click', () => { const current = invoiceRowsFromDom(); current.push({ description: '', quantity: 1, unit_price: 0, line_total: 0 }); renderInvoiceRows(current); });
   $('#saveInvoiceBtn')?.addEventListener('click', saveInvoice);
+  $('#saveAppointmentBtn')?.addEventListener('click', saveAppointmentDetails);
   $('#sendInvoiceBtn')?.addEventListener('click', sendInvoiceEmail);
   $('#openStatusPageBtn')?.addEventListener('click', () => window.open(`success.html?request_id=${selectedRequest.id}&ref=${encodeURIComponent(ref)}`, '_blank'));
   $('#archiveRequestBtn')?.addEventListener('click', toggleArchiveRequest);
 }
+async function saveAppointmentDetails() {
+  if (!selectedRequest) return;
+  const update = {
+    appointment_date: $('#appointmentDate')?.value || null,
+    appointment_time: $('#appointmentTime')?.value || null,
+    appointment_platform: $('#appointmentPlatform')?.value || null,
+    appointment_link: $('#appointmentLink')?.value || null,
+    appointment_instructions: $('#appointmentInstructions')?.value || null,
+    balance_due_at_appointment: Number($('#balanceDueAtAppointment')?.value || 0) || 0,
+    appointment_line_items_note: $('#appointmentLineItemsNote')?.value || null,
+    ron_session_url: $('#appointmentLink')?.value || selectedRequest.ron_session_url || null
+  };
+  const { error } = await adminClient.from('service_requests').update(update).eq('id', selectedRequest.id);
+  if (error) { alert(error.message); return false; }
+  await adminClient.from('request_status_updates').insert({
+    service_request_id: selectedRequest.id,
+    status: selectedRequest.status || 'under_review',
+    message: 'Appointment/fulfillment details updated by admin.',
+    sent_email: false,
+    sent_sms: false
+  });
+  Object.assign(selectedRequest, update);
+  showToast('Appointment details saved.');
+  return true;
+}
+
 async function updateRequestStatus(status) {
   if (!selectedRequest) return;
   const note = $('#adminStatusNote')?.value || '';
+  if (status === 'appointment_confirmed') {
+    const saved = await saveAppointmentDetails();
+    if (saved === false) return;
+  }
   const update = { status };
-  if (status === 'payment_received') update.paid_at = new Date().toISOString();
+  if (status === 'payment_received') {
+    update.paid_at = new Date().toISOString();
+    update.payment_status = 'paid';
+    update.paid_amount = Number(selectedRequest.quote_amount || selectedRequest.estimated_total || 0) || null;
+  }
   if (status === 'appointment_confirmed') update.appointment_confirmed_at = new Date().toISOString();
   const { error } = await adminClient.from('service_requests').update(update).eq('id', selectedRequest.id);
   if (error) { alert(error.message); return; }
@@ -305,16 +361,18 @@ async function updateRequestStatus(status) {
     service_request_id: selectedRequest.id,
     status,
     message: note || `Status changed to ${statusLabel(status)} from admin dashboard.`,
-    sent_email: ['payment_received','appointment_confirmed','completed','digital_delivery_sent','ready_for_delivery'].includes(status),
+    sent_email: ['quote_ready','awaiting_approval','payment_received','appointment_confirmed','completed','digital_delivery_sent','ready_for_delivery'].includes(status),
     sent_sms: false
   });
-  if(['payment_received','appointment_confirmed','completed','digital_delivery_sent','ready_for_delivery'].includes(status)){
-    try{
+  try{
+    if(['quote_ready','awaiting_approval'].includes(status)){
+      await adminClient.functions.invoke('send-invoice-email',{body:{request_id:selectedRequest.id, reference_number: refFromId(selectedRequest.id)}});
+    } else if(['payment_received','appointment_confirmed','completed','digital_delivery_sent','ready_for_delivery'].includes(status)){
       await adminClient.functions.invoke('send-order-email',{body:{request_id:selectedRequest.id,status,note}});
-    }catch(emailErr){
-      console.warn('Status email could not be sent:', emailErr);
-      showToast('Status updated, but the customer email could not be sent.');
     }
+  }catch(emailErr){
+    console.warn('Status email could not be sent:', emailErr);
+    showToast('Status updated, but the customer email could not be sent.');
   }
   Object.assign(selectedRequest, update);
   renderRequestList(); renderStats();
@@ -378,7 +436,7 @@ async function loadRequests() {
   setText('adminLiveStatus', 'Loading requests…');
   const { data, error } = await adminClient
     .from('service_requests')
-    .select('id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,quote_notes,invoice_number,invoice_url,receipt_url,payment_status,paid_at,appointment_confirmed_at,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,customers(first_name,last_name,email,phone,preferred_contact)')
+    .select('id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,quote_notes,invoice_number,invoice_url,receipt_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,customers(first_name,last_name,email,phone,preferred_contact)')
     .order('created_at', { ascending: false })
     .limit(300);
   if (error) {
