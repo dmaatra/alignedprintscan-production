@@ -7,7 +7,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const money = (n) => '$' + Number(n || 0).toFixed(2);
 const refFromId = (id) => id ? 'APS-' + String(id).slice(0, 8).toUpperCase() : 'APS-REQUEST';
-const serviceLabel = (s) => ({ ron: 'Remote Online Notary', mobile: 'Mobile Notary', print: 'Print & Scan' }[s] || 'Service Request');
+const serviceLabel = (s) => ({ ron: 'Remote Online Notary', mobile: 'Mobile Notary', print: 'Document Services' }[s] || 'Service Request');
 const statusLabel = (s) => ({
   under_review: 'Under Review',
   quote_ready: 'Quote Ready',
@@ -15,6 +15,8 @@ const statusLabel = (s) => ({
   awaiting_payment: 'Awaiting Payment',
   payment_received: 'Payment Received',
   appointment_confirmed: 'Appointment Confirmed',
+  appointment_needs_rescheduling: 'Appointment Needs Rescheduling',
+  quote_expired: 'Quote Expired',
   completed: 'Completed',
   archived: 'Archived',
   cancelled: 'Cancelled',
@@ -98,6 +100,39 @@ function serviceColor(service) {
   if (service === 'print') return 'tag-print';
   return '';
 }
+function requestUrgencyBadge(r) {
+  if (r.is_same_day_request) return '<span class="status-pill urgent-pill">Same-Day Request</span>';
+  if (r.is_next_day_request) return '<span class="status-pill nextday-pill">Next-Day Request</span>';
+  if (!r.preferred_date) return '';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const requested = new Date(r.preferred_date + 'T12:00:00'); requested.setHours(0,0,0,0);
+  const diffDays = Math.round((requested - today) / 86400000);
+  if (diffDays === 0) return '<span class="status-pill urgent-pill">Same-Day Request</span>';
+  if (diffDays === 1) return '<span class="status-pill nextday-pill">Next-Day Request</span>';
+  return '';
+}
+function quoteBuilderPresets() {
+  return [
+    ['Mobile Appointment Base (0–15 miles)', 1, 50],
+    ['Extended Travel (16–20 miles)', 1, 10],
+    ['Extended Travel (21–25 miles)', 1, 20],
+    ['Extended Travel (26–30 miles)', 1, 30],
+    ['Extended Travel (31–40 miles)', 1, 45],
+    ['Notarial Act', 1, 10],
+    ['RON Session', 1, 40],
+    ['Printing / Copies — B&W Letter', 1, 0.25],
+    ['Printing / Copies — B&W Legal', 1, 0.35],
+    ['Printing / Copies — Color Letter', 1, 0.50],
+    ['Printing / Copies — Color Legal', 1, 0.65],
+    ['Color Paper Add-on', 1, 0.15],
+    ['Cardstock Add-on', 1, 0.40],
+    ['Scanning', 1, 1.00],
+    ['Mobile Document Service Base (0–15 miles)', 1, 20],
+    ['Courier Delivery', 1, 20],
+    ['Witness', 1, 0],
+    ['Custom Line Item', 1, 0]
+  ];
+}
 function isArchived(r) { return !!r.archived_at; }
 function isOpenValueStatus(status) {
   return !['completed', 'cancelled', 'declined', 'archived'].includes(status || 'under_review');
@@ -145,7 +180,7 @@ function renderRequestList() {
         <strong>${escapeHtml(name)}</strong>
         <small>${created}</small>
         <span class="service-tag ${serviceColor(r.service_type)}">${serviceLabel(r.service_type)}</span>
-        <span class="status-pill">${statusLabel(r.status)}</span>${archivedBadge}
+        <span class="status-pill">${statusLabel(r.status)}</span>${requestUrgencyBadge(r)}${archivedBadge}
       </button>
     `;
   }).join('');
@@ -240,19 +275,20 @@ async function selectRequest(id) {
       <div><span class="small-label">Client</span><h3>${escapeHtml(customer?.first_name || '')} ${escapeHtml(customer?.last_name || '')}</h3><p>${escapeHtml(customer?.email || '')}<br>${escapeHtml(customer?.phone || '')}<br><strong>Prefers:</strong> ${escapeHtml(customer?.preferred_contact || 'Not provided')}</p></div>
       <div><span class="small-label">Service</span><h3>${serviceLabel(selectedRequest.service_type)}</h3><p>${selectedRequest.preferred_date || 'No preferred date'} · ${selectedRequest.preferred_time_window || 'No time selected'}</p></div>
       <div><span class="small-label">Current Value</span><h3>${money(displayValue(selectedRequest))}</h3><p>${statusLabel(selectedRequest.status)}${isArchived(selectedRequest) ? ' · Archived' : ''}</p></div>
+      <div><span class="small-label">Page Count</span><h3>${selectedRequest.detected_pdf_page_count || '—'}</h3><p>Detected PDF pages when available</p></div>
     </div>
 
     <div class="admin-detail-section invoice-builder-card">
       <h3>Invoice / Quote Builder</h3>
-      <p class="admin-muted">Use itemized language that separates notarial acts, travel/dispatch, document preparation, scan-backs, print handling, and other support fees.</p>
-      <div id="invoiceRows" class="invoice-rows"></div>
+      <p class="admin-muted">Use itemized language that separates mobile appointment base, extended travel, notarial acts, document production, scanning, copies, courier delivery, witnesses, and custom fees.</p>
+      <div class="invoice-preset-row"><select id="invoicePresetSelect"><option value="">Add common line item…</option></select><button id="addPresetInvoiceRow" class="btn dark" type="button">Add Selected</button></div><div id="invoiceRows" class="invoice-rows"></div>
       <div class="invoice-total-line"><strong>Invoice Total</strong><span id="invoiceTotalPreview">$0.00</span></div>
       <label>Invoice / client note</label>
       <textarea id="invoiceNote" placeholder="Premium client-facing note, preparation instructions, appointment readiness, or quote terms…">${escapeHtml(selectedRequest.quote_notes || selectedRequest.customer_message || '')}</textarea>
       <div class="status-actions invoice-actions">
         <button id="addInvoiceRow" class="btn dark" type="button">Add Line Item</button>
-        <button id="saveInvoiceBtn" class="btn primary" type="button">Save Invoice</button>
-        <button id="sendInvoiceBtn" class="btn dark" type="button">Send Quote Email</button>
+        <button id="saveInvoiceBtn" class="btn primary" type="button">Save Invoice #1 / Quote</button>
+        <button id="createAdditionalInvoiceBtn" class="btn dark" type="button">Create Additional Invoice</button>
         <button id="openStatusPageBtn" class="btn dark" type="button">Open Client Status Page</button>
       </div>
       <p class="admin-muted small-admin-note">Embedded Stripe payment is created from the customer status page after the Stripe Edge Function is deployed and your live keys are saved as environment secrets.</p>
@@ -264,7 +300,7 @@ async function selectRequest(id) {
       <div class="admin-detail-grid appointment-fields">
         <label>Appointment Date<input id="appointmentDate" type="date" value="${escapeHtml(selectedRequest.appointment_date || selectedRequest.preferred_date || '')}"></label>
         <label>Appointment Time<input id="appointmentTime" type="text" placeholder="Example: 6:30 PM CST" value="${escapeHtml(selectedRequest.appointment_time || selectedRequest.preferred_time_window || '')}"></label>
-        <label>Platform / Method<input id="appointmentPlatform" type="text" placeholder="Proof, BlueNotary, Mobile, Digital delivery" value="${escapeHtml(selectedRequest.appointment_platform || '')}"></label>
+        <label>Platform / Method<input id="appointmentPlatform" type="text" placeholder="Proof, BlueNotary, Mobile, Courier delivery" value="${escapeHtml(selectedRequest.appointment_platform || '')}"></label>
       </div>
       <label>Appointment Location or Secure Session Link</label>
       <input id="appointmentLink" type="text" placeholder="RON session URL, meeting link, or appointment address" value="${escapeHtml(selectedRequest.appointment_link || selectedRequest.ron_session_url || '')}">
@@ -273,7 +309,7 @@ async function selectRequest(id) {
       <label>Due at Appointment / Additional Onsite Fees</label>
       <input id="balanceDueAtAppointment" type="number" min="0" step="0.01" value="${Number(selectedRequest.balance_due_at_appointment || 0).toFixed(2)}">
       <label>Onsite / Additional Line Item Note</label>
-      <textarea id="appointmentLineItemsNote" placeholder="Example: Additional notarizations, extra prints, witnesses, scan-backs, travel overage, etc.">${escapeHtml(selectedRequest.appointment_line_items_note || '')}</textarea>
+      <textarea id="appointmentLineItemsNote" placeholder="Example: Additional notarizations, extra prints, witnesses, scanning, travel overage, etc.">${escapeHtml(selectedRequest.appointment_line_items_note || '')}</textarea>
       <div class="status-actions invoice-actions">
         <button id="saveAppointmentBtn" class="btn primary" type="button">Save Appointment Details</button>
       </div>
@@ -297,6 +333,8 @@ async function selectRequest(id) {
         <button data-status="awaiting_payment" class="btn dark" type="button">Awaiting Payment</button>
         <button data-status="payment_received" class="btn dark" type="button">Payment Received</button>
         <button data-status="appointment_confirmed" class="btn dark" type="button">Appointment Confirmed</button>
+        <button data-status="appointment_needs_rescheduling" class="btn dark" type="button">Needs Rescheduling</button>
+        <button data-status="quote_expired" class="btn dark" type="button">Quote Expired</button>
         <button data-status="completed" class="btn dark" type="button">Completed</button>
       </div>
       <textarea id="adminStatusNote" placeholder="Internal note or client-facing update draft…"></textarea>
@@ -308,10 +346,12 @@ async function selectRequest(id) {
   `;
   renderInvoiceRows(rows);
   $$('.status-actions button[data-status]', detail).forEach(btn => btn.addEventListener('click', () => updateRequestStatus(btn.dataset.status)));
-  $('#addInvoiceRow')?.addEventListener('click', () => { const current = invoiceRowsFromDom(); current.push({ description: '', quantity: 1, unit_price: 0, line_total: 0 }); renderInvoiceRows(current); });
+  populateInvoicePresetSelect();
+  $('#addInvoiceRow')?.addEventListener('click', () => { const current = invoiceRowsFromDom(); current.push({ description: '', quantity: 1, unit_price: 0, line_total: 0 }); renderInvoiceRows(current); populateInvoicePresetSelect(); });
+  $('#addPresetInvoiceRow')?.addEventListener('click', () => addSelectedPresetInvoiceRow());
   $('#saveInvoiceBtn')?.addEventListener('click', saveInvoice);
+  $('#createAdditionalInvoiceBtn')?.addEventListener('click', createAdditionalInvoice);
   $('#saveAppointmentBtn')?.addEventListener('click', saveAppointmentDetails);
-  $('#sendInvoiceBtn')?.addEventListener('click', sendInvoiceEmail);
   $('#openStatusPageBtn')?.addEventListener('click', () => window.open(`success.html?request_id=${selectedRequest.id}&ref=${encodeURIComponent(ref)}`, '_blank'));
   $('#archiveRequestBtn')?.addEventListener('click', toggleArchiveRequest);
 }
@@ -419,6 +459,43 @@ async function updateRequestStatus(status) {
   showToast(`Status updated and emails queued: ${statusLabel(status)}`);
 }
 
+function populateInvoicePresetSelect(){
+  const select = $('#invoicePresetSelect');
+  if(!select) return;
+  if(select.dataset.loaded === 'true') return;
+  select.insertAdjacentHTML('beforeend', quoteBuilderPresets().map((item, idx)=>`<option value="${idx}">${escapeHtml(item[0])} — ${money(item[2])}</option>`).join(''));
+  select.dataset.loaded = 'true';
+}
+function addSelectedPresetInvoiceRow(){
+  const select = $('#invoicePresetSelect');
+  if(!select || select.value === '') return;
+  const preset = quoteBuilderPresets()[Number(select.value)];
+  const current = invoiceRowsFromDom();
+  current.push({ description: preset[0], quantity: preset[1], unit_price: preset[2], line_total: preset[1] * preset[2] });
+  renderInvoiceRows(current);
+  populateInvoicePresetSelect();
+  select.value = '';
+}
+async function createAdditionalInvoice(){
+  if(!selectedRequest) return;
+  const items = invoiceRowsFromDom();
+  const total = items.reduce((sum, item) => sum + item.line_total, 0);
+  if(total <= 0){ alert('Add at least one line item before creating an additional invoice.'); return; }
+  const note = $('#invoiceNote')?.value || 'Additional invoice / final balance.';
+  try{
+    const { data, error } = await adminClient.functions.invoke('create-additional-invoice', {
+      body: { request_id: selectedRequest.id, note, items }
+    });
+    if(error) throw error;
+    if(data && data.ok === false) throw new Error(data.error || 'Additional invoice was not created.');
+    await loadRequests();
+    await selectRequest(selectedRequest.id);
+    showToast('Additional invoice created and linked to this order.');
+  }catch(err){
+    console.error(err);
+    alert('Additional invoice failed. Confirm create-additional-invoice is deployed and the invoice SQL migration has been run.');
+  }
+}
 async function saveInvoice() {
   if (!selectedRequest) return;
   const items = invoiceRowsFromDom();
@@ -477,7 +554,7 @@ async function loadRequests() {
   setText('adminLiveStatus', 'Loading requests…');
   const { data, error } = await adminClient
     .from('service_requests')
-    .select('id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,quote_notes,invoice_number,invoice_url,receipt_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,customers(first_name,last_name,email,phone,preferred_contact)')
+    .select('id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,quote_notes,invoice_number,invoice_url,receipt_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(first_name,last_name,email,phone,preferred_contact)')
     .order('created_at', { ascending: false })
     .limit(300);
   if (error) {

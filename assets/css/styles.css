@@ -249,3 +249,15 @@ button.btn.secondary:hover{
     margin-right: 0 !important;
   }
 }
+
+/* v18 workflow/pricing patch helpers */
+.urgent-pill { background: #fff1f0; color: #8a1f14; border-color: #efb3aa; }
+.nextday-pill { background: #fff7e6; color: #8a5a00; border-color: #f1c778; }
+.invoice-preset-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin: 12px 0; align-items: end; }
+.invoice-preset-row select { width: 100%; min-height: 44px; border-radius: 12px; border: 1px solid var(--border, #ddd); padding: 10px 12px; }
+.embedded-payment-box, #embeddedPaymentBox { width: 100%; max-width: 100%; overflow-x: hidden; }
+.embedded-payment-box iframe, #embeddedPaymentBox iframe { width: 100% !important; max-width: 100% !important; }
+@media (max-width: 768px) {
+  .invoice-preset-row { grid-template-columns: 1fr; }
+  .payment-panel, .embedded-payment-box, #embeddedPaymentBox { width: 100%; max-width: 100vw; overflow-x: hidden; }
+}

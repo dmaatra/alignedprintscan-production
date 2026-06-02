@@ -51,17 +51,18 @@ function calculateEstimate(){
    addItem(items,'Additional notarizations',25*(+f.additionalNotarizations?.value||0));
  }
  if(activeService==='mobile'){
-   addItem(items,'Mobile notary travel & appointment base',50);
-   addItem(items,'Notarial act / signature estimate',10*(+f.notarizationCount?.value||1));
+   addItem(items,'Mobile Appointment Base (0–15 miles)',50);
+   addItem(items,'Notarial act estimate',10*(+f.notarizationCount?.value||1));
    if(f.mobilePrintAddon?.checked)addItem(items,'Print add-on estimate',printCost({pages:+f.mobilePrintPages?.value||0,color:f.mobileColor?.value,sides:f.mobileSides?.value,paperSize:f.mobilePaperSize?.value,paperType:f.mobilePaperType?.value}));
-   if(f.mobileScanAddon?.checked)addItem(items,'Scan-back / scan-to-PDF estimate',(+f.mobileScanPages?.value||0)*1);
+   if(f.mobileScanAddon?.checked)addItem(items,'Scan-to-PDF estimate',(+f.mobileScanPages?.value||0)*1);
  }
  if(activeService==='print'){
-   addItem(items,'Printing estimate',printCost({pages:+f.pages?.value||0,color:f.color?.value,sides:f.sides?.value,paperSize:f.paperSize?.value,paperType:f.paperType?.value}));
+   addItem(items,'Printing / copies estimate',printCost({pages:+f.pages?.value||0,color:f.color?.value,sides:f.sides?.value,paperSize:f.paperSize?.value,paperType:f.paperType?.value}));
    addItem(items,'Scan to PDF estimate',(+f.scanPages?.value||0)*1);
-   if(f.fulfillment?.value==='delivery')addItem(items,'Delivery estimate',20);
+   if(f.fulfillment?.value==='courier')addItem(items,'Courier delivery estimate',20);
+   if(f.fulfillment?.value==='mobile-service')addItem(items,'Mobile document service base',20);
    if(f.fulfillment?.value==='mobile-notary'){
-     addItem(items,'Mobile notary add-on travel & appointment base',50);
+     addItem(items,'Mobile Appointment Base add-on (0–15 miles)',50);
      addItem(items,'Notarial act / signature add-on',10*(+f.printNotarizationCount?.value||1));
    }
  }
@@ -72,12 +73,12 @@ function calculateEstimate(){
 function applyService(service){
  activeService=service;currentStep=0;tabs.forEach(t=>t.classList.toggle('active',t.dataset.service===service));
  document.body.dataset.service=service;
- const names={ron:'Remote Online Notary',mobile:'Mobile Notary',print:'Print & Scan'};
- const copy={ron:'Secure online notarization estimate and onboarding details.',mobile:'Mobile appointment estimate with relevant add-ons.',print:'Print, scan, delivery, and document support estimate.'};
+ const names={ron:'Remote Online Notary',mobile:'Mobile Notary',print:'Document Services'};
+ const copy={ron:'Secure online notarization estimate and onboarding details.',mobile:'Mobile appointment estimate with relevant add-ons.',print:'Printing, copies, scanning, and courier delivery estimate.'};
  qs('#summaryTitle').textContent=names[service];qs('#summaryCopy').textContent=copy[service];
- qs('#detailsHeading').textContent=service==='ron'?'RON Details':service==='mobile'?'Mobile Notary Details':'Print & Scan Details';
- qs('#detailsHelp').textContent=service==='ron'?'Tell us what will be notarized online.':service==='mobile'?'Tell us where the mobile appointment will take place and what will be notarized.':'Upload or describe the documents you need printed, scanned, or prepared.';
- qs('#optionsHeading').textContent=service==='ron'?'RON Options':service==='mobile'?'Mobile Add-Ons':'Print & Fulfillment Options';
+ qs('#detailsHeading').textContent=service==='ron'?'RON Details':service==='mobile'?'Mobile Notary Details':'Document Service Details';
+ qs('#detailsHelp').textContent=service==='ron'?'Tell us what will be notarized online.':service==='mobile'?'Tell us where the mobile appointment will take place and what will be notarized.':'Upload or describe the documents you need printed, copied, scanned, or couriered.';
+ qs('#optionsHeading').textContent=service==='ron'?'RON Options':service==='mobile'?'Mobile Add-Ons':'Document Service Options';
  qsa('[data-only]').forEach(el=>{el.style.display=el.dataset.only.split(' ').includes(service)?'block':'none'});
  clearErrors();updateConditional();showStep(0);calculateEstimate();updateContinueState();
 }
@@ -114,7 +115,7 @@ function validateStep(showErrors=false){
    }
    if(activeService==='print'){
      const val=wizard.elements.fulfillment?.value;
-     if(val==='delivery'||val==='mobile-notary')need(['printStreet','printCity','printZip']);
+     if(val==='courier'||val==='mobile-service'||val==='mobile-notary')need(['printStreet','printCity','printZip']);
      if(val==='mobile-notary')need(['printNotarizationCount','printSignerCount','printNotaryDocType']);
    }
  }
@@ -132,9 +133,39 @@ function updateContinueState(){
 function numericValue(name){return Number(wizard?.elements[name]?.value||0)||0;}
 function checkedValue(name){return !!wizard?.elements[name]?.checked;}
 function cleanFileName(name){return String(name||'upload').replace(/[^a-zA-Z0-9._-]/g,'-').replace(/-+/g,'-').slice(0,120);}
+function estimatePdfPageCountFromText(text){
+  const matches = String(text || '').match(/\/Type\s*\/Page(?!s)/g);
+  return matches ? matches.length : 0;
+}
+async function countPdfPagesFromFile(file){
+  if(!file || !/pdf$/i.test(file.name || '') && file.type !== 'application/pdf') return 0;
+  try{
+    const text = await file.text();
+    return estimatePdfPageCountFromText(text);
+  }catch(err){
+    console.warn('PDF page count detection skipped:', err);
+    return 0;
+  }
+}
+async function detectUploadedPdfPageCount(inputNames=[]){
+  let total = 0;
+  for(const name of inputNames){
+    const input = wizard?.elements[name];
+    const files = input?.files ? [...input.files] : [];
+    for(const file of files) total += await countPdfPagesFromFile(file);
+  }
+  return total || null;
+}
+function appointmentUrgencyFlags(dateValue){
+  if(!dateValue) return { is_same_day_request:false, is_next_day_request:false };
+  const today = new Date(); today.setHours(0,0,0,0);
+  const requested = new Date(dateValue + 'T12:00:00'); requested.setHours(0,0,0,0);
+  const diffDays = Math.round((requested - today) / 86400000);
+  return { is_same_day_request: diffDays === 0, is_next_day_request: diffDays === 1 };
+}
 function estimateNumber(){return Number((qs('#estimateTotal')?.textContent||'0').replace(/[^0-9.]/g,''))||0;}
-function serviceLabel(service){return {ron:'Remote Online Notary',mobile:'Mobile Notary',print:'Print & Scan'}[service]||'Service Request';}
-function statusLabel(status){return ({under_review:'Request Received / Under Review',quote_ready:'Quote Ready',quote_sent:'Quote Sent',awaiting_approval:'Quote Ready / Awaiting Approval',awaiting_payment:'Quote Approved / Awaiting Payment',payment_pending:'Awaiting Payment',payment_submitted:'Payment Submitted',payment_received:'Payment Received',paid_confirmed:'Payment Received',scheduling:'Scheduling In Progress',scheduled:'Appointment Confirmed',appointment_confirmed:'Appointment Confirmed',completed:'Completed',changes_requested:'Changes Requested',cancelled:'Cancelled',declined:'Declined'}[status]||String(status||'Under Review').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()));}
+function serviceLabel(service){return {ron:'Remote Online Notary',mobile:'Mobile Notary',print:'Document Services'}[service]||'Service Request';}
+function statusLabel(status){return ({under_review:'Request Received / Under Review',quote_ready:'Quote Ready',quote_sent:'Quote Sent',awaiting_approval:'Quote Ready / Awaiting Approval',awaiting_payment:'Quote Approved / Awaiting Payment',payment_pending:'Awaiting Payment',payment_submitted:'Payment Submitted',payment_received:'Payment Received',paid_confirmed:'Payment Received',scheduling:'Scheduling In Progress',scheduled:'Appointment Confirmed',appointment_confirmed:'Appointment Confirmed',appointment_needs_rescheduling:'Appointment Needs Rescheduling',quote_expired:'Quote Expired',completed:'Completed',changes_requested:'Changes Requested',cancelled:'Cancelled',declined:'Declined'}[status]||String(status||'Under Review').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()));}
 function setSubmitState(isSubmitting,msg){const btn=wizard?.querySelector('button[type="submit"]');if(btn){btn.disabled=isSubmitting;btn.textContent=isSubmitting?'Submitting…':'Submit Request';}let status=qs('#formSubmitStatus');if(!status&&wizard){status=document.createElement('div');status.id='formSubmitStatus';status.className='form-submit-status';wizard.querySelector('.wizard-step[data-step="4"]')?.appendChild(status);}if(status)status.textContent=msg||'';}
 async function uploadFileGroup(serviceRequestId,inputName,category){
  const input=wizard.elements[inputName];
@@ -182,7 +213,9 @@ async function submitRequestToSupabase(e){
    const customerPayload={first_name:f.firstName.value.trim(),last_name:f.lastName.value.trim(),email:f.email.value.trim(),phone:f.phone.value.trim(),preferred_contact:f.contactMethod?.value||null};
    const {data:customer,error:customerError}=await supabaseClient.from('customers').insert(customerPayload).select('id').single();
    if(customerError)throw customerError;
-   const servicePayload={customer_id:customer.id,service_type:activeService,status:'under_review',preferred_date:f.preferredDate.value||null,preferred_time_window:f.timeWindow.value||null,notes:f.notes.value||null,estimated_total:estimateNumber()};
+   const detectedPdfPageCount = await detectUploadedPdfPageCount(['ronFiles','mobilePrintFiles','printFiles']);
+	   const urgencyFlags = appointmentUrgencyFlags(f.preferredDate.value || null);
+	   const servicePayload={customer_id:customer.id,service_type:activeService,status:'under_review',preferred_date:f.preferredDate.value||null,preferred_time_window:f.timeWindow.value||null,notes:f.notes.value||null,estimated_total:estimateNumber(),detected_pdf_page_count:detectedPdfPageCount,...urgencyFlags};
    const {data:request,error:requestError}=await supabaseClient.from('service_requests').insert(servicePayload).select('id').single();
    if(requestError)throw requestError;
    const requestId=request.id;
@@ -196,17 +229,17 @@ async function submitRequestToSupabase(e){
      const printAddon=checkedValue('mobilePrintAddon');
      const scanAddon=checkedValue('mobileScanAddon');
      const mobilePrintTotal=printAddon?printCost({pages:numericValue('mobilePrintPages'),color:f.mobileColor?.value,sides:f.mobileSides?.value,paperSize:f.mobilePaperSize?.value,paperType:f.mobilePaperType?.value}):0;
-     const {error}=await supabaseClient.from('mobile_notary_requests').insert({service_request_id:requestId,street_address:f.street.value||null,unit:null,city:f.city.value||null,state:'TX',zip:f.zip.value||null,number_of_signers:numericValue('signerCount'),number_of_notarizations:numericValue('notarizationCount'),witnesses_needed:witnessVal==='Yes',print_add_on:printAddon,scan_back_needed:scanAddon,travel_miles:null,travel_fee:50,dispatch_payment_required:50+mobilePrintTotal});
+     const {error}=await supabaseClient.from('mobile_notary_requests').insert({service_request_id:requestId,street_address:f.street.value||null,unit:null,city:f.city.value||null,state:'TX',zip:f.zip.value||null,number_of_signers:numericValue('signerCount'),number_of_notarizations:numericValue('notarizationCount'),witnesses_needed:witnessVal==='Yes',print_add_on:printAddon,scan_back_needed:false, scan_to_pdf_needed:scanAddon,travel_miles:null,travel_fee:50,dispatch_payment_required:50+mobilePrintTotal});
      if(error)throw error;
      if(printAddon)await uploadFileGroup(requestId,'mobilePrintFiles','mobile-print-files');
    }
    if(activeService==='print'){
-     const fulfillment=f.fulfillment?.value||'digital';
+     const fulfillment=f.fulfillment?.value||'courier';
      const pages=numericValue('pages');
      const isColor=f.color?.value==='color';
-     const deliveryAddress=(fulfillment==='delivery'||fulfillment==='mobile-notary')?[f.printStreet?.value,f.printCity?.value,f.printZip?.value].filter(Boolean).join(', '):null;
+     const deliveryAddress=(fulfillment==='courier'||fulfillment==='mobile-service'||fulfillment==='mobile-notary')?[f.printStreet?.value,f.printCity?.value,f.printZip?.value].filter(Boolean).join(', '):null;
      const printTotal=printCost({pages,color:f.color?.value,sides:f.sides?.value,paperSize:f.paperSize?.value,paperType:f.paperType?.value});
-     const {error}=await supabaseClient.from('print_scan_requests').insert({service_request_id:requestId,fulfillment_type:fulfillment,delivery_address:deliveryAddress,black_white_pages:isColor?0:pages,color_pages:isColor?pages:0,paper_size:f.paperSize?.value||null,print_sides:f.sides?.value||null,paper_type:f.paperType?.value||null,scan_pages:numericValue('scanPages'),delivery_fee:fulfillment==='delivery'?20:0,print_total:printTotal});
+     const {error}=await supabaseClient.from('print_scan_requests').insert({service_request_id:requestId,fulfillment_type:fulfillment,delivery_address:deliveryAddress,black_white_pages:isColor?0:pages,color_pages:isColor?pages:0,paper_size:f.paperSize?.value||null,print_sides:f.sides?.value||null,paper_type:f.paperType?.value||null,scan_pages:numericValue('scanPages'),delivery_fee:fulfillment==='courier'?20:0,print_total:printTotal});
      if(error)throw error;
      await uploadFileGroup(requestId,'printFiles','print-scan-files');
    }
@@ -284,6 +317,8 @@ const publicStatusCopy={
   payment_received:{eyebrow:'Payment Received',headline:'Payment Received',lead:'Thank you. Your payment has been received and your request is confirmed for the next scheduling or fulfillment step.',title:'Payment Received — Appointment Confirmation',body:'Your payment has been recorded. We will now confirm appointment details, RON platform instructions, delivery timing, or production next steps based on your service type.'},
   appointment_confirmed:{eyebrow:'Appointment Confirmed',headline:'Your Appointment Is Confirmed',lead:'Your request is confirmed. Please review the preparation details so your appointment or fulfillment can proceed smoothly.',title:'Confirmed — Appointment Details',body:'Please have required identification, documents, technology, witnesses, or access details ready according to your service type.'},
   completed:{eyebrow:'Completed',headline:'Service Completed',lead:'Thank you for trusting Aligned Print & Scan. Your invoice/receipt details are available for your records.',title:'Completed — Receipt & Review',body:'We appreciate your business and would be grateful for a review if you were pleased with your experience.'},
+  appointment_needs_rescheduling:{eyebrow:'Rescheduling Needed',headline:'Appointment Needs Rescheduling',lead:'Your requested appointment time is no longer available or requires adjustment.',title:'Appointment Needs Rescheduling',body:'Please contact support with your next best availability, or watch for an updated appointment option from Aligned Print & Scan.'},
+  quote_expired:{eyebrow:'Quote Expired',headline:'This Quote Has Expired',lead:'The secure payment option for this quote is no longer active.',title:'Quote Expired',body:'Please submit a new request or contact support if you would like this quote reviewed again.'},
   quote_sent:{eyebrow:'Quote Sent',headline:'Your Quote Is Ready for Review',lead:'Your itemized quote has been sent and is ready for approval.',title:'Quote Ready — Awaiting Approval',body:'Please review the invoice details carefully. If everything looks correct, continue to secure payment. If changes are needed, contact support with your reference number.'},
   payment_pending:{eyebrow:'Awaiting Payment',headline:'Secure Payment Required',lead:'Complete secure payment to move your request toward confirmation.',title:'Awaiting Payment',body:'Once payment is received, we will continue with appointment confirmation, production scheduling, or fulfillment instructions.'},
   scheduled:{eyebrow:'Appointment Confirmed',headline:'Your Appointment Is Confirmed',lead:'Your appointment or fulfillment window has been scheduled.',title:'Confirmed — Appointment Details',body:'Please review all preparation details and have required identification, documents, technology, witnesses, or access details ready.'},
@@ -293,6 +328,17 @@ const publicStatusCopy={
   declined:{eyebrow:'Request Closed',headline:'Request Declined',lead:'This request is currently marked declined.',title:'Declined',body:'If circumstances have changed, you may submit a new request or contact support for clarification.'}
 };
 function statusCopy(status){return publicStatusCopy[status]||publicStatusCopy.under_review;}
+function additionalInvoicesPanel(invoices=[], additionalItems=[], requestId=null){
+  if(!Array.isArray(invoices) || !invoices.length) return '';
+  const cards = invoices.map(inv=>{
+    const items = additionalItems.filter(item => String(item.invoice_id || '') === String(inv.id || ''));
+    const total = Number(inv.amount_due || items.reduce((sum,item)=>sum+Number(item.line_total||0),0) || 0);
+    const status = String(inv.status || 'draft').replaceAll('_',' ');
+    const payable = !['paid','void','payment_submitted'].includes(String(inv.status || '').toLowerCase()) && total > 0;
+    return `<div class="next-panel additional-invoice-card reveal"><h3>${escapePublic(inv.invoice_number || 'Additional Invoice')}</h3><p>${escapePublic(inv.note || 'Additional balance / final charges attached to this order.')}</p>${invoiceList(items)}<p class="admin-muted"><strong>Status:</strong> ${escapePublic(status)} · <strong>Total:</strong> ${money(total)}</p>${payable?`<button class="btn primary payAdditionalInvoice" data-invoice-id="${escapePublic(inv.id)}" type="button">Pay This Invoice</button>`:''}</div>`;
+  }).join('');
+  return `<div class="additional-invoices-wrap">${cards}</div>`;
+}
 function invoiceList(items=[]){
   if(!items.length)return '<p class="admin-muted">Invoice line items are pending review.</p>';
   const rows=items.map(i=>{
@@ -302,7 +348,7 @@ function invoiceList(items=[]){
     return `<tr><td>${escapePublic(i.description||'Service')}</td><td>${escapePublic(String(qty))}</td><td>${money(rate)}</td><td><strong>${money(total)}</strong></td></tr>`;
   }).join('');
   const total=items.reduce((s,i)=>s+Number(i.line_total||(Number(i.quantity||1)*Number(i.unit_price||0))||0),0);
-  return `<div class="invoice-public-table-wrap"><table class="invoice-public-table"><thead><tr><th>Service Item</th><th>Qty</th><th>Rate</th><th>Total</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="3">Total Due</td><td>${money(total)}</td></tr></tfoot></table></div>`;
+  return `<div class="invoice-public-table-wrap"><table class="invoice-public-table"><thead><tr><th>Service Item</th><th>Qty</th><th>Rate</th><th>Total</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="3">Total</td><td>${money(total)}</td></tr></tfoot></table></div>`;
 }
 function escapePublic(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
 function refFromPublicId(id){return id?'APS-'+String(id).slice(0,8).toUpperCase():'APS-REQUEST';}
@@ -331,10 +377,10 @@ function serviceDetailSummary(service, detail){
     add('Notarizations', detail.number_of_notarizations);
     add('Witnesses Needed', detail.witnesses_needed?'Yes':'No');
     add('Print Add-On', detail.print_add_on?'Yes':null);
-    add('Scan-Back Needed', detail.scan_back_needed?'Yes':null);
+    add('Scan to PDF Needed', detail.scan_to_pdf_needed || detail.scan_back_needed ? 'Yes' : null);
   } else if(service==='print'){
-    add('Fulfillment', detail.fulfillment_type);
-    add('Delivery Address', detail.delivery_address);
+    add('Fulfillment', String(detail.fulfillment_type || '').replace('courier','Courier Delivery').replace('mobile-service','Mobile Document Service'));
+    add('Service / Courier Address', detail.delivery_address);
     add('B/W Pages', detail.black_white_pages);
     add('Color Pages', detail.color_pages);
     add('Paper Size', detail.paper_size);
@@ -358,7 +404,7 @@ async function getPublicStatus(requestId,ref){
     return data;
   }catch(err){console.warn('Status function unavailable. Using local confirmation fallback.',err);return null;}
 }
- async function startEmbeddedPayment(requestId){
+ async function startEmbeddedPayment(requestId, invoiceId=null){
   if(!requestId){
     const params = new URLSearchParams(window.location.search);
     requestId = params.get('request_id');
@@ -374,9 +420,7 @@ async function getPublicStatus(requestId,ref){
 
   try{
     const {data,error} = await supabaseClient.functions.invoke('create-embedded-checkout',{
-      body:{
-  request_id: requestId || new URLSearchParams(window.location.search).get('request_id')
-}
+      body:{ request_id: requestId, invoice_id: invoiceId || null }
     });
 
     if(error) throw error;
@@ -499,6 +543,8 @@ async function initSuccessPage(){
   const result=await getPublicStatus(requestId,ref) || renderSuccessFallback(params,saved);
   const request=result.request||{};
   const items=result.items||[];
+  const invoices=result.invoices||[];
+  const additionalItems=result.additional_invoice_items||[];
   const reference=result.reference_number||ref||refFromPublicId(request.id)||'APS-REQUEST';
   const sessionId = new URLSearchParams(window.location.search).get('session_id');
   const status=request.status||'under_review';
@@ -531,7 +577,7 @@ async function initSuccessPage(){
   const requestedTime=formatTimeWindow(request.preferred_time_window);
   const quoteNote=request.quote_notes||request.customer_message||'';
   const canApprove=['quote_ready','quote_sent','awaiting_approval'].includes(status)&&hasQuote&&request.id;
-  const canPay=!sessionId && ['awaiting_payment','payment_pending'].includes(status)&&quoteAmount>0&&request.id;
+  const canPay=!sessionId && ['awaiting_payment','payment_pending'].includes(status)&&quoteAmount>0&&request.id && status !== 'quote_expired';
 
   successBox.innerHTML=`
     <div class="success-ref reveal">${escapePublic(reference)}</div>
@@ -554,6 +600,7 @@ async function initSuccessPage(){
     </div>
     <div class="email-notice status-${statusClass} reveal"><h3>${escapePublic(copy.title)}</h3><p>${escapePublic(copy.body)}</p></div>
     ${hasQuote?`<div class="next-panel invoice-panel reveal"><h3>Prepared Service Quote</h3><p class="premium-intro">Please review each service item below before approving or paying. This itemized quote separates service fees, appointment support, document handling, delivery, scan, print, or RON preparation where applicable.</p>${invoiceList(items)}${request.invoice_number?`<p class="admin-muted">Invoice Number: <strong>${escapePublic(request.invoice_number)}</strong></p>`:''}${quoteNote?`<div class="email-notice slim-note"><h3>Client Note</h3><p>${escapePublic(quoteNote)}</p></div>`:''}${request.invoice_pdf_url?`<p><a class="btn secondary" href="${escapePublic(request.invoice_pdf_url)}" target="_blank" rel="noopener">Open Invoice PDF</a></p>`:''}${request.receipt_url||request.receipt_pdf_url?`<p><a class="btn dark" href="${escapePublic(request.receipt_url||request.receipt_pdf_url)}" target="_blank" rel="noopener">Open Receipt</a></p>`:''}</div>`:''}
+    ${additionalInvoicesPanel(invoices, additionalItems, request.id)}
     ${canApprove?`<div class="next-panel reveal"><h3>Review Quote</h3><p>Please review the itemized quote and service details. Approving the quote moves your request to the secure payment step. If anything needs to change, request an edit before paying.</p><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" class="form-submit-status" role="status" aria-live="polite"></div></div>`:''}
     ${canPay?`<div class="next-panel payment-panel reveal"><h3>Secure Payment</h3><p>Your quote has been approved. Complete secure payment below to confirm your request and move to scheduling or fulfillment.</p><div class="payment-summary-card"><div><span class="small-label">Service</span><strong>${escapePublic(serviceName)}</strong></div><div><span class="small-label">Reference</span><strong>${escapePublic(reference)}</strong></div><div><span class="small-label">Invoice</span><strong>${escapePublic(request.invoice_number||'Pending')}</strong></div><div><span class="small-label">Total Due</span><strong>${money(quoteAmount)}</strong></div></div><div class="cta-row"><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request an Edit Before Payment</a></div><div id="embeddedPaymentBox" class="embedded-payment-box"><button id="startPaymentBtn" class="btn primary" type="button">Proceed to Secure Payment</button></div><p class="secure-note">Payments are processed securely through Stripe. Aligned Print & Scan does not store card details.</p></div>`:''}
     ${receiptPanel({...request, status: displayStatus}, reference)}
@@ -577,6 +624,7 @@ async function initSuccessPage(){
     }
   });
   qs('#startPaymentBtn')?.addEventListener('click',()=>startEmbeddedPayment(request.id));
+  qsa('.payAdditionalInvoice').forEach(btn=>btn.addEventListener('click',()=>startEmbeddedPayment(request.id, btn.dataset.invoiceId)));
   if(sessionId || ['awaiting_payment','payment_pending'].includes(status)){
     startStatusPolling(request.id, status);
   }

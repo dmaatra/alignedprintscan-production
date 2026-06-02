@@ -1,4 +1,4 @@
-// Aligned Print & Scan — Branded order-status emails
+// Aligned Document Services — Branded order-status emails
 // Purpose: Send customer + admin emails for every client workflow phase.
 // Phases handled here: quote_ready/awaiting_approval, payment_received,
 // appointment_confirmed, completed, and general status updates.
@@ -15,7 +15,7 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
 const SITE_URL = Deno.env.get("SITE_URL") || "https://alignedprintscan.com";
 const SUPPORT_EMAIL = Deno.env.get("SUPPORT_EMAIL") || "hello@alignedprintscan.com";
 const ADMIN_EMAIL = Deno.env.get("ADMIN_EMAIL") || SUPPORT_EMAIL;
-const FROM_EMAIL = Deno.env.get("FROM_EMAIL") || `Aligned Print & Scan <${SUPPORT_EMAIL}>`;
+const FROM_EMAIL = Deno.env.get("FROM_EMAIL") || `Aligned Document Services <${SUPPORT_EMAIL}>`;
 const SUPPORT_PHONE = Deno.env.get("SUPPORT_PHONE") || "(469) 383-8879";
 const LOGO_URL = Deno.env.get("EMAIL_LOGO_URL") || `${SITE_URL}/assets/images/logo-full.webp`;
 
@@ -36,7 +36,7 @@ function refFromId(id: string) {
 }
 
 function serviceLabel(service: string) {
-  return ({ ron: "Remote Online Notary", mobile: "Mobile Notary", print: "Print & Scan" } as Record<string, string>)[service] || "Service Request";
+  return ({ ron: "Remote Online Notary", mobile: "Mobile Notary", print: "Document Services" } as Record<string, string>)[service] || "Service Request";
 }
 
 async function supabaseFetch(path: string, init: RequestInit = {}) {
@@ -74,7 +74,7 @@ async function sendEmail(to: string | string[], subject: string, html: string) {
 }
 
 function emailShell(body: string, preheader: string) {
-  return `<!doctype html><html><head><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"></head><body style="margin:0;background:#f6f3ee;font-family:Arial,Helvetica,sans-serif;color:#2d2d2d;line-height:1.6"><div style="display:none;max-height:0;overflow:hidden">${esc(preheader)}</div><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f6f3ee;padding:28px 12px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:680px;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #e7dcc5"><tr><td style="background:#ffffff;padding:30px 34px 20px;text-align:center;border-bottom:4px solid #c8a96b"><img src="${LOGO_URL}" alt="Aligned Print & Scan" style="max-width:210px;margin:0 auto 14px;display:block"><div style="font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#161c4d;font-weight:800">Remote & Mobile Notary · Print, Scan & Document Support</div></td></tr><tr><td style="padding:34px;background:#ffffff;color:#2d2d2d">${body}</td></tr><tr><td style="padding:26px 34px;background:#fffaf2;border-top:1px solid #e7dcc5;color:#5b5a61;font-size:14px"><strong style="color:#161c4d">Need assistance?</strong><br>Contact customer support and include your APS reference number.<br><br><a href="mailto:${SUPPORT_EMAIL}" style="color:#161c4d;font-weight:bold">${SUPPORT_EMAIL}</a><br>${SUPPORT_PHONE}<br>Waxahachie, Texas<br><br><a href="${SITE_URL}/support.html" style="color:#c8a96b;font-weight:bold">Customer Support</a><div style="margin-top:18px;color:#8a8072">Aligned Print & Scan LLC</div></td></tr></table></td></tr></table></body></html>`;
+  return `<!doctype html><html><head><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"></head><body style="margin:0;background:#f6f3ee;font-family:Arial,Helvetica,sans-serif;color:#2d2d2d;line-height:1.6"><div style="display:none;max-height:0;overflow:hidden">${esc(preheader)}</div><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f6f3ee;padding:28px 12px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:680px;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #e7dcc5"><tr><td style="background:#ffffff;padding:30px 34px 20px;text-align:center;border-bottom:4px solid #c8a96b"><img src="${LOGO_URL}" alt="Aligned Document Services" style="max-width:210px;margin:0 auto 14px;display:block"><div style="font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#161c4d;font-weight:800">Remote & Mobile Notary · Print, Scan, Copies & Courier Support</div></td></tr><tr><td style="padding:34px;background:#ffffff;color:#2d2d2d">${body}</td></tr><tr><td style="padding:26px 34px;background:#fffaf2;border-top:1px solid #e7dcc5;color:#5b5a61;font-size:14px"><strong style="color:#161c4d">Need assistance?</strong><br>Contact customer support and include your APS reference number.<br><br><a href="mailto:${SUPPORT_EMAIL}" style="color:#161c4d;font-weight:bold">${SUPPORT_EMAIL}</a><br>${SUPPORT_PHONE}<br>Waxahachie, Texas<br><br><a href="${SITE_URL}/support.html" style="color:#c8a96b;font-weight:bold">Customer Support</a><div style="margin-top:18px;color:#8a8072">Aligned Document Services LLC</div></td></tr></table></td></tr></table></body></html>`;
 }
 
 function button(url: string, label: string) {
@@ -126,8 +126,24 @@ function buildCustomerContent(status: string, request: any, customer: any, items
   if (["quote_ready", "awaiting_approval"].includes(status)) {
     return {
       subject: `Quote ready: ${ref}`,
-      preheader: `Your Aligned Print & Scan quote is ready for review.`,
+      preheader: `Your Aligned Document Services quote is ready for review.`,
       html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Quote Ready</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Quote Is Ready</h1><p>Hello ${esc(first)},</p><p>Your ${esc(service)} request has been reviewed. Please review the request summary and itemized quote, then approve or request changes from your secure status page.</p>${requestSummary(request, customer, ref, total)}${itemTable(items, total)}${request.quote_notes ? `<p><strong>Quote note:</strong> ${esc(request.quote_notes)}</p>` : ""}${button(statusUrl, "Review Quote")}`,
+    };
+  }
+
+  if (status === "appointment_needs_rescheduling") {
+    return {
+      subject: `Appointment needs rescheduling: ${ref}`,
+      preheader: `Your requested appointment time needs to be updated.`,
+      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Rescheduling Needed</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Appointment Needs Rescheduling</h1><p>Hello ${esc(first)},</p><p>Your payment/request has been received, but your requested appointment time is no longer available or requires adjustment. Please reply with your next best availability, or watch for an updated appointment option from Aligned Print & Scan.</p>${note ? `<p><strong>Note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Status")}`,
+    };
+  }
+
+  if (status === "quote_expired") {
+    return {
+      subject: `Quote expired: ${ref}`,
+      preheader: `Your quote has expired and may need review.`,
+      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Quote Expired</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">This Quote Has Expired</h1><p>Hello ${esc(first)},</p><p>The secure payment option for <strong>${esc(ref)}</strong> is no longer active. Please submit a new request or contact support if you would like this quote reviewed again.</p>${button(statusUrl, "View Status")}`,
     };
   }
 
@@ -150,8 +166,8 @@ function buildCustomerContent(status: string, request: any, customer: any, items
   if (status === "completed") {
     return {
       subject: `Service completed: ${ref}`,
-      preheader: `Your Aligned Print & Scan request is complete.`,
-      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Service Completed</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Service Is Complete</h1><p>Hello ${esc(first)},</p><p>Thank you for choosing Aligned Print & Scan. Your request <strong>${esc(ref)}</strong> has been marked complete. Your secure status page remains available for confirmation details, support options, and review links.</p>${note ? `<p><strong>Completion note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Completed Request")}`,
+      preheader: `Your Aligned Document Services request is complete.`,
+      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Service Completed</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Service Is Complete</h1><p>Hello ${esc(first)},</p><p>Thank you for choosing Aligned Document Services. Your request <strong>${esc(ref)}</strong> has been marked complete. Your secure status page remains available for confirmation details, support options, and review links.</p>${note ? `<p><strong>Completion note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Completed Request")}`,
     };
   }
 

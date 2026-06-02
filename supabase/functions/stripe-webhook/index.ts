@@ -32,8 +32,8 @@ async function notifyPaymentSubmitted(requestId: string, session: any) {
   const ref = session.metadata?.reference_number || refFromId(requestId);
   const amount = Number(session.amount_total || 0) / 100;
   const statusUrl = `${SITE_URL}/success.html?request_id=${requestId}&ref=${encodeURIComponent(ref)}&session_id=${session.id}`;
-  const customerHtml = emailShell(`<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Payment Submitted</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Thank You — Your Payment Was Submitted</h1><p>Hello ${esc(customer?.first_name || "there")},</p><p>Your secure payment for <strong>${esc(ref)}</strong> was completed through Stripe. Aligned Print & Scan has been notified and will manually confirm the payment record before sending your official payment-received confirmation and appointment instructions.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Amount Submitted:</strong> ${money(amount)}<br><strong style="color:#161c4d">Invoice:</strong> ${esc(request.invoice_number || "Pending")}<br><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}</div><p><a href="${statusUrl}" style="display:inline-block;background:#c8a96b;color:#111522;padding:14px 22px;border-radius:999px;text-decoration:none;font-weight:bold">View Payment Status</a></p>`, `Payment submitted: ${ref}`);
-  if (customer?.email) await sendEmail(customer.email, `Payment submitted: ${ref}`, customerHtml);
+  // Customer sees Payment Submitted immediately on the success page.
+  // Only admin receives the Stripe completed notification so the customer does not get duplicate payment emails.
   const adminHtml = emailShell(`<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Admin Alert</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Payment Submitted — Review Needed</h1><p>A client completed Stripe checkout. Please review Stripe/Supabase and manually update the request to <strong>Payment Received</strong> when confirmed.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}<br><strong style="color:#161c4d">Amount:</strong> ${money(amount)}<br><strong style="color:#161c4d">Stripe Session:</strong> ${esc(session.id)}</div><p><a href="${SITE_URL}/admin-dashboard.html" style="display:inline-block;background:#c8a96b;color:#111522;padding:14px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Open Admin Dashboard</a></p>`, `Payment submitted needs review: ${ref}`);
   await sendEmail(ADMIN_EMAIL, `Payment submitted needs review: ${ref}`, adminHtml);
 }
@@ -44,10 +44,14 @@ Deno.serve(async (req) => {
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
       const requestId = session.metadata?.request_id;
+      const invoiceId = session.metadata?.invoice_id || null;
       if (requestId) {
         const ref = session.metadata?.reference_number || refFromId(requestId);
         const amount = Number(session.amount_total || 0) / 100;
         await supabaseFetch(`service_requests?id=eq.${requestId}`, { method: "PATCH", body: JSON.stringify({ status: "payment_submitted", payment_status: "submitted", stripe_checkout_session_id: session.id, stripe_payment_intent_id: session.payment_intent || null, paid_amount: amount }) });
+        if (invoiceId) {
+          await supabaseFetch(`invoices?id=eq.${invoiceId}`, { method: "PATCH", body: JSON.stringify({ status: "payment_submitted", stripe_checkout_session_id: session.id, stripe_payment_intent_id: session.payment_intent || null, paid_amount: amount, paid_at: new Date().toISOString() }) });
+        }
         await supabaseFetch(`request_status_updates`, { method: "POST", body: JSON.stringify({ service_request_id: requestId, status: "payment_submitted", message: `Stripe checkout completed for ${ref}. Admin payment review needed.`, sent_email: !!RESEND_API_KEY, sent_sms: false }) });
         await notifyPaymentSubmitted(requestId, session);
       }

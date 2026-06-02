@@ -56,3 +56,18 @@ entrypoint = "./functions/stripe-webhook/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/send-order-email/index.ts"
+
+[functions.update-request-status]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/update-request-status/index.ts"
+
+[functions.client-quote-action]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/client-quote-action/index.ts"
+
+[functions.create-additional-invoice]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/create-additional-invoice/index.ts"

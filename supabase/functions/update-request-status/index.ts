@@ -82,6 +82,8 @@ Deno.serve(async (req) => {
       }
     }
 
+    if (status === "quote_expired") update.invoice_status = "expired";
+
     if (status === "appointment_confirmed") update.appointment_confirmed_at = new Date().toISOString();
 
     const updateRes = await supabaseFetch(`service_requests?id=eq.${requestId}`, {
@@ -102,7 +104,7 @@ Deno.serve(async (req) => {
     });
 
     // Trigger the branded customer/admin email for client-facing statuses.
-    const emailStatuses = ["quote_ready", "awaiting_approval", "payment_received", "appointment_confirmed", "completed"];
+    const emailStatuses = ["quote_ready", "awaiting_approval", "payment_received", "appointment_confirmed", "appointment_needs_rescheduling", "quote_expired", "completed"];
     if (emailStatuses.includes(status)) {
       await fetch(`${SUPABASE_URL}/functions/v1/send-order-email`, {
         method: "POST",

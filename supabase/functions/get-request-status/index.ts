@@ -91,8 +91,17 @@ Deno.serve(async (req) => {
     }
     request.customers = customer ? [customer] : [];
 
-    const itemsRes = await supabaseFetch(`invoice_items?select=*&service_request_id=eq.${requestId}&order=created_at.asc`);
+    const itemsRes = await supabaseFetch(`invoice_items?select=*&service_request_id=eq.${requestId}&invoice_id=is.null&order=created_at.asc`);
     const items = (await readJsonOrEmpty(itemsRes)) || [];
+
+    const invoicesRes = await supabaseFetch(`invoices?select=*&service_request_id=eq.${requestId}&order=created_at.asc`);
+    const invoices = (await readJsonOrEmpty(invoicesRes)) || [];
+
+    let additionalItems: any[] = [];
+    if (invoices.length) {
+      const allItemsRes = await supabaseFetch(`invoice_items?select=*&service_request_id=eq.${requestId}&invoice_id=not.is.null&order=created_at.asc`);
+      additionalItems = (await readJsonOrEmpty(allItemsRes)) || [];
+    }
 
     const detailTable = request.service_type === "ron"
       ? "ron_requests"
@@ -116,6 +125,8 @@ Deno.serve(async (req) => {
       ok: true,
       request,
       items,
+      invoices,
+      additional_invoice_items: additionalItems,
       service_detail: serviceDetail,
       file_count: Array.isArray(files) ? files.length : 0,
       reference_number: refFromId(requestId),
