@@ -222,56 +222,102 @@ async function getInvoices(requestId) {
   if (error) { console.warn(error); return []; }
   return data || [];
 }
-function paymentFinancials(request={}, invoices=[]){
-  const serviceValue = Number(request.full_quote_amount || request.quote_amount || request.estimated_total || 0) || 0;
-  const initialDue = Number(request.initial_payment_amount || request.quote_amount || request.estimated_total || 0) || 0;
-  const initialPaid = Number(request.paid_amount || 0) || (['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(request.status||'')) ? initialDue : 0);
-  const finalDue = invoices.reduce((sum, inv) => sum + Number(inv.amount_due || 0), 0);
-  const finalPaid = invoices.reduce((sum, inv) => sum + Number(inv.amount_paid || inv.paid_amount || (['paid','payment_received','final_payment_received'].includes(String(inv.status||'')) ? inv.amount_due : 0) || 0), 0);
-  const paidToDate = initialPaid + finalPaid;
-  const balanceDue = Math.max(0, serviceValue + finalDue - paidToDate);
-  return { serviceValue, initialDue, initialPaid, finalDue, finalPaid, paidToDate, balanceDue };
-}
-function invoiceSummaryHtml(invoices = [], request = selectedRequest) {
-  const f = paymentFinancials(request || {}, invoices || []);
-  const initialStatus = f.initialPaid > 0 ? 'Paid' : (f.initialDue > 0 ? 'Due / Pending' : 'Not Set');
-  const ref = request?.id ? refFromId(request.id).replace('APS-', 'INV-') + '-01' : 'INV-01';
-  const finalRows = (invoices || []).map(inv => {
-    const status = statusLabel(inv.status || 'draft');
+function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
+  const quoteTotal = quoteItems.reduce((sum, item) => sum + Number(item.line_total || (Number(item.quantity || 1) * Number(item.unit_price || 0)) || 0), 0);
+  const requestValue = Number(request?.quote_amount || request?.estimated_total || quoteTotal || 0) || 0;
+  const initial = invoices.find(inv => String(inv.invoice_type || '').includes('initial') || String(inv.invoice_number || '').endsWith('-01')) || null;
+  const finals = invoices.filter(inv => String(inv.invoice_type || '').includes('final') || String(inv.invoice_number || '').endsWith('-02') || String(inv.status || '').includes('final'));
+  const paidStatuses = new Set(['paid','payment_received','final_payment_received']);
+  const initialPaid = paidStatuses.has(String(initial?.status || '').toLowerCase()) || ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(request?.status || '').toLowerCase());
+  const finalPaid = finals.filter(inv => paidStatuses.has(String(inv.status || '').toLowerCase())).reduce((sum, inv) => sum + Number(inv.amount_due || 0), 0);
+  const paidToDate = Number(request?.paid_amount || 0) || (initialPaid ? Number(initial?.amount_due || requestValue || 0) : 0) + finalPaid;
+  const balanceDue = Math.max(0, requestValue - paidToDate);
+
+  const invoiceRows = [];
+  if (initial || requestValue) {
+    invoiceRows.push(`
+      <div class="invoice-summary-item clean-summary-item">
+        <strong>${escapeHtml(initial?.invoice_number || ((request?.invoice_number || refFromId(request?.id || '').replace('APS-','INV-')) + '-01').replace('-01-01','-01'))}</strong>
+        <span>Initial Payment / Dispatch</span>
+        <span>${initialPaid ? 'Paid' : 'Due / Pending'} · ${money(Number(initial?.amount_due || requestValue || 0))}</span>
+        ${initial?.receipt_url || initial?.receipt_pdf_url ? `<a href="${escapeHtml(initial.receipt_url || initial.receipt_pdf_url)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
+      </div>`);
+  }
+  finals.forEach(inv => {
+    const status = statusLabel(inv.status || 'final_balance_due');
     const receipt = inv.receipt_url || inv.receipt_pdf_url;
-    const paid = Number(inv.amount_paid || inv.paid_amount || 0);
-    return `<div class="invoice-summary-item"><strong>${escapeHtml(inv.invoice_number || 'Final Balance')}</strong><span>${status}</span><span>${money(inv.amount_due || 0)}</span><small>Paid: ${money(paid)}</small>${receipt ? `<a href="${escapeHtml(receipt)}" target="_blank" rel="noopener">View Receipt</a>` : ''}</div>`;
-  }).join('');
-  return `<div class="financial-summary-grid">
-    <div><span class="small-label">Service Value</span><strong>${money(f.serviceValue)}</strong></div>
-    <div><span class="small-label">Paid To Date</span><strong>${money(f.paidToDate)}</strong></div>
-    <div><span class="small-label">Balance Due</span><strong>${money(f.balanceDue)}</strong></div>
-  </div>
-  <div class="invoice-summary-list">
-    <div class="invoice-summary-item"><strong>${escapeHtml(ref)}</strong><span>Initial Payment / Dispatch</span><span>${money(f.initialDue)}</span><small>${initialStatus}</small></div>
-    ${finalRows || '<p class="admin-muted">No final balance invoice has been issued yet.</p>'}
-  </div>`;
+    invoiceRows.push(`
+      <div class="invoice-summary-item clean-summary-item">
+        <strong>${escapeHtml(inv.invoice_number || 'Final Balance')}</strong>
+        <span>Final Balance</span>
+        <span>${status} · ${money(inv.amount_due || 0)}</span>
+        ${receipt ? `<a href="${escapeHtml(receipt)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
+      </div>`);
+  });
+  if (!finals.length) {
+    invoiceRows.push('<div class="invoice-summary-item clean-summary-item"><strong>Final Balance</strong><span>Not issued</span><span>$0.00</span></div>');
+  }
+
+  return `
+    <div class="financial-summary-grid">
+      <div><span class="small-label">Service Value</span><strong>${money(requestValue)}</strong></div>
+      <div><span class="small-label">Paid to Date</span><strong>${money(paidToDate)}</strong></div>
+      <div><span class="small-label">Balance Due</span><strong>${money(balanceDue)}</strong></div>
+    </div>
+    <div class="invoice-summary-list clean-invoice-summary">${invoiceRows.join('')}</div>
+  `;
 }
-function workflowKindForRequest(request={}){
-  const type=String(request.service_type||'').toLowerCase();
-  if(type==='ron') return 'ron';
-  if(type==='mobile') return 'mobile';
+
+function workflowKind(service){
+  const s = String(service || '').toLowerCase();
+  if (s === 'ron' || s.includes('remote')) return 'ron';
+  if (s === 'mobile' || s.includes('notary')) return 'mobile';
   return 'document';
 }
-function internalWorkflowGuide(request={}, invoices=[]){
-  const kind=workflowKindForRequest(request);
-  const workflows={
-    ron:{title:'RON Workflow',steps:[['under_review','Request Received'],['awaiting_approval','Quote Prepared'],['payment_received','Payment Received'],['appointment_confirmed','RON Session Confirmed'],['completed','Completed']]},
-    mobile:{title:'Mobile Notary Workflow',steps:[['under_review','Request Received'],['awaiting_approval','Quote Prepared'],['payment_received','Initial Payment Received'],['appointment_confirmed','Appointment Confirmed'],['final_balance_due','Final Balance Due'],['final_payment_received','Final Payment Received'],['completed','Completed']]},
-    document:{title:'Document Services Workflow',steps:[['under_review','Request Received'],['awaiting_approval','Quote Prepared'],['payment_received','Production Payment Received'],['appointment_confirmed','Fulfillment Scheduled'],['final_balance_due','Final Balance Due'],['final_payment_received','Final Payment Received'],['completed','Completed']]}
-  };
-  const workflow=workflows[kind]||workflows.document;
-  const aliases={quote_ready:'awaiting_approval',quote_sent:'awaiting_approval',awaiting_payment:'awaiting_approval',payment_pending:'awaiting_approval',payment_submitted:'payment_received',paid_confirmed:'payment_received',scheduled:'appointment_confirmed',scheduling:'payment_received',final_balance_payment_submitted:'final_balance_due'};
-  const status=aliases[request.status]||request.status||'under_review';
-  let idx=workflow.steps.findIndex(s=>s[0]===status);
-  if(idx<0) idx=0;
-  const next=workflow.steps[Math.min(idx+1, workflow.steps.length-1)]?.[1] || 'Review request';
-  return `<div class="admin-detail-section workflow-guide-card"><h3>Internal Workflow Guide</h3><p class="admin-muted">${workflow.title} · Current step highlighted for internal review.</p><div class="admin-workflow-steps">${workflow.steps.map((s,i)=>`<div class="admin-workflow-step ${i<idx?'done':''} ${i===idx?'current':''}"><span>${String(i+1).padStart(2,'0')}</span><strong>${escapeHtml(s[1])}</strong></div>`).join('')}</div><div class="next-action-callout"><span class="small-label">Next Recommended Action</span><strong>${escapeHtml(next)}</strong></div></div>`;
+function internalWorkflowGuide(request){
+  const kind = workflowKind(request?.service_type);
+  const label = kind === 'ron' ? 'RON Workflow' : kind === 'mobile' ? 'Mobile Notary Workflow' : 'Document Services Workflow';
+  const steps = {
+    ron: [
+      ['under_review','Request Received'],
+      ['awaiting_approval','Quote Prepared'],
+      ['payment_received','Payment Received'],
+      ['appointment_confirmed','RON Session Confirmed'],
+      ['completed','Completed']
+    ],
+    mobile: [
+      ['under_review','Request Received'],
+      ['awaiting_approval','Quote Prepared'],
+      ['payment_received','Reservation Payment Received'],
+      ['appointment_confirmed','Appointment Confirmed'],
+      ['final_balance_due','Final Balance Due'],
+      ['final_payment_received','Final Payment Received'],
+      ['completed','Completed']
+    ],
+    document: [
+      ['under_review','Request Received'],
+      ['awaiting_approval','Quote Prepared'],
+      ['payment_received','Production Payment Received'],
+      ['appointment_confirmed','Fulfillment Scheduled'],
+      ['final_balance_due','Final Balance Due'],
+      ['final_payment_received','Final Payment Received'],
+      ['completed','Completed']
+    ]
+  }[kind];
+  const aliases = { quote_ready:'awaiting_approval', quote_sent:'awaiting_approval', awaiting_payment:'awaiting_approval', payment_pending:'awaiting_approval', payment_submitted:'payment_received', paid_confirmed:'payment_received', scheduled:'appointment_confirmed', scheduling:'payment_received' };
+  const current = aliases[request?.status] || request?.status || 'under_review';
+  let index = steps.findIndex(s => s[0] === current);
+  if (index < 0) index = 0;
+  const next = steps[Math.min(index + 1, steps.length - 1)]?.[1] || steps[index]?.[1] || 'Review request';
+  return `
+    <div class="admin-detail-section internal-workflow-card">
+      <h3>Internal Workflow Guide</h3>
+      <p class="admin-muted">${label} · Current step highlighted for internal review.</p>
+      <div class="internal-workflow-steps">
+        ${steps.map((step, i) => `<div class="internal-workflow-step ${i < index ? 'done' : ''} ${i === index ? 'current' : ''}"><span>${String(i+1).padStart(2,'0')}</span><strong>${escapeHtml(step[1])}</strong></div>`).join('')}
+      </div>
+      <p class="admin-muted"><span class="small-label">Next recommended action</span><br><strong>${escapeHtml(next)}</strong></p>
+    </div>`;
 }
 function detailMap(obj) {
   if (!obj) return '<p class="admin-muted">No detail record found yet.</p>';
@@ -335,36 +381,30 @@ async function selectRequest(id) {
     <div class="admin-detail-grid">
       <div><span class="small-label">Client</span><h3>${escapeHtml(customer?.first_name || '')} ${escapeHtml(customer?.last_name || '')}</h3><p>${escapeHtml(customer?.email || '')}<br>${escapeHtml(customer?.phone || '')}<br><strong>Prefers:</strong> ${escapeHtml(customer?.preferred_contact || 'Not provided')}</p></div>
       <div><span class="small-label">Service</span><h3>${serviceLabel(selectedRequest.service_type)}</h3><p>${selectedRequest.preferred_date || 'No preferred date'} · ${selectedRequest.preferred_time_window || 'No time selected'}</p></div>
-      <div><span class="small-label">Service Value</span><h3>${money(paymentFinancials(selectedRequest, invoices).serviceValue)}</h3><p>${statusLabel(selectedRequest.status)}${isArchived(selectedRequest) ? ' · Archived' : ''}</p></div>
-      <div><span class="small-label">Paid / Balance</span><h3>${money(paymentFinancials(selectedRequest, invoices).paidToDate)}</h3><p>Balance: ${money(paymentFinancials(selectedRequest, invoices).balanceDue)}</p></div>
+      <div><span class="small-label">Current Status</span><h3>${statusLabel(selectedRequest.status)}</h3><p>${isArchived(selectedRequest) ? 'Archived' : 'Active request'}</p></div>
       <div><span class="small-label">Page Count</span><h3>${selectedRequest.detected_pdf_page_count || '—'}</h3><p>Detected PDF pages when available</p></div>
     </div>
 
-    ${internalWorkflowGuide(selectedRequest, invoices)}
+    ${internalWorkflowGuide(selectedRequest)}
 
     <div class="admin-detail-section invoice-builder-card">
       <h3>Full Service Quote Builder</h3>
-      <p class="admin-muted">Build the full estimated service quote. Use itemized language that separates mobile appointment base, extended travel, notarial acts, document production, scanning, copies, courier delivery, witnesses, and custom fees.</p>
+      <p class="admin-muted">Build the full estimated service quote here. Saving the quote updates the customer-facing quote; status buttons control when emails are sent.</p>
       <div class="invoice-preset-row"><select id="invoicePresetSelect"><option value="">Add common line item…</option></select><button id="addPresetInvoiceRow" class="btn dark" type="button">Add Selected</button></div><div id="invoiceRows" class="invoice-rows"></div>
       <div class="invoice-total-line"><strong>Invoice Total</strong><span id="invoiceTotalPreview">$0.00</span></div>
-      <label>Initial payment due now</label>
-      <input id="initialPaymentAmount" type="number" min="0" step="0.01" value="${Number(selectedRequest.initial_payment_amount || selectedRequest.quote_amount || selectedRequest.estimated_total || 0).toFixed(2)}" placeholder="Amount due before dispatch / production">
-      <p class="admin-muted small-admin-note">This is the upfront payment charged before dispatch, production, scheduling, or fulfillment. The full quote total can be higher if a final balance is expected later.</p>
-      <label>Quote / client note</label>
+      <label>Invoice / client note</label>
       <textarea id="invoiceNote" placeholder="Premium client-facing note, preparation instructions, appointment readiness, or quote terms…">${escapeHtml(selectedRequest.quote_notes || selectedRequest.customer_message || '')}</textarea>
-      <div class="status-actions invoice-actions">
-        <button id="addInvoiceRow" class="btn dark" type="button">Add Line Item</button>
-        <button id="saveInvoiceBtn" class="btn primary" type="button">Save Full Quote + Initial Payment</button>
-        <button id="createAdditionalInvoiceBtn" class="btn dark" type="button">Issue Final Balance Invoice</button>
-        <button id="openStatusPageBtn" class="btn dark" type="button">Open Client Status Page</button>
+      <div class="dashboard-action-groups">
+        <div class="dashboard-action-group"><span class="small-label">Quote Actions</span><div class="status-actions invoice-actions"><button id="addInvoiceRow" class="btn dark" type="button">Add Line Item</button><button id="saveInvoiceBtn" class="btn primary" type="button">Save Quote</button><button id="openStatusPageBtn" class="btn dark" type="button">Open Client Status Page</button></div></div>
+        <div class="dashboard-action-group"><span class="small-label">Payment Actions</span><div class="status-actions invoice-actions"><button id="createAdditionalInvoiceBtn" class="btn dark" type="button">Issue Final Balance Invoice</button></div></div>
       </div>
-      <p class="admin-muted small-admin-note">Embedded Stripe payment is created from the customer status page after the Stripe Edge Function is deployed and your live keys are saved as environment secrets.</p>
+      <p class="admin-muted small-admin-note">Save the quote first. Then use Status Update to send Quote Ready or move the request forward.</p>
     </div>
 
     <div class="admin-detail-section invoice-summary-card">
       <h3>Invoice Payment Summary</h3>
-      <p class="admin-muted">Invoice #1 is the upfront/dispatch quote. Final Balance invoices appear here after they are issued and paid.</p>
-      ${invoiceSummaryHtml(invoices, selectedRequest)}
+      <p class="admin-muted">Track the full quote value, paid-to-date amount, initial payment, and final balance here.</p>
+      ${invoiceSummaryHtml(invoices, selectedRequest, invoiceItems)}
     </div>
 
     <div class="admin-detail-section appointment-editor-card">
@@ -576,17 +616,13 @@ async function saveInvoice() {
   const total = items.reduce((sum, item) => sum + item.line_total, 0);
   const invoiceNumber = selectedRequest.invoice_number || refFromId(selectedRequest.id).replace('APS-', 'INV-');
   const note = $('#invoiceNote')?.value || '';
-  const initialPayment = Number($('#initialPaymentAmount')?.value || total) || 0;
   const update = {
-    full_quote_amount: total,
     quote_amount: total,
-    initial_payment_amount: initialPayment,
     quote_notes: note,
     customer_message: note,
     invoice_number: invoiceNumber,
     invoice_status: 'draft',
-    payment_status: selectedRequest.payment_status || 'unpaid',
-    status: 'quote_ready'
+    payment_status: selectedRequest.payment_status || 'unpaid'
   };
   const { error: updateError } = await adminClient.from('service_requests').update(update).eq('id', selectedRequest.id);
   if (updateError) { alert(updateError.message); return; }
@@ -597,9 +633,9 @@ async function saveInvoice() {
     if (itemError) { alert(itemError.message); return; }
   }
   Object.assign(selectedRequest, update);
-  await adminClient.from('request_status_updates').insert({ service_request_id: selectedRequest.id, status: 'quote_ready', message: 'Invoice/quote prepared for client review.', sent_email: false, sent_sms: false });
+  await adminClient.from('request_status_updates').insert({ service_request_id: selectedRequest.id, status: selectedRequest.status || 'under_review', message: 'Quote saved by admin. No customer email sent.', sent_email: false, sent_sms: false });
   renderStats(); renderRequestList();
-  showToast('Invoice saved. Status set to Quote Ready.');
+  showToast('Quote saved. Use the Quote Ready status button when you are ready to notify the customer.');
 }
 async function sendInvoiceEmail() {
   if (!selectedRequest) return;
