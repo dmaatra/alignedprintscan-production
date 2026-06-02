@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
       throw new Error("Missing request_id.");
     }
 
-    const requestRes = await supabaseFetch(`service_requests?select=id,service_type,quote_amount,estimated_total,initial_payment_amount,full_quote_amount,invoice_number,customers(email,first_name,last_name)&id=eq.${requestId}&limit=1`);
+    const requestRes = await supabaseFetch(`service_requests?select=id,service_type,quote_amount,estimated_total,invoice_number,customers(email,first_name,last_name)&id=eq.${requestId}&limit=1`);
     const requestRows = await readJsonOrEmpty(requestRes);
     const request = requestRows?.[0];
     if (!request) return json({ ok: false, error: "Request not found." }, 404);
@@ -86,9 +86,20 @@ Deno.serve(async (req) => {
       if (["paid", "void"].includes(invoice.status)) throw new Error("This invoice is not payable.");
     }
 
-    const fullQuoteTotal = Number(request.full_quote_amount || request.quote_amount || request.estimated_total || 0);
-    const initialPaymentTotal = Number(request.initial_payment_amount || request.quote_amount || request.estimated_total || 0);
-    const total = invoiceId ? Number(invoice?.amount_due || 0) : initialPaymentTotal;
+    const itemsTotal = items.reduce((sum: number, item: any) => {
+      const quantity = Number(item.quantity || 1);
+      const unit = Number(item.unit_price || 0);
+      return sum + Number(item.line_total || quantity * unit || 0);
+    }, 0);
+
+    // Single source of truth for Stripe:
+    // - Final balance payments use the selected invoice amount_due.
+    // - Initial payments use the saved service request quote_amount.
+    // - Only fall back to item totals / estimated totals if quote_amount is not set.
+    const total = invoiceId
+      ? Number(invoice?.amount_due || 0)
+      : Number(request.quote_amount || itemsTotal || request.estimated_total || 0);
+
     if (!total || total <= 0) throw new Error("Invoice amount is not ready yet.");
 
     const ref = refFromId(requestId);
@@ -103,8 +114,8 @@ Deno.serve(async (req) => {
     if (invoiceId) params.set("metadata[invoice_id]", invoiceId);
     if (customer?.email) params.set("customer_email", customer.email);
 
-    const useFullQuoteItems = invoiceId || (items.length && Math.abs(total - fullQuoteTotal) < 0.01);
-    if (useFullQuoteItems && items.length) {
+    const useItemizedCheckout = invoiceId && items.length;
+    if (useItemizedCheckout) {
       items.forEach((item: any, idx: number) => {
         const unitAmount = Math.round(Number(item.unit_price || item.line_total || 0) * 100);
         const qty = Math.max(1, Math.round(Number(item.quantity || 1)));
