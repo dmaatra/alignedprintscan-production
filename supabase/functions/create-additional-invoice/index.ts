@@ -63,16 +63,19 @@ Deno.serve(async (req) => {
     const requestRows = await readJsonOrEmpty(requestRes);
     if (!requestRows?.[0]) throw new Error("Request not found.");
 
-    const invoiceRowsRes = await supabaseFetch(`invoices?select=id,invoice_number&service_request_id=eq.${requestId}&order=created_at.asc`);
+    const invoiceRowsRes = await supabaseFetch(`invoices?select=id,invoice_number,status&service_request_id=eq.${requestId}&order=created_at.asc`);
     const existing = (await readJsonOrEmpty(invoiceRowsRes)) || [];
+    const openFinal = existing.find((row: any) => {
+      const status = String(row.status || "").toLowerCase();
+      const number = String(row.invoice_number || "");
+      return number.endsWith("-02") && !["paid", "payment_received", "final_payment_received", "void", "cancelled"].includes(status);
+    });
     const suffixes = existing
       .map((row: any) => String(row.invoice_number || "").match(/-(\d+)$/)?.[1])
       .filter(Boolean)
       .map((n: string) => Number(n));
-    // Invoice #1 lives on service_requests as the upfront/initial payment.
-    // Final balance invoices begin at -02.
-    const nextNumber = Math.max(2, suffixes.length ? Math.max(...suffixes) + 1 : 2);
-    const invoiceNumber = `INV-${shortCode(requestId)}-${String(nextNumber).padStart(2, "0")}`;
+    const nextNumber = openFinal ? Number(String(openFinal.invoice_number || "").match(/-(\d+)$/)?.[1] || 2) : Math.max(2, suffixes.length ? Math.max(...suffixes) + 1 : 2);
+    const invoiceNumber = openFinal?.invoice_number || `INV-${shortCode(requestId)}-${String(nextNumber).padStart(2, "0")}`;
 
     const total = items.reduce((sum: number, item: any) => {
       const quantity = Number(item.quantity || 1);
@@ -81,21 +84,36 @@ Deno.serve(async (req) => {
     }, 0);
     if (total <= 0) throw new Error("Final balance invoice total must be greater than zero.");
 
-    const invoiceRes = await supabaseFetch("invoices", {
-      method: "POST",
-      body: JSON.stringify({
-        service_request_id: requestId,
-        invoice_number: invoiceNumber,
-        invoice_type: "final_balance",
-        status: "final_balance_due",
-        amount_due: total,
-        amount_paid: 0,
-        paid_amount: 0,
-        note,
-      }),
-    });
-    if (!invoiceRes.ok) throw new Error(await invoiceRes.text());
-    const invoice = (await invoiceRes.json())?.[0];
+    let invoice: any = null;
+    if (openFinal?.id) {
+      const invoiceRes = await supabaseFetch(`invoices?id=eq.${openFinal.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "final_balance_due",
+          amount_due: total,
+          note,
+        }),
+      });
+      if (!invoiceRes.ok) throw new Error(await invoiceRes.text());
+      invoice = (await invoiceRes.json())?.[0];
+      await supabaseFetch(`invoice_items?invoice_id=eq.${openFinal.id}`, { method: "DELETE" });
+    } else {
+      const invoiceRes = await supabaseFetch("invoices", {
+        method: "POST",
+        body: JSON.stringify({
+          service_request_id: requestId,
+          invoice_number: invoiceNumber,
+          invoice_type: "final_balance",
+          status: "final_balance_due",
+          amount_due: total,
+          amount_paid: 0,
+          paid_amount: 0,
+          note,
+        }),
+      });
+      if (!invoiceRes.ok) throw new Error(await invoiceRes.text());
+      invoice = (await invoiceRes.json())?.[0];
+    }
 
     const itemRows = items.map((item: any, index: number) => {
       const quantity = Number(item.quantity || 1);
