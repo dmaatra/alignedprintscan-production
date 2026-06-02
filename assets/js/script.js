@@ -363,19 +363,24 @@ function finalBalanceInvoices(invoices=[]){
 }
 
 function paymentSchedulePanel({request={}, invoices=[], quoteItems=[], additionalItems=[], quoteAmount=0}={}){
-  const quoteTotal = Number(quoteAmount || invoiceTotal(quoteItems) || request.quote_amount || request.estimated_total || 0) || 0;
+  const quoteItemsTotal = invoiceTotal(quoteItems);
+  const serviceQuote = Number(request.quote_amount || quoteAmount || quoteItemsTotal || request.estimated_total || 0) || 0;
   const initial = findInitialInvoice(invoices);
   const finals = finalBalanceInvoices(invoices);
-  const activeFinal = finals.find(inv => !['paid','void','cancelled','payment_submitted'].includes(String(inv.status||'').toLowerCase()));
-  const paidFinals = finals.filter(inv => ['paid','payment_received','final_payment_received'].includes(String(inv.status||'').toLowerCase()));
-  const initialPaid = ['payment_received','paid','paid_confirmed','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(request.status || '').toLowerCase()) || ['paid','payment_received'].includes(String(initial?.status || '').toLowerCase());
-  const paidToDate = Number(request.paid_amount || 0) || (initialPaid ? Number(initial?.amount_due || quoteTotal || 0) : 0) + paidFinals.reduce((sum, inv)=>sum+Number(inv.amount_due||0),0);
+  const paidStatuses = new Set(['paid','payment_received','final_payment_received']);
+  const requestStatus = String(request.status || '').toLowerCase();
+  const initialAmount = Number(initial?.amount_due || serviceQuote || 0) || 0;
+  const initialPaid = paidStatuses.has(String(initial?.status || '').toLowerCase()) || ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(requestStatus);
+  const paidFinals = finals.filter(inv => paidStatuses.has(String(inv.status || '').toLowerCase())).reduce((sum, inv)=>sum+Number(inv.amount_paid || inv.paid_amount || inv.amount_due || 0),0);
+  const paidToDate = Number(request.paid_amount || 0) || ((initialPaid ? initialAmount : 0) + paidFinals);
+  const activeFinal = finals.find(inv => !['paid','void','cancelled','payment_submitted','final_payment_received'].includes(String(inv.status||'').toLowerCase()));
   const finalDueAmount = activeFinal ? Number(activeFinal.amount_due || 0) : 0;
-  const initialAmount = Number(initial?.amount_due || quoteTotal || 0) || 0;
-  const showInitialPay = ['awaiting_payment','payment_pending'].includes(String(request.status || '').toLowerCase()) && initialAmount > 0 && !activeFinal;
-  const showFinalPay = activeFinal && finalDueAmount > 0;
+  const showInitialPay = ['awaiting_payment','payment_pending'].includes(requestStatus) && initialAmount > 0 && !initialPaid && !activeFinal;
+  const showFinalPay = !!activeFinal && finalDueAmount > 0;
+  const balanceDue = showFinalPay ? finalDueAmount : (showInitialPay ? initialAmount : Math.max(0, serviceQuote - paidToDate));
 
-  const initialNumber = initial?.invoice_number || (request.invoice_number ? `${String(request.invoice_number).replace(/^QUOTE-/,'INV-')}-01`.replace(/-01-01$/,'-01') : '');
+  const initialNumber = initial?.invoice_number || (request.invoice_number ? `${String(request.invoice_number).replace(/^QUOTE-/,'INV-')}-01`.replace(/-01-01$/,'-01') : 'Initial payment');
+
   const finalHtml = finals.length ? finals.map(inv => {
     const invItems = additionalItems.filter(item => String(item.invoice_id || '') === String(inv.id || ''));
     const total = Number(inv.amount_due || invoiceTotal(invItems) || 0);
@@ -392,19 +397,23 @@ function paymentSchedulePanel({request={}, invoices=[], quoteItems=[], additiona
         ${payable ? `<button class="btn primary payAdditionalInvoice" data-invoice-id="${escapePublic(inv.id)}" type="button">Pay Final Balance</button>` : ''}
       </div>
     </div>`;
-  }).join('') : `<div class="payment-schedule-row"><span class="small-label">Final Balance</span><strong>Not issued</strong><span>Additional on-site or fulfillment charges will appear here only if issued.</span></div>`;
+  }).join('') : `<div class="payment-schedule-row final-balance-row not-issued">
+      <span class="small-label">Final Balance</span>
+      <strong>Not issued</strong>
+      <span>Additional on-site or fulfillment charges will appear here only if issued.</span>
+    </div>`;
 
   return `<div class="next-panel payment-schedule-panel reveal">
     <h3>Payment Schedule</h3>
     <div class="request-public-detail-grid">
-      <div><span class="small-label">Service Quote</span><strong>${money(quoteTotal)}</strong></div>
+      <div><span class="small-label">Service Quote</span><strong>${money(serviceQuote)}</strong></div>
       <div><span class="small-label">Paid to Date</span><strong>${money(paidToDate)}</strong></div>
-      <div><span class="small-label">Balance Due</span><strong>${money((showFinalPay ? finalDueAmount : (showInitialPay ? initialAmount : Math.max(0, quoteTotal - paidToDate))))}</strong></div>
+      <div><span class="small-label">Balance Due</span><strong>${money(balanceDue)}</strong></div>
     </div>
     <div class="payment-schedule-list">
-      <div class="payment-schedule-row">
+      <div class="payment-schedule-row initial-payment-row">
         <span class="small-label">Initial Payment</span>
-        <strong>${escapePublic(initialNumber || 'Initial payment')}</strong>
+        <strong>${escapePublic(initialNumber)}</strong>
         <span>${initialPaid ? 'Paid' : 'Due'} · ${money(initialAmount)}</span>
         ${showInitialPay ? `<button id="startPaymentBtn" class="btn primary" type="button">Pay Initial Payment</button>` : ''}
         ${request.receipt_url || request.receipt_pdf_url ? `<a class="btn dark" href="${escapePublic(request.receipt_url || request.receipt_pdf_url)}" target="_blank" rel="noopener">View Receipt</a>` : ''}

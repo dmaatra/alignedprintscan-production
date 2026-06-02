@@ -223,44 +223,46 @@ async function getInvoices(requestId) {
   return data || [];
 }
 function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
-  const quoteTotal = quoteItems.reduce((sum, item) => sum + Number(item.line_total || (Number(item.quantity || 1) * Number(item.unit_price || 0)) || 0), 0);
-  const requestValue = Number(request?.quote_amount || request?.estimated_total || quoteTotal || 0) || 0;
+  const quoteItemsTotal = quoteItems.reduce((sum, item) => sum + Number(item.line_total || (Number(item.quantity || 1) * Number(item.unit_price || 0)) || 0), 0);
+  const serviceValue = Number(request?.quote_amount || quoteItemsTotal || request?.estimated_total || 0) || 0;
   const initial = invoices.find(inv => String(inv.invoice_type || '').includes('initial') || String(inv.invoice_number || '').endsWith('-01')) || null;
   const finals = invoices.filter(inv => String(inv.invoice_type || '').includes('final') || String(inv.invoice_number || '').endsWith('-02') || String(inv.status || '').includes('final'));
   const paidStatuses = new Set(['paid','payment_received','final_payment_received']);
-  const initialPaid = paidStatuses.has(String(initial?.status || '').toLowerCase()) || ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(request?.status || '').toLowerCase());
-  const finalPaid = finals.filter(inv => paidStatuses.has(String(inv.status || '').toLowerCase())).reduce((sum, inv) => sum + Number(inv.amount_due || 0), 0);
-  const paidToDate = Number(request?.paid_amount || 0) || (initialPaid ? Number(initial?.amount_due || requestValue || 0) : 0) + finalPaid;
-  const balanceDue = Math.max(0, requestValue - paidToDate);
+  const requestStatus = String(request?.status || '').toLowerCase();
+  const initialPaid = paidStatuses.has(String(initial?.status || '').toLowerCase()) || ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(requestStatus);
+  const initialAmount = Number(initial?.amount_due || serviceValue || 0) || 0;
+  const paidFinals = finals.filter(inv => paidStatuses.has(String(inv.status || '').toLowerCase())).reduce((sum, inv) => sum + Number(inv.amount_paid || inv.paid_amount || inv.amount_due || 0), 0);
+  const paidToDate = Number(request?.paid_amount || 0) || ((initialPaid ? initialAmount : 0) + paidFinals);
+  const balanceDue = Math.max(0, serviceValue - paidToDate);
 
-  const invoiceRows = [];
-  if (initial || requestValue) {
-    invoiceRows.push(`
-      <div class="invoice-summary-item clean-summary-item">
-        <strong>${escapeHtml(initial?.invoice_number || ((request?.invoice_number || refFromId(request?.id || '').replace('APS-','INV-')) + '-01').replace('-01-01','-01'))}</strong>
-        <span>Initial Payment / Dispatch</span>
-        <span>${initialPaid ? 'Paid' : 'Due / Pending'} · ${money(Number(initial?.amount_due || requestValue || 0))}</span>
-        ${initial?.receipt_url || initial?.receipt_pdf_url ? `<a href="${escapeHtml(initial.receipt_url || initial.receipt_pdf_url)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
-      </div>`);
-  }
-  finals.forEach(inv => {
-    const status = statusLabel(inv.status || 'final_balance_due');
-    const receipt = inv.receipt_url || inv.receipt_pdf_url;
-    invoiceRows.push(`
-      <div class="invoice-summary-item clean-summary-item">
-        <strong>${escapeHtml(inv.invoice_number || 'Final Balance')}</strong>
-        <span>Final Balance</span>
-        <span>${status} · ${money(inv.amount_due || 0)}</span>
-        ${receipt ? `<a href="${escapeHtml(receipt)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
-      </div>`);
-  });
-  if (!finals.length) {
-    invoiceRows.push('<div class="invoice-summary-item clean-summary-item"><strong>Final Balance</strong><span>Not issued</span><span>$0.00</span></div>');
+  const initialNumber = initial?.invoice_number || `${refFromId(request?.id || '').replace('APS-', 'INV-')}-01`;
+  const invoiceRows = [`
+    <div class="invoice-summary-item clean-summary-item">
+      <strong>${escapeHtml(initialNumber)}</strong>
+      <span>Initial Payment / Dispatch</span>
+      <span>${initialPaid ? 'Paid' : 'Due / Pending'} · ${money(initialAmount)}</span>
+      ${initial?.receipt_url || initial?.receipt_pdf_url ? `<a href="${escapeHtml(initial.receipt_url || initial.receipt_pdf_url)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
+    </div>`];
+
+  if (finals.length) {
+    finals.forEach(inv => {
+      const status = statusLabel(inv.status || 'final_balance_due');
+      const receipt = inv.receipt_url || inv.receipt_pdf_url;
+      invoiceRows.push(`
+        <div class="invoice-summary-item clean-summary-item">
+          <strong>${escapeHtml(inv.invoice_number || 'Final Balance')}</strong>
+          <span>Final Balance</span>
+          <span>${status} · ${money(inv.amount_due || 0)}</span>
+          ${receipt ? `<a href="${escapeHtml(receipt)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
+        </div>`);
+    });
+  } else {
+    invoiceRows.push('<div class="invoice-summary-item clean-summary-item"><strong>Final Balance</strong><span>Not issued</span><span>Only appears when a final balance invoice is issued.</span></div>');
   }
 
   return `
     <div class="financial-summary-grid">
-      <div><span class="small-label">Service Value</span><strong>${money(requestValue)}</strong></div>
+      <div><span class="small-label">Service Value</span><strong>${money(serviceValue)}</strong></div>
       <div><span class="small-label">Paid to Date</span><strong>${money(paidToDate)}</strong></div>
       <div><span class="small-label">Balance Due</span><strong>${money(balanceDue)}</strong></div>
     </div>
@@ -618,6 +620,7 @@ async function saveInvoice() {
   const note = $('#invoiceNote')?.value || '';
   const update = {
     quote_amount: total,
+    estimated_total: total,
     quote_notes: note,
     customer_message: note,
     invoice_number: invoiceNumber,
@@ -626,7 +629,7 @@ async function saveInvoice() {
   };
   const { error: updateError } = await adminClient.from('service_requests').update(update).eq('id', selectedRequest.id);
   if (updateError) { alert(updateError.message); return; }
-  await adminClient.from('invoice_items').delete().eq('service_request_id', selectedRequest.id);
+  await adminClient.from('invoice_items').delete().eq('service_request_id', selectedRequest.id).is('invoice_id', null);
   const rows = items.map(item => ({ ...item, service_request_id: selectedRequest.id }));
   if (rows.length) {
     const { error: itemError } = await adminClient.from('invoice_items').insert(rows);
