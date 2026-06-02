@@ -329,19 +329,35 @@ const publicStatusCopy={
   declined:{eyebrow:'Request Closed',headline:'Request Declined',lead:'This request is currently marked declined.',title:'Declined',body:'If circumstances have changed, you may submit a new request or contact support for clarification.'}
 };
 function statusCopy(status){return publicStatusCopy[status]||publicStatusCopy.under_review;}
+function statusText(value){
+  return String(value||'draft').replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase());
+}
 function additionalInvoicesPanel(invoices=[], additionalItems=[], requestId=null){
   if(!Array.isArray(invoices) || !invoices.length) return '';
-  const cards = invoices.map(inv=>{
+  const visibleInvoices=invoices.filter(inv=>!['draft','void'].includes(String(inv.status||'draft').toLowerCase()));
+  if(!visibleInvoices.length) return '';
+  const cards = visibleInvoices.map(inv=>{
     const items = additionalItems.filter(item => String(item.invoice_id || '') === String(inv.id || ''));
     const total = Number(inv.amount_due || items.reduce((sum,item)=>sum+Number(item.line_total||0),0) || 0);
     const statusRaw = String(inv.status || 'draft').toLowerCase();
-    const status = statusRaw.replaceAll('_',' ');
-    const payable = !['paid','void','payment_submitted'].includes(statusRaw) && total > 0;
-    const isPaid = ['paid','payment_received','final_payment_received'].includes(statusRaw);
+    const payable = ['final_balance_due','awaiting_payment','payment_pending'].includes(statusRaw) && total > 0;
+    const isPaid = ['paid','payment_received','final_payment_received','payment_submitted'].includes(statusRaw);
     const receiptUrl = inv.receipt_url || inv.receipt_pdf_url || '';
-    return `<div class="next-panel additional-invoice-card reveal"><h3>${escapePublic(inv.invoice_number || 'Final Balance Invoice')}</h3><p>${escapePublic(inv.note || 'Final balance / additional services attached to this order.')}</p>${invoiceList(items)}<p class="admin-muted"><strong>Status:</strong> ${escapePublic(status)} · <strong>Total:</strong> ${money(total)}</p>${receiptUrl?`<p><a class="btn dark" href="${escapePublic(receiptUrl)}" target="_blank" rel="noopener">View Receipt</a></p>`:''}${payable?`<button class="btn primary payAdditionalInvoice" data-invoice-id="${escapePublic(inv.id)}" type="button">Pay Final Balance</button>`:''}${isPaid&&!receiptUrl?`<p class="admin-muted">Receipt link will appear here when available from the payment processor.</p>`:''}</div>`;
+    const title = inv.invoice_number || 'Final Balance Invoice';
+    const label = isPaid ? 'Paid' : payable ? 'Due Now' : statusText(statusRaw);
+    return `<div class="next-panel additional-invoice-card reveal"><h3>${escapePublic(title)}</h3><p>${escapePublic(inv.note || 'Final balance for remaining or additional services attached to this order.')}</p>${invoiceList(items)}<p class="admin-muted"><strong>Status:</strong> ${escapePublic(label)} · <strong>Total:</strong> ${money(total)}</p>${receiptUrl?`<p><a class="btn dark" href="${escapePublic(receiptUrl)}" target="_blank" rel="noopener">View Receipt</a></p>`:''}${payable?`<button class="btn primary payAdditionalInvoice" data-invoice-id="${escapePublic(inv.id)}" type="button">Pay Final Balance</button>`:''}${isPaid&&!receiptUrl?`<p class="admin-muted">Receipt link will appear here when available from the payment processor.</p>`:''}</div>`;
   }).join('');
-  return `<div class="additional-invoices-wrap"><div class="next-panel reveal"><h3>Invoice & Balance Summary</h3><p>Invoice #1 covers approved upfront/dispatch charges. A final balance invoice may appear here if additional on-site or fulfillment services are added.</p></div>${cards}</div>`;
+  return `<div class="additional-invoices-wrap"><div class="next-panel reveal"><h3>Invoice & Balance Summary</h3><p>Initial payment covers approved upfront, dispatch, reservation, or production charges. A final balance invoice appears here only if remaining or on-site charges are issued.</p></div>${cards}</div>`;
+}
+function paymentSchedulePanel(request={}, invoices=[]){
+  const quoteTotal=Number(request.full_quote_amount || request.quote_amount || request.estimated_total || 0) || 0;
+  const initialDue=Number(request.initial_payment_amount || request.quote_amount || request.estimated_total || 0) || 0;
+  const initialPaid=Number(request.paid_amount || request.paid_amount_cents/100 || 0) || (['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(request.status||'')) ? initialDue : 0);
+  const finalDue=invoices.reduce((sum,inv)=>sum+Number(inv.amount_due||0),0);
+  const finalPaid=invoices.reduce((sum,inv)=>sum+Number(inv.amount_paid||inv.paid_amount||(['paid','payment_received','final_payment_received'].includes(String(inv.status||''))?inv.amount_due:0)||0),0);
+  const paidToDate=initialPaid+finalPaid;
+  const balance=Math.max(0, quoteTotal+finalDue-paidToDate);
+  return `<div class="next-panel reveal payment-schedule-panel"><h3>Payment Schedule</h3><div class="request-public-detail-grid"><div><span class="small-label">Service Quote</span><strong>${money(quoteTotal)}</strong></div><div><span class="small-label">Initial Payment</span><strong>${initialPaid>0?'Paid':'Due'} · ${money(initialDue)}</strong></div><div><span class="small-label">Final Balance</span><strong>${finalDue?money(Math.max(0,finalDue-finalPaid)):(workflowKind(request.service_type)==='ron'?'Not expected':'Not issued')}</strong></div><div><span class="small-label">Paid to Date</span><strong>${money(paidToDate)}</strong></div></div>${balance>0?`<p class="admin-muted">Balance remaining may change if additional on-site, courier, document, or fulfillment services are added.</p>`:`<p class="admin-muted">All currently issued payments are recorded.</p>`}</div>`;
 }
 function invoiceList(items=[]){
   if(!items.length)return '<p class="admin-muted">Invoice line items are pending review.</p>';
@@ -541,12 +557,60 @@ function receiptPanel(request, reference){
   const submitted=(request.status==='payment_submitted');
   return `<div class="next-panel receipt-panel reveal"><h3>${submitted?'Payment Submitted':'Payment Receipt'}</h3><p>${submitted?'Thank you. Your secure payment was completed through Stripe. Aligned Print & Scan has been notified and will send your official payment-received confirmation after admin review.':'Thank you. Your payment has been received and recorded for your request.'}</p><div class="request-public-detail-grid"><div><span class="small-label">Reference</span><strong>${escapePublic(reference)}</strong></div><div><span class="small-label">Amount Paid</span><strong>${money(amount)}</strong></div><div><span class="small-label">Paid On</span><strong>${escapePublic(paidDate)}</strong></div></div><div class="cta-row">${request.receipt_url||request.receipt_pdf_url?`<a class="btn dark" href="${escapePublic(request.receipt_url||request.receipt_pdf_url)}" target="_blank" rel="noopener">View Receipt</a>`:`<button class="btn dark" type="button" onclick="window.print()">Print Confirmation</button>`}<a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}">Questions? Contact Support</a></div></div>`;
 }
-function statusTimeline(status){
-  const steps=[['under_review','Request Received'],['awaiting_approval','Quote Ready'],['awaiting_payment','Awaiting Payment'],['payment_received','Payment Received'],['appointment_confirmed','Appointment Confirmation'],['completed','Completed']];
-  const aliases={quote_ready:'awaiting_approval',quote_sent:'awaiting_approval',payment_pending:'awaiting_payment',payment_submitted:'payment_received',paid_confirmed:'payment_received',scheduling:'payment_received',scheduled:'appointment_confirmed'};
+function workflowKind(serviceType){
+  const type=String(serviceType||'').toLowerCase();
+  if(type==='ron') return 'ron';
+  if(type==='mobile') return 'mobile';
+  return 'document';
+}
+function statusTimeline(status, serviceType=''){
+  const kind=workflowKind(serviceType);
+  const stepsByKind={
+    ron:[
+      ['under_review','Request Received'],
+      ['awaiting_approval','Quote Prepared'],
+      ['payment_received','Payment Received'],
+      ['appointment_confirmed','Session Confirmed'],
+      ['completed','Completed']
+    ],
+    mobile:[
+      ['under_review','Request Received'],
+      ['awaiting_approval','Quote Prepared'],
+      ['payment_received','Initial Payment Received'],
+      ['appointment_confirmed','Appointment Confirmed'],
+      ['final_balance_due','Final Balance Due'],
+      ['final_payment_received','Final Payment Received'],
+      ['completed','Completed']
+    ],
+    document:[
+      ['under_review','Request Received'],
+      ['awaiting_approval','Quote Prepared'],
+      ['payment_received','Production Payment Received'],
+      ['appointment_confirmed','Fulfillment Scheduled'],
+      ['final_balance_due','Final Balance Due'],
+      ['final_payment_received','Final Payment Received'],
+      ['completed','Completed']
+    ]
+  };
+  const steps=stepsByKind[kind]||stepsByKind.document;
+  const aliases={
+    quote_ready:'awaiting_approval',
+    quote_sent:'awaiting_approval',
+    payment_pending:'awaiting_payment',
+    awaiting_payment:'awaiting_approval',
+    payment_submitted:'payment_received',
+    paid_confirmed:'payment_received',
+    scheduling:'payment_received',
+    scheduled:'appointment_confirmed',
+    final_balance_payment_submitted:'final_balance_due'
+  };
   const normalized=aliases[status]||status||'under_review';
-  let idx=steps.findIndex(s=>s[0]===normalized); if(idx<0) idx=0;
-  return `<div class="portal-progress reveal">${steps.map((s,i)=>`<div class="portal-step ${i<=idx?'done':''} ${i===idx?'current':''}"><span>${String(i+1).padStart(2,'0')}</span><strong>${s[1]}</strong></div>`).join('')}</div>`;
+  let idx=steps.findIndex(s=>s[0]===normalized);
+  if(idx<0 && ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(normalized)){
+    idx=steps.findIndex(s=>s[0]===normalized);
+  }
+  if(idx<0) idx=0;
+  return `<div class="portal-progress reveal workflow-${kind}">${steps.map((s,i)=>`<div class="portal-step ${i<=idx?'done':''} ${i===idx?'current':''}"><span>${String(i+1).padStart(2,'0')}</span><strong>${s[1]}</strong></div>`).join('')}</div>`;
 }
 
 async function initSuccessPage(){
@@ -573,7 +637,8 @@ async function initSuccessPage(){
   // payment-submitted message immediately while polling the database for the webhook update.
   const displayStatus = (sessionId && ['awaiting_payment','payment_pending'].includes(status)) ? 'payment_submitted' : status;
   const copy=statusCopy(displayStatus);
-  const quoteAmount=Number(request.quote_amount||request.estimated_total||0)||0;
+  const quoteAmount=Number(request.full_quote_amount||request.quote_amount||request.estimated_total||0)||0;
+  const initialPaymentAmount=Number(request.initial_payment_amount||request.quote_amount||request.estimated_total||0)||0;
 
   const eyebrowEl=qs('#successEyebrow');
   const headlineEl=qs('#successHeadline');
@@ -596,14 +661,14 @@ async function initSuccessPage(){
   const requestedTime=formatTimeWindow(request.preferred_time_window);
   const quoteNote=request.quote_notes||request.customer_message||'';
   const canApprove=['quote_ready','quote_sent','awaiting_approval'].includes(status)&&hasQuote&&request.id;
-  const canPay=!sessionId && ['awaiting_payment','payment_pending'].includes(status)&&quoteAmount>0&&request.id && status !== 'quote_expired';
+  const canPay=!sessionId && ['awaiting_payment','payment_pending'].includes(status)&&initialPaymentAmount>0&&request.id && status !== 'quote_expired';
 
   successBox.innerHTML=`
     <div class="success-ref reveal">${escapePublic(reference)}</div>
-    ${statusTimeline(displayStatus)}
+    ${statusTimeline(displayStatus, request.service_type)}
     <div class="success-grid reveal">
       <div><span class="small-label">Selected Service</span><strong>${escapePublic(serviceName)}</strong></div>
-      <div><span class="small-label">${hasQuote?'Invoice Total':'Estimated Total'}</span><strong>${quoteAmount?money(quoteAmount):'Pending review'}</strong></div>
+      <div><span class="small-label">${hasQuote?'Service Quote':'Estimated Total'}</span><strong>${quoteAmount?money(quoteAmount):'Pending review'}</strong></div>
       <div><span class="small-label">Current Status</span><strong>${escapePublic(copy.title)}</strong></div>
     </div>
     ${customerCard(Array.isArray(request.customers)?request.customers[0]:request.customers||{})}
@@ -618,10 +683,11 @@ async function initSuccessPage(){
       ${serviceDetailSummary(request.service_type, detail)}
     </div>
     <div class="email-notice status-${statusClass} reveal"><h3>${escapePublic(copy.title)}</h3><p>${escapePublic(copy.body)}</p></div>
-    ${hasQuote?`<div class="next-panel invoice-panel reveal"><h3>Prepared Service Quote</h3><p class="premium-intro">Please review each service item below before approving or paying. This itemized quote separates service fees, appointment support, document handling, delivery, scan, print, or RON preparation where applicable.</p>${invoiceList(items)}${request.invoice_number?`<p class="admin-muted">Invoice Number: <strong>${escapePublic(request.invoice_number)}</strong></p>`:''}${quoteNote?`<div class="email-notice slim-note"><h3>Client Note</h3><p>${escapePublic(quoteNote)}</p></div>`:''}${request.invoice_pdf_url?`<p><a class="btn secondary" href="${escapePublic(request.invoice_pdf_url)}" target="_blank" rel="noopener">Open Invoice PDF</a></p>`:''}${request.receipt_url||request.receipt_pdf_url?`<p><a class="btn dark" href="${escapePublic(request.receipt_url||request.receipt_pdf_url)}" target="_blank" rel="noopener">Open Receipt</a></p>`:''}</div>`:''}
+    ${hasQuote?`<div class="next-panel invoice-panel reveal"><h3>Prepared Service Quote</h3><p class="premium-intro">Please review each service item below before approving or paying. This itemized quote separates service fees, appointment support, document handling, delivery, scan, print, or RON preparation where applicable.</p>${invoiceList(items)}${request.invoice_number?`<p class="admin-muted">Quote Reference: <strong>${escapePublic(request.invoice_number)}</strong></p>`:''}${quoteNote?`<div class="email-notice slim-note"><h3>Client Note</h3><p>${escapePublic(quoteNote)}</p></div>`:''}${request.invoice_pdf_url?`<p><a class="btn secondary" href="${escapePublic(request.invoice_pdf_url)}" target="_blank" rel="noopener">Open Invoice PDF</a></p>`:''}${request.receipt_url||request.receipt_pdf_url?`<p><a class="btn dark" href="${escapePublic(request.receipt_url||request.receipt_pdf_url)}" target="_blank" rel="noopener">Open Receipt</a></p>`:''}</div>`:''}
+    ${hasQuote?paymentSchedulePanel(request, invoices):''}
     ${additionalInvoicesPanel(invoices, additionalItems, request.id)}
     ${canApprove?`<div class="next-panel reveal"><h3>Review Quote</h3><p>Please review the itemized quote and service details. Approving the quote moves your request to the secure payment step. If anything needs to change, request an edit before paying.</p><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" class="form-submit-status" role="status" aria-live="polite"></div></div>`:''}
-    ${canPay?`<div class="next-panel payment-panel reveal"><h3>Secure Payment</h3><p>Your quote has been approved. Complete secure payment below to confirm your request and move to scheduling or fulfillment.</p><div class="payment-summary-card"><div><span class="small-label">Service</span><strong>${escapePublic(serviceName)}</strong></div><div><span class="small-label">Reference</span><strong>${escapePublic(reference)}</strong></div><div><span class="small-label">Invoice</span><strong>${escapePublic(request.invoice_number||'Pending')}</strong></div><div><span class="small-label">Total Due</span><strong>${money(quoteAmount)}</strong></div></div><div class="cta-row"><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request an Edit Before Payment</a></div><div id="embeddedPaymentBox" class="embedded-payment-box"><button id="startPaymentBtn" class="btn primary" type="button">Proceed to Secure Payment</button></div><p class="secure-note">Payments are processed securely through Stripe. Aligned Print & Scan does not store card details.</p></div>`:''}
+    ${canPay?`<div class="next-panel payment-panel reveal"><h3>Initial Payment</h3><p>Your quote has been approved. Complete the initial payment below to reserve dispatch, production, scheduling, or fulfillment as applicable.</p><div class="payment-summary-card"><div><span class="small-label">Service</span><strong>${escapePublic(serviceName)}</strong></div><div><span class="small-label">Reference</span><strong>${escapePublic(reference)}</strong></div><div><span class="small-label">Payment</span><strong>Initial Payment</strong></div><div><span class="small-label">Due Now</span><strong>${money(initialPaymentAmount)}</strong></div></div><div class="cta-row"><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request an Edit Before Payment</a></div><div id="embeddedPaymentBox" class="embedded-payment-box"><button id="startPaymentBtn" class="btn primary" type="button">Pay Initial Payment</button></div><p class="secure-note">Payments are processed securely through Stripe. Aligned Print & Scan does not store card details.</p></div>`:''}
     ${receiptPanel({...request, status: displayStatus}, reference)}
     ${appointmentDetailsPanel({...request, status: displayStatus})}
     ${ronNextStepPanel(request, detail)}

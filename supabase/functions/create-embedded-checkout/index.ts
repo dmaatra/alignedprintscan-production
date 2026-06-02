@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
       throw new Error("Missing request_id.");
     }
 
-    const requestRes = await supabaseFetch(`service_requests?select=id,service_type,quote_amount,estimated_total,invoice_number,customers(email,first_name,last_name)&id=eq.${requestId}&limit=1`);
+    const requestRes = await supabaseFetch(`service_requests?select=id,service_type,quote_amount,estimated_total,initial_payment_amount,full_quote_amount,invoice_number,customers(email,first_name,last_name)&id=eq.${requestId}&limit=1`);
     const requestRows = await readJsonOrEmpty(requestRes);
     const request = requestRows?.[0];
     if (!request) return json({ ok: false, error: "Request not found." }, 404);
@@ -86,7 +86,9 @@ Deno.serve(async (req) => {
       if (["paid", "void"].includes(invoice.status)) throw new Error("This invoice is not payable.");
     }
 
-    const total = invoiceId ? Number(invoice?.amount_due || 0) : Number(request.quote_amount || request.estimated_total || 0);
+    const fullQuoteTotal = Number(request.full_quote_amount || request.quote_amount || request.estimated_total || 0);
+    const initialPaymentTotal = Number(request.initial_payment_amount || request.quote_amount || request.estimated_total || 0);
+    const total = invoiceId ? Number(invoice?.amount_due || 0) : initialPaymentTotal;
     if (!total || total <= 0) throw new Error("Invoice amount is not ready yet.");
 
     const ref = refFromId(requestId);
@@ -101,7 +103,8 @@ Deno.serve(async (req) => {
     if (invoiceId) params.set("metadata[invoice_id]", invoiceId);
     if (customer?.email) params.set("customer_email", customer.email);
 
-    if (items.length) {
+    const useFullQuoteItems = invoiceId || (items.length && Math.abs(total - fullQuoteTotal) < 0.01);
+    if (useFullQuoteItems && items.length) {
       items.forEach((item: any, idx: number) => {
         const unitAmount = Math.round(Number(item.unit_price || item.line_total || 0) * 100);
         const qty = Math.max(1, Math.round(Number(item.quantity || 1)));
@@ -112,7 +115,7 @@ Deno.serve(async (req) => {
       });
     } else {
       params.set("line_items[0][price_data][currency]", "usd");
-      params.set("line_items[0][price_data][product_data][name]", invoiceId ? `Aligned Print & Scan Additional Invoice ${ref}` : `Aligned Print & Scan Invoice ${ref}`);
+      params.set("line_items[0][price_data][product_data][name]", invoiceId ? `Aligned Print & Scan Final Balance ${ref}` : `Aligned Print & Scan Initial Payment ${ref}`);
       params.set("line_items[0][price_data][unit_amount]", String(Math.round(total * 100)));
       params.set("line_items[0][quantity]", "1");
     }

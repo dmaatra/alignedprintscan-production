@@ -65,7 +65,13 @@ Deno.serve(async (req) => {
 
     const invoiceRowsRes = await supabaseFetch(`invoices?select=id,invoice_number&service_request_id=eq.${requestId}&order=created_at.asc`);
     const existing = (await readJsonOrEmpty(invoiceRowsRes)) || [];
-    const nextNumber = existing.length + 1;
+    const suffixes = existing
+      .map((row: any) => String(row.invoice_number || "").match(/-(\d+)$/)?.[1])
+      .filter(Boolean)
+      .map((n: string) => Number(n));
+    // Invoice #1 lives on service_requests as the upfront/initial payment.
+    // Final balance invoices begin at -02.
+    const nextNumber = Math.max(2, suffixes.length ? Math.max(...suffixes) + 1 : 2);
     const invoiceNumber = `INV-${shortCode(requestId)}-${String(nextNumber).padStart(2, "0")}`;
 
     const total = items.reduce((sum: number, item: any) => {
@@ -110,6 +116,11 @@ Deno.serve(async (req) => {
 
     const itemsRes = await supabaseFetch("invoice_items", { method: "POST", body: JSON.stringify(itemRows) });
     if (!itemsRes.ok) throw new Error(await itemsRes.text());
+
+    await supabaseFetch(`service_requests?id=eq.${requestId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "final_balance_due" }),
+    });
 
     await supabaseFetch("request_status_updates", {
       method: "POST",
