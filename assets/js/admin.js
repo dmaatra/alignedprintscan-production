@@ -209,7 +209,7 @@ async function getDetailRows(table, requestId) {
   return data;
 }
 async function getInvoiceItems(requestId) {
-  const { data, error } = await adminClient.from('invoice_items').select('*').eq('service_request_id', requestId).order('created_at', { ascending: true });
+  const { data, error } = await adminClient.from('invoice_items').select('*').eq('service_request_id', requestId).is('invoice_id', null).order('created_at', { ascending: true });
   if (error) return [];
   return data || [];
 }
@@ -223,51 +223,51 @@ async function getInvoices(requestId) {
   return data || [];
 }
 function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
-  const quoteItemsTotal = quoteItems.reduce((sum, item) => sum + Number(item.line_total || (Number(item.quantity || 1) * Number(item.unit_price || 0)) || 0), 0);
-  const serviceValue = Number(request?.quote_amount || quoteItemsTotal || request?.estimated_total || 0) || 0;
+  const quoteTotal = quoteItems.reduce((sum, item) => sum + Number(item.line_total || (Number(item.quantity || 1) * Number(item.unit_price || 0)) || 0), 0);
+  const originalQuote = Number(request?.quote_amount || request?.estimated_total || quoteTotal || 0) || 0;
   const initial = invoices.find(inv => String(inv.invoice_type || '').includes('initial') || String(inv.invoice_number || '').endsWith('-01')) || null;
   const finals = invoices.filter(inv => String(inv.invoice_type || '').includes('final') || String(inv.invoice_number || '').endsWith('-02') || String(inv.status || '').includes('final'));
-  const paidStatuses = new Set(['paid','payment_received','final_payment_received']);
-  const requestStatus = String(request?.status || '').toLowerCase();
-  const initialPaid = paidStatuses.has(String(initial?.status || '').toLowerCase()) || ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(requestStatus);
-  const initialAmount = Number(initial?.amount_due || serviceValue || 0) || 0;
-  const paidFinals = finals.filter(inv => paidStatuses.has(String(inv.status || '').toLowerCase())).reduce((sum, inv) => sum + Number(inv.amount_paid || inv.paid_amount || inv.amount_due || 0), 0);
-  const paidToDate = Number(request?.paid_amount || 0) || ((initialPaid ? initialAmount : 0) + paidFinals);
-  const balanceDue = Math.max(0, serviceValue - paidToDate);
+  const paidStatuses = new Set(['paid','payment_received','final_payment_received','payment_submitted','final_balance_payment_submitted']);
+  const initialPaid = paidStatuses.has(String(initial?.status || '').toLowerCase()) || ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(request?.status || '').toLowerCase());
+  const initialAmount = Number(initial?.amount_due || originalQuote || 0) || 0;
+  const paidInitial = initialPaid ? (Number(request?.paid_amount || 0) || initialAmount) : 0;
+  const paidFinal = finals.filter(inv => paidStatuses.has(String(inv.status || '').toLowerCase())).reduce((sum, inv) => sum + Number(inv.amount_paid || inv.paid_amount || inv.amount_due || 0), 0);
+  const unpaidFinal = finals.filter(inv => !paidStatuses.has(String(inv.status || '').toLowerCase()) && !['void','cancelled'].includes(String(inv.status || '').toLowerCase())).reduce((sum, inv) => sum + Number(inv.amount_due || 0), 0);
+  const paidToDate = paidInitial + paidFinal;
+  const balanceDue = (!initialPaid ? initialAmount : 0) + unpaidFinal;
+  const totalServiceValue = originalQuote + finals.reduce((sum, inv) => sum + Number(inv.amount_due || 0), 0);
 
-  const initialNumber = initial?.invoice_number || `${refFromId(request?.id || '').replace('APS-', 'INV-')}-01`;
-  const invoiceRows = [`
-    <div class="invoice-summary-item clean-summary-item">
-      <strong>${escapeHtml(initialNumber)}</strong>
+  const rows = [];
+  if (initial || originalQuote) {
+    rows.push(`<div class="invoice-summary-item clean-summary-item">
+      <strong>${escapeHtml(initial?.invoice_number || ((request?.invoice_number || refFromId(request?.id || '').replace('APS-','INV-')) + '-01').replace('-01-01','-01'))}</strong>
       <span>Initial Payment / Dispatch</span>
       <span>${initialPaid ? 'Paid' : 'Due / Pending'} · ${money(initialAmount)}</span>
       ${initial?.receipt_url || initial?.receipt_pdf_url ? `<a href="${escapeHtml(initial.receipt_url || initial.receipt_pdf_url)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
-    </div>`];
-
+    </div>`);
+  }
   if (finals.length) {
     finals.forEach(inv => {
       const status = statusLabel(inv.status || 'final_balance_due');
       const receipt = inv.receipt_url || inv.receipt_pdf_url;
-      invoiceRows.push(`
-        <div class="invoice-summary-item clean-summary-item">
-          <strong>${escapeHtml(inv.invoice_number || 'Final Balance')}</strong>
-          <span>Final Balance</span>
-          <span>${status} · ${money(inv.amount_due || 0)}</span>
-          ${receipt ? `<a href="${escapeHtml(receipt)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
-        </div>`);
+      rows.push(`<div class="invoice-summary-item clean-summary-item">
+        <strong>${escapeHtml(inv.invoice_number || 'Final Balance')}</strong>
+        <span>Final Balance</span>
+        <span>${status} · ${money(inv.amount_due || 0)}</span>
+        ${receipt ? `<a href="${escapeHtml(receipt)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
+      </div>`);
     });
   } else {
-    invoiceRows.push('<div class="invoice-summary-item clean-summary-item"><strong>Final Balance</strong><span>Not issued</span><span>Only appears when a final balance invoice is issued.</span></div>');
+    rows.push('<div class="invoice-summary-item clean-summary-item muted-summary-item"><strong>Final Balance</strong><span>Not issued</span><span>Only appears when a final balance invoice is issued.</span></div>');
   }
 
-  return `
-    <div class="financial-summary-grid">
-      <div><span class="small-label">Service Value</span><strong>${money(serviceValue)}</strong></div>
-      <div><span class="small-label">Paid to Date</span><strong>${money(paidToDate)}</strong></div>
-      <div><span class="small-label">Balance Due</span><strong>${money(balanceDue)}</strong></div>
-    </div>
-    <div class="invoice-summary-list clean-invoice-summary">${invoiceRows.join('')}</div>
-  `;
+  return `<div class="financial-summary-grid">
+    <div><span class="small-label">Original Quote</span><strong>${money(originalQuote)}</strong></div>
+    <div><span class="small-label">Total Service Value</span><strong>${money(totalServiceValue)}</strong></div>
+    <div><span class="small-label">Paid to Date</span><strong>${money(paidToDate)}</strong></div>
+    <div><span class="small-label">Balance Due</span><strong>${money(balanceDue)}</strong></div>
+  </div>
+  <div class="invoice-summary-list clean-invoice-summary">${rows.join('')}</div>`;
 }
 
 function workflowKind(service){
@@ -280,59 +280,25 @@ function internalWorkflowGuide(request){
   const kind = workflowKind(request?.service_type);
   const label = kind === 'ron' ? 'RON Workflow' : kind === 'mobile' ? 'Mobile Notary Workflow' : 'Document Services Workflow';
   const steps = {
-    ron: [
-      ['under_review','Request Received'],
-      ['awaiting_approval','Quote Prepared'],
-      ['payment_received','Payment Received'],
-      ['appointment_confirmed','RON Session Confirmed'],
-      ['completed','Completed']
-    ],
-    mobile: [
-      ['under_review','Request Received'],
-      ['awaiting_approval','Quote Prepared'],
-      ['payment_received','Reservation Payment Received'],
-      ['appointment_confirmed','Appointment Confirmed'],
-      ['final_balance_due','Final Balance Due'],
-      ['final_payment_received','Final Payment Received'],
-      ['completed','Completed']
-    ],
-    document: [
-      ['under_review','Request Received'],
-      ['awaiting_approval','Quote Prepared'],
-      ['payment_received','Production Payment Received'],
-      ['appointment_confirmed','Fulfillment Scheduled'],
-      ['final_balance_due','Final Balance Due'],
-      ['final_payment_received','Final Payment Received'],
-      ['completed','Completed']
-    ]
+    ron: [['under_review','Request Received'],['awaiting_approval','Quote Prepared'],['payment_received','Payment Received'],['appointment_confirmed','RON Session Confirmed'],['completed','Completed']],
+    mobile: [['under_review','Request Received'],['awaiting_approval','Quote Prepared'],['payment_received','Reservation Payment Received'],['appointment_confirmed','Appointment Confirmed'],['final_balance_due','Final Balance Due'],['final_payment_received','Final Payment Received'],['completed','Completed']],
+    document: [['under_review','Request Received'],['awaiting_approval','Quote Prepared'],['payment_received','Production Payment Received'],['appointment_confirmed','Fulfillment Scheduled'],['final_balance_due','Final Balance Due'],['final_payment_received','Final Payment Received'],['completed','Completed']]
   }[kind];
   const aliases = { quote_ready:'awaiting_approval', quote_sent:'awaiting_approval', awaiting_payment:'awaiting_approval', payment_pending:'awaiting_approval', payment_submitted:'payment_received', paid_confirmed:'payment_received', scheduled:'appointment_confirmed', scheduling:'payment_received' };
   const current = aliases[request?.status] || request?.status || 'under_review';
   let index = steps.findIndex(s => s[0] === current);
   if (index < 0) index = 0;
   const next = steps[Math.min(index + 1, steps.length - 1)]?.[1] || steps[index]?.[1] || 'Review request';
-  return `
-    <div class="admin-detail-section internal-workflow-card">
-      <h3>Internal Workflow Guide</h3>
-      <p class="admin-muted">${label} · Current step highlighted for internal review.</p>
-      <div class="internal-workflow-steps">
-        ${steps.map((step, i) => `<div class="internal-workflow-step ${i < index ? 'done' : ''} ${i === index ? 'current' : ''}"><span>${String(i+1).padStart(2,'0')}</span><strong>${escapeHtml(step[1])}</strong></div>`).join('')}
-      </div>
-      <p class="admin-muted"><span class="small-label">Next recommended action</span><br><strong>${escapeHtml(next)}</strong></p>
-    </div>`;
+  return `<div class="admin-detail-section internal-workflow-card">
+    <h3>Internal Workflow Guide</h3>
+    <p class="admin-muted">${label} · Current step highlighted for internal review.</p>
+    <div class="internal-workflow-steps clean-workflow-steps">
+      ${steps.map((step, i) => `<div class="internal-workflow-step ${i < index ? 'done' : ''} ${i === index ? 'current' : ''}"><span>${String(i+1).padStart(2,'0')}</span><strong>${escapeHtml(step[1])}</strong></div>`).join('')}
+    </div>
+    <div class="next-action-card"><span class="small-label">Next recommended action</span><strong>${escapeHtml(next)}</strong></div>
+  </div>`;
 }
-function detailMap(obj) {
-  if (!obj) return '<p class="admin-muted">No detail record found yet.</p>';
-  const skip = new Set(['id', 'service_request_id']);
-  return `<div class="detail-map">${Object.entries(obj).filter(([k]) => !skip.has(k)).map(([k, v]) => `
-    <div><span>${k.replaceAll('_', ' ')}</span><strong>${v === null || v === '' ? '—' : escapeHtml(String(v))}</strong></div>
-  `).join('')}</div>`;
-}
-function defaultInvoiceRows(r) {
-  const base = Number(r.quote_amount || r.estimated_total || 0) || 0;
-  if (base > 0) return [{ description: serviceLabel(r.service_type), quantity: 1, unit_price: base, line_total: base, item_type: 'service' }];
-  return [{ description: serviceLabel(r.service_type), quantity: 1, unit_price: 0, line_total: 0, item_type: 'service' }];
-}
+
 function invoiceRowsFromDom() {
   return $$('.invoice-row').map(row => {
     const description = row.querySelector('[data-field="description"]')?.value?.trim() || 'Service fee';
@@ -377,7 +343,8 @@ async function selectRequest(id) {
     const url = await signedUrl(f.file_path);
     return `<li>${url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(f.file_name)}</a>` : escapeHtml(f.file_name)}<small>${f.file_type || 'file'} · ${f.file_size ? Math.round(f.file_size / 1024) + ' KB' : ''}</small></li>`;
   }));
-  const rows = invoiceItems.length ? invoiceItems : defaultInvoiceRows(selectedRequest);
+  const quoteLocked = ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(selectedRequest.status || '').toLowerCase());
+  const rows = quoteLocked ? [] : (invoiceItems.length ? invoiceItems : defaultInvoiceRows(selectedRequest));
 
   detail.innerHTML = `
     <div class="admin-detail-grid">
@@ -415,10 +382,12 @@ async function selectRequest(id) {
       <div class="admin-detail-grid appointment-fields">
         <label>Appointment Date<input id="appointmentDate" type="date" value="${escapeHtml(selectedRequest.appointment_date || selectedRequest.preferred_date || '')}"></label>
         <label>Appointment Time<input id="appointmentTime" type="text" placeholder="Example: 6:30 PM CST" value="${escapeHtml(selectedRequest.appointment_time || selectedRequest.preferred_time_window || '')}"></label>
-        <label>Platform / Method<input id="appointmentPlatform" type="text" placeholder="Proof, BlueNotary, Mobile, Courier delivery" value="${escapeHtml(selectedRequest.appointment_platform || '')}"></label>
+        <label>Platform / Method<input id="appointmentPlatform" type="text" placeholder="Mobile document service, courier delivery, Proof, BlueNotary" value="${escapeHtml(selectedRequest.appointment_platform || '')}"></label>
       </div>
-      <label>Appointment Location or Secure Session Link</label>
-      <input id="appointmentLink" type="text" placeholder="RON session URL, meeting link, or appointment address" value="${escapeHtml(selectedRequest.appointment_link || selectedRequest.ron_session_url || '')}">
+      <label>Service Address / Delivery Address</label>
+      <input id="appointmentLocation" type="text" placeholder="Mobile service address, delivery address, or meeting location" value="${escapeHtml(selectedRequest.appointment_location || '')}">
+      <label>Secure Session Link / Optional URL</label>
+      <input id="appointmentLink" type="text" placeholder="RON session URL, meeting link, or tracking/support link" value="${escapeHtml(selectedRequest.appointment_link || selectedRequest.ron_session_url || '')}">
       <label>Appointment Instructions</label>
       <textarea id="appointmentInstructions" placeholder="ID requirements, parking notes, RON prep, upload instructions, etc.">${escapeHtml(selectedRequest.appointment_instructions || '')}</textarea>
       <label>Due at Appointment / Additional Onsite Fees</label>
@@ -480,6 +449,7 @@ async function saveAppointmentDetails() {
   const dateValue = $('#appointmentDate')?.value || selectedRequest.appointment_date || selectedRequest.preferred_date || null;
   const timeValue = $('#appointmentTime')?.value || selectedRequest.appointment_time || selectedRequest.preferred_time_window || null;
   const platformValue = $('#appointmentPlatform')?.value || selectedRequest.appointment_platform || null;
+  const locationValue = $('#appointmentLocation')?.value || selectedRequest.appointment_location || null;
   const linkValue = $('#appointmentLink')?.value || selectedRequest.appointment_link || selectedRequest.ron_session_url || null;
   const instructionsValue = $('#appointmentInstructions')?.value || selectedRequest.appointment_instructions || null;
   const lineNoteValue = $('#appointmentLineItemsNote')?.value || selectedRequest.appointment_line_items_note || null;
@@ -489,6 +459,7 @@ async function saveAppointmentDetails() {
     appointment_date: dateValue,
     appointment_time: timeValue,
     appointment_platform: platformValue,
+    appointment_location: locationValue,
     appointment_link: linkValue,
     appointment_instructions: instructionsValue,
     balance_due_at_appointment: balanceValue === '' ? Number(selectedRequest.balance_due_at_appointment || 0) : (Number(balanceValue || 0) || 0),
@@ -536,6 +507,7 @@ async function updateRequestStatus(status) {
     appointment_date: $('#appointmentDate')?.value || selectedRequest.appointment_date || selectedRequest.preferred_date || null,
     appointment_time: $('#appointmentTime')?.value || selectedRequest.appointment_time || selectedRequest.preferred_time_window || null,
     appointment_platform: $('#appointmentPlatform')?.value || selectedRequest.appointment_platform || null,
+    appointment_location: $('#appointmentLocation')?.value || selectedRequest.appointment_location || null,
     appointment_link: $('#appointmentLink')?.value || selectedRequest.appointment_link || selectedRequest.ron_session_url || null,
     appointment_instructions: $('#appointmentInstructions')?.value || selectedRequest.appointment_instructions || null,
     balance_due_at_appointment: $('#balanceDueAtAppointment')?.value || selectedRequest.balance_due_at_appointment || 0,
@@ -598,6 +570,8 @@ async function createAdditionalInvoice(){
   const total = items.reduce((sum, item) => sum + item.line_total, 0);
   if(total <= 0){ alert('Add at least one line item before creating an additional invoice.'); return; }
   const note = $('#invoiceNote')?.value || 'Final balance invoice for additional on-site or fulfillment services.';
+  const btn = $('#createAdditionalInvoiceBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Issuing…'; }
   try{
     const { data, error } = await adminClient.functions.invoke('create-additional-invoice', {
       body: { request_id: selectedRequest.id, note, items }
@@ -606,10 +580,13 @@ async function createAdditionalInvoice(){
     if(data && data.ok === false) throw new Error(data.error || 'Additional invoice was not created.');
     await loadRequests();
     await selectRequest(selectedRequest.id);
+    renderInvoiceRows([]);
     showToast('Final balance invoice issued and linked to this order.');
   }catch(err){
     console.error(err);
     alert('Final balance invoice failed. Confirm create-additional-invoice is deployed and the invoice SQL migration has been run.');
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = 'Issue Final Balance Invoice'; }
   }
 }
 async function saveInvoice() {
@@ -620,7 +597,6 @@ async function saveInvoice() {
   const note = $('#invoiceNote')?.value || '';
   const update = {
     quote_amount: total,
-    estimated_total: total,
     quote_notes: note,
     customer_message: note,
     invoice_number: invoiceNumber,
@@ -629,7 +605,7 @@ async function saveInvoice() {
   };
   const { error: updateError } = await adminClient.from('service_requests').update(update).eq('id', selectedRequest.id);
   if (updateError) { alert(updateError.message); return; }
-  await adminClient.from('invoice_items').delete().eq('service_request_id', selectedRequest.id).is('invoice_id', null);
+  await adminClient.from('invoice_items').delete().eq('service_request_id', selectedRequest.id);
   const rows = items.map(item => ({ ...item, service_request_id: selectedRequest.id }));
   if (rows.length) {
     const { error: itemError } = await adminClient.from('invoice_items').insert(rows);
