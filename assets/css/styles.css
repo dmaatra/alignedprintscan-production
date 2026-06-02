@@ -261,3 +261,43 @@ button.btn.secondary:hover{
   .invoice-preset-row { grid-template-columns: 1fr; }
   .payment-panel, .embedded-payment-box, #embeddedPaymentBox { width: 100%; max-width: 100vw; overflow-x: hidden; }
 }
+
+/* Patch 18.7 — Payment flow + display stabilization */
+.payment-schedule-list,
+.clean-invoice-summary,
+.clean-workflow-steps{display:grid;gap:14px;}
+.payment-schedule-row,
+.invoice-summary-item.clean-summary-item,
+.internal-workflow-step{display:grid;gap:6px;padding:16px;border:1px solid rgba(22,28,77,.10);border-radius:18px;background:#fff;}
+.payment-row-main{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.payment-row-main strong{color:var(--blue);}
+.payment-row-main span,.payment-row-note{color:#5f5f67;margin:0;}
+.muted-summary-item{background:#fffaf2;}
+.financial-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0;}
+.financial-summary-grid>div{background:#fff;border:1px solid rgba(22,28,77,.08);border-radius:18px;padding:16px;}
+.financial-summary-grid strong{display:block;color:var(--blue);font-size:1.05rem;}
+.next-action-card{margin-top:14px;background:#fffaf2;border:1px solid rgba(200,169,107,.28);border-radius:18px;padding:16px;}
+.next-action-card strong{color:var(--blue);display:block;margin-top:4px;}
+.payment-loading-note{padding:22px;text-align:center;color:var(--blue);font-weight:800;}
+#embeddedPaymentBox{box-sizing:border-box;}
+#embeddedPaymentBox iframe{max-width:100%!important;}
+@media(max-width:720px){
+  .financial-summary-grid,.payment-summary-grid-public{grid-template-columns:1fr!important;}
+  .payment-row-main{display:grid;grid-template-columns:1fr;}
+  .payment-panel .embedded-payment-box,
+  .embedded-payment-box,
+  #embeddedPaymentBox{
+    width:calc(100vw - 28px)!important;
+    max-width:calc(100vw - 28px)!important;
+    margin-left:50%!important;
+    transform:translateX(-50%);
+    padding:10px!important;
+    overflow-x:auto!important;
+    -webkit-overflow-scrolling:touch;
+  }
+  #embeddedPaymentBox iframe{
+    min-width:320px!important;
+    width:100%!important;
+  }
+  .payment-schedule-row .btn{width:100%;justify-content:center;}
+}
