@@ -28,6 +28,11 @@ async function supabaseFetch(path: string, init: RequestInit = {}) {
   });
 }
 
+async function readJsonOrEmpty(response: Response) {
+  if (!response.ok) return null;
+  try { return await response.json(); } catch (_) { return null; }
+}
+
 function cleanUuid(value: unknown) {
   const text = String(value || "").trim();
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text) ? text : "";
@@ -74,7 +79,7 @@ Deno.serve(async (req) => {
     const update: Record<string, unknown> = { status };
     Object.assign(update, onlyNonEmptyAppointmentFields(body.appointment || {}));
 
-    if (status === "payment_received") {
+    if (status === "payment_received" || status === "final_payment_received") {
       update.payment_status = "paid";
       update.paid_at = new Date().toISOString();
       if (body.paid_amount !== undefined && body.paid_amount !== null && String(body.paid_amount).trim() !== "") {
@@ -85,6 +90,19 @@ Deno.serve(async (req) => {
     if (status === "quote_expired") update.invoice_status = "expired";
 
     if (status === "appointment_confirmed") update.appointment_confirmed_at = new Date().toISOString();
+
+    let statusInvoiceId = "";
+    if (status === "final_payment_received") {
+      const invoiceRes = await supabaseFetch(`invoices?select=id&service_request_id=eq.${requestId}&status=eq.payment_submitted&order=created_at.desc&limit=1`);
+      const invoiceRows = await readJsonOrEmpty(invoiceRes);
+      statusInvoiceId = invoiceRows?.[0]?.id || "";
+      if (statusInvoiceId) {
+        await supabaseFetch(`invoices?id=eq.${statusInvoiceId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "paid", amount_paid: update.paid_amount || body.paid_amount || null, paid_at: new Date().toISOString() }),
+        });
+      }
+    }
 
     const updateRes = await supabaseFetch(`service_requests?id=eq.${requestId}`, {
       method: "PATCH",
@@ -104,7 +122,7 @@ Deno.serve(async (req) => {
     });
 
     // Trigger the branded customer/admin email for client-facing statuses.
-    const emailStatuses = ["quote_ready", "awaiting_approval", "payment_received", "appointment_confirmed", "appointment_needs_rescheduling", "quote_expired", "completed"];
+    const emailStatuses = ["quote_ready", "awaiting_approval", "payment_received", "final_payment_received", "appointment_confirmed", "appointment_needs_rescheduling", "quote_expired", "completed"];
     if (emailStatuses.includes(status)) {
       await fetch(`${SUPABASE_URL}/functions/v1/send-order-email`, {
         method: "POST",
@@ -112,7 +130,7 @@ Deno.serve(async (req) => {
           Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ request_id: requestId, status, note }),
+        body: JSON.stringify({ request_id: requestId, status, note, invoice_id: statusInvoiceId || body.invoice_id || body.invoiceId || null }),
       });
     }
 

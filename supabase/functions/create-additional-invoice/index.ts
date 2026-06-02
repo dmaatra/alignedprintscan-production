@@ -1,69 +1,135 @@
-// Aligned Print & Scan — Additional Invoice Creator
-// Creates Invoice #2 or later for final balances/add-ons without editing paid invoices.
+// Aligned Print & Scan — Final Balance Invoice Creator
+// Creates Invoice #2 or later for final balance/on-site add-ons without editing paid invoices.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "https://sfsdniavqldgbiretply.supabase.co";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 }
-function refFromId(id: string) { return id ? `APS-${id.slice(0, 8).toUpperCase()}` : "APS-REQUEST"; }
-async function readBody(req: Request) { try { return await req.json(); } catch (_) { return {}; } }
+
+function shortCode(id: string) {
+  return id ? id.slice(0, 8).toUpperCase() : "REQUEST";
+}
+
+function refFromId(id: string) {
+  return `APS-${shortCode(id)}`;
+}
+
+async function readBody(req: Request) {
+  try { return await req.json(); } catch (_) { return {}; }
+}
+
 async function supabaseFetch(path: string, init: RequestInit = {}) {
   return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...init,
-    headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation", ...(init.headers || {}) },
+    headers: {
+      apikey: SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+      ...(init.headers || {}),
+    },
   });
 }
-async function readJsonOrEmpty(response: Response) { if (!response.ok) return null; try { return await response.json(); } catch (_) { return null; } }
+
+async function readJsonOrEmpty(response: Response) {
+  if (!response.ok) return null;
+  try { return await response.json(); } catch (_) { return null; }
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
   try {
     const body = await readBody(req);
     const requestId = String(body.request_id || "").trim();
-    const note = String(body.note || "Additional invoice / final balance.").trim();
+    const note = String(body.note || "Final balance invoice for additional on-site or fulfillment services.").trim();
     const items = Array.isArray(body.items) ? body.items : [];
-    if (!requestId) throw new Error("Missing request_id.");
-    if (!items.length) throw new Error("At least one invoice item is required.");
 
-    const invoiceRowsRes = await supabaseFetch(`invoices?select=invoice_number&service_request_id=eq.${requestId}`);
+    if (!requestId) throw new Error("Missing request_id.");
+    if (!items.length) throw new Error("At least one final balance line item is required.");
+
+    const requestRes = await supabaseFetch(`service_requests?select=id,customer_id,status&id=eq.${requestId}&limit=1`);
+    const requestRows = await readJsonOrEmpty(requestRes);
+    if (!requestRows?.[0]) throw new Error("Request not found.");
+
+    const invoiceRowsRes = await supabaseFetch(`invoices?select=id,invoice_number&service_request_id=eq.${requestId}&order=created_at.asc`);
     const existing = (await readJsonOrEmpty(invoiceRowsRes)) || [];
-    const invoiceNumber = `${refFromId(requestId)}-${String(existing.length + 1).padStart(2, "0")}`;
-    const total = items.reduce((sum: number, item: any) => sum + Number(item.line_total || (Number(item.quantity || 1) * Number(item.unit_price || 0)) || 0), 0);
-    if (total <= 0) throw new Error("Invoice total must be greater than zero.");
+    const nextNumber = existing.length + 1;
+    const invoiceNumber = `INV-${shortCode(requestId)}-${String(nextNumber).padStart(2, "0")}`;
+
+    const total = items.reduce((sum: number, item: any) => {
+      const quantity = Number(item.quantity || 1);
+      const unit = Number(item.unit_price || 0);
+      return sum + Number(item.line_total || quantity * unit || 0);
+    }, 0);
+    if (total <= 0) throw new Error("Final balance invoice total must be greater than zero.");
 
     const invoiceRes = await supabaseFetch("invoices", {
       method: "POST",
-      body: JSON.stringify({ service_request_id: requestId, invoice_number: invoiceNumber, invoice_type: "additional", status: "draft", amount_due: total, note }),
+      body: JSON.stringify({
+        service_request_id: requestId,
+        invoice_number: invoiceNumber,
+        invoice_type: "final_balance",
+        status: "final_balance_due",
+        amount_due: total,
+        amount_paid: 0,
+        paid_amount: 0,
+        note,
+      }),
     });
     if (!invoiceRes.ok) throw new Error(await invoiceRes.text());
     const invoice = (await invoiceRes.json())?.[0];
 
-    const itemRows = items.map((item: any) => ({
-      service_request_id: requestId,
-      invoice_id: invoice.id,
-      item_type: item.item_type || "service",
-      description: item.description || "Additional service",
-      quantity: Number(item.quantity || 1),
-      unit_price: Number(item.unit_price || 0),
-      line_total: Number(item.line_total || (Number(item.quantity || 1) * Number(item.unit_price || 0)) || 0),
-      taxable: false,
-    }));
+    const itemRows = items.map((item: any, index: number) => {
+      const quantity = Number(item.quantity || 1);
+      const unit = Number(item.unit_price || 0);
+      const lineTotal = Number(item.line_total || quantity * unit || 0);
+      return {
+        service_request_id: requestId,
+        invoice_id: invoice.id,
+        item_type: item.item_type || "final_balance",
+        description: item.description || "Final balance service",
+        quantity,
+        unit_price: unit,
+        line_total: lineTotal,
+        taxable: false,
+        sort_order: index,
+      };
+    });
+
     const itemsRes = await supabaseFetch("invoice_items", { method: "POST", body: JSON.stringify(itemRows) });
     if (!itemsRes.ok) throw new Error(await itemsRes.text());
 
     await supabaseFetch("request_status_updates", {
       method: "POST",
-      body: JSON.stringify({ service_request_id: requestId, status: "additional_invoice_created", message: `Additional invoice ${invoiceNumber} created for $${total.toFixed(2)}.`, sent_email: false, sent_sms: false }),
+      body: JSON.stringify({
+        service_request_id: requestId,
+        status: "final_balance_due",
+        message: `Final balance invoice ${invoiceNumber} issued for $${total.toFixed(2)}.`,
+        sent_email: false,
+        sent_sms: false,
+      }),
     });
 
-    return json({ ok: true, invoice, total });
+    // Send the customer a branded Final Balance Due email.
+    await fetch(`${SUPABASE_URL}/functions/v1/send-order-email`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ request_id: requestId, status: "final_balance_due", invoice_id: invoice.id, note }),
+    });
+
+    return json({ ok: true, invoice, total, reference_number: refFromId(requestId) });
   } catch (err) {
     return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 400);
   }

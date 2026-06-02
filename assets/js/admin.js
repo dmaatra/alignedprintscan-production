@@ -14,6 +14,7 @@ const statusLabel = (s) => ({
   awaiting_approval: 'Awaiting Approval',
   awaiting_payment: 'Awaiting Payment',
   payment_received: 'Payment Received',
+  final_payment_received: 'Final Payment Received',
   appointment_confirmed: 'Appointment Confirmed',
   appointment_needs_rescheduling: 'Appointment Needs Rescheduling',
   quote_expired: 'Quote Expired',
@@ -212,6 +213,23 @@ async function getInvoiceItems(requestId) {
   if (error) return [];
   return data || [];
 }
+async function getInvoices(requestId) {
+  const { data, error } = await adminClient
+    .from('invoices')
+    .select('*')
+    .eq('service_request_id', requestId)
+    .order('created_at', { ascending: true });
+  if (error) { console.warn(error); return []; }
+  return data || [];
+}
+function invoiceSummaryHtml(invoices = []) {
+  if (!invoices.length) return '<p class="admin-muted">No final balance invoices have been issued yet.</p>';
+  return `<div class="invoice-summary-list">${invoices.map(inv => {
+    const status = statusLabel(inv.status || 'draft');
+    const receipt = inv.receipt_url || inv.receipt_pdf_url;
+    return `<div class="invoice-summary-item"><strong>${escapeHtml(inv.invoice_number || 'Invoice')}</strong><span>${status}</span><span>${money(inv.amount_due || 0)}</span>${receipt ? `<a href="${escapeHtml(receipt)}" target="_blank" rel="noopener">View Receipt</a>` : ''}</div>`;
+  }).join('')}</div>`;
+}
 function detailMap(obj) {
   if (!obj) return '<p class="admin-muted">No detail record found yet.</p>';
   const skip = new Set(['id', 'service_request_id']);
@@ -263,7 +281,7 @@ async function selectRequest(id) {
 
   const customer = Array.isArray(selectedRequest.customers) ? selectedRequest.customers[0] : selectedRequest.customers;
   const table = selectedRequest.service_type === 'ron' ? 'ron_requests' : selectedRequest.service_type === 'mobile' ? 'mobile_notary_requests' : 'print_scan_requests';
-  const [files, serviceDetails, invoiceItems] = await Promise.all([getFiles(id), getDetailRows(table, id), getInvoiceItems(id)]);
+  const [files, serviceDetails, invoiceItems, invoices] = await Promise.all([getFiles(id), getDetailRows(table, id), getInvoiceItems(id), getInvoices(id)]);
   const fileItems = await Promise.all(files.map(async f => {
     const url = await signedUrl(f.file_path);
     return `<li>${url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(f.file_name)}</a>` : escapeHtml(f.file_name)}<small>${f.file_type || 'file'} · ${f.file_size ? Math.round(f.file_size / 1024) + ' KB' : ''}</small></li>`;
@@ -288,10 +306,16 @@ async function selectRequest(id) {
       <div class="status-actions invoice-actions">
         <button id="addInvoiceRow" class="btn dark" type="button">Add Line Item</button>
         <button id="saveInvoiceBtn" class="btn primary" type="button">Save Invoice #1 / Quote</button>
-        <button id="createAdditionalInvoiceBtn" class="btn dark" type="button">Create Additional Invoice</button>
+        <button id="createAdditionalInvoiceBtn" class="btn dark" type="button">Issue Final Balance Invoice</button>
         <button id="openStatusPageBtn" class="btn dark" type="button">Open Client Status Page</button>
       </div>
       <p class="admin-muted small-admin-note">Embedded Stripe payment is created from the customer status page after the Stripe Edge Function is deployed and your live keys are saved as environment secrets.</p>
+    </div>
+
+    <div class="admin-detail-section invoice-summary-card">
+      <h3>Invoice Payment Summary</h3>
+      <p class="admin-muted">Invoice #1 is the upfront/dispatch quote. Final Balance invoices appear here after they are issued and paid.</p>
+      ${invoiceSummaryHtml(invoices)}
     </div>
 
     <div class="admin-detail-section appointment-editor-card">
@@ -332,6 +356,7 @@ async function selectRequest(id) {
         <button data-status="awaiting_approval" class="btn dark" type="button">Awaiting Approval</button>
         <button data-status="awaiting_payment" class="btn dark" type="button">Awaiting Payment</button>
         <button data-status="payment_received" class="btn dark" type="button">Payment Received</button>
+        <button data-status="final_payment_received" class="btn dark" type="button">Final Payment Received</button>
         <button data-status="appointment_confirmed" class="btn dark" type="button">Appointment Confirmed</button>
         <button data-status="appointment_needs_rescheduling" class="btn dark" type="button">Needs Rescheduling</button>
         <button data-status="quote_expired" class="btn dark" type="button">Quote Expired</button>
@@ -481,7 +506,7 @@ async function createAdditionalInvoice(){
   const items = invoiceRowsFromDom();
   const total = items.reduce((sum, item) => sum + item.line_total, 0);
   if(total <= 0){ alert('Add at least one line item before creating an additional invoice.'); return; }
-  const note = $('#invoiceNote')?.value || 'Additional invoice / final balance.';
+  const note = $('#invoiceNote')?.value || 'Final balance invoice for additional on-site or fulfillment services.';
   try{
     const { data, error } = await adminClient.functions.invoke('create-additional-invoice', {
       body: { request_id: selectedRequest.id, note, items }
@@ -490,10 +515,10 @@ async function createAdditionalInvoice(){
     if(data && data.ok === false) throw new Error(data.error || 'Additional invoice was not created.');
     await loadRequests();
     await selectRequest(selectedRequest.id);
-    showToast('Additional invoice created and linked to this order.');
+    showToast('Final balance invoice issued and linked to this order.');
   }catch(err){
     console.error(err);
-    alert('Additional invoice failed. Confirm create-additional-invoice is deployed and the invoice SQL migration has been run.');
+    alert('Final balance invoice failed. Confirm create-additional-invoice is deployed and the invoice SQL migration has been run.');
   }
 }
 async function saveInvoice() {
@@ -554,7 +579,7 @@ async function loadRequests() {
   setText('adminLiveStatus', 'Loading requests…');
   const { data, error } = await adminClient
     .from('service_requests')
-    .select('id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,quote_notes,invoice_number,invoice_url,receipt_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(first_name,last_name,email,phone,preferred_contact)')
+    .select('id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,quote_notes,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(first_name,last_name,email,phone,preferred_contact)')
     .order('created_at', { ascending: false })
     .limit(300);
   if (error) {

@@ -1,7 +1,7 @@
 // Aligned Document Services — Branded order-status emails
 // Purpose: Send customer + admin emails for every client workflow phase.
 // Phases handled here: quote_ready/awaiting_approval, payment_received,
-// appointment_confirmed, completed, and general status updates.
+// appointment_confirmed, final_balance_due/final_payment_received, completed, and general status updates.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -116,9 +116,9 @@ function requestSummary(request: any, customer: any, ref: string, total: number)
   return `<div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}<br><strong style="color:#161c4d">Client:</strong> ${esc([customer?.first_name, customer?.last_name].filter(Boolean).join(" ") || "Client")}<br><strong style="color:#161c4d">Service:</strong> ${esc(serviceLabel(request.service_type))}<br><strong style="color:#161c4d">Requested Date:</strong> ${esc(request.preferred_date || "Not provided")}<br><strong style="color:#161c4d">Requested Time:</strong> ${esc(request.preferred_time_window || "Not provided")}<br><strong style="color:#161c4d">Preferred Contact:</strong> ${esc(customer?.preferred_contact || "Not provided")}<br><strong style="color:#161c4d">Quote Total:</strong> ${money(total)}</div>`;
 }
 
-function buildCustomerContent(status: string, request: any, customer: any, items: any[], note: string) {
+function buildCustomerContent(status: string, request: any, customer: any, items: any[], note: string, invoice: any = null) {
   const ref = refFromId(request.id);
-  const total = Number(request.quote_amount || request.paid_amount || request.estimated_total || 0);
+  const total = Number(invoice?.amount_due || request.quote_amount || request.paid_amount || request.estimated_total || 0);
   const statusUrl = `${SITE_URL}/success.html?request_id=${request.id}&ref=${encodeURIComponent(ref)}`;
   const first = customer?.first_name || "there";
   const service = serviceLabel(request.service_type);
@@ -147,6 +147,15 @@ function buildCustomerContent(status: string, request: any, customer: any, items
     };
   }
 
+  if (status === "final_balance_due") {
+    const invoiceNumber = invoice?.invoice_number || "Final Balance Invoice";
+    return {
+      subject: `Final balance due: ${ref}`,
+      preheader: `A final balance invoice is ready for your review and payment.`,
+      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Final Balance Due</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Final Balance Invoice Ready</h1><p>Hello ${esc(first)},</p><p>A final balance invoice has been issued for additional on-site, courier, document, or fulfillment services connected to your request.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}<br><strong style="color:#161c4d">Invoice:</strong> ${esc(invoiceNumber)}<br><strong style="color:#161c4d">Final Balance:</strong> ${money(total)}</div>${itemTable(items, total)}${note ? `<p><strong>Note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "Review & Pay Final Balance")}`,
+    };
+  }
+
   if (status === "payment_received") {
     return {
       subject: `Payment received: ${ref}`,
@@ -155,11 +164,19 @@ function buildCustomerContent(status: string, request: any, customer: any, items
     };
   }
 
+  if (status === "final_payment_received") {
+    return {
+      subject: `Final payment received: ${ref}`,
+      preheader: `Your final balance payment has been received.`,
+      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Final Payment Received</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Final Balance Payment Received</h1><p>Hello ${esc(first)},</p><p>Thank you. Your final balance payment for <strong>${esc(ref)}</strong> has been received and recorded. Your order is now ready for completion review.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Amount Recorded:</strong> ${money(total)}<br><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}</div>${button(statusUrl, "View Updated Status")}`,
+    };
+  }
+
   if (status === "appointment_confirmed") {
     return {
       subject: `Appointment confirmed: ${ref}`,
       preheader: `Your appointment details are confirmed.`,
-      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Appointment Confirmed</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Appointment Is Confirmed</h1><p>Hello ${esc(first)},</p><p>Your ${esc(service)} appointment has been confirmed. Please review the appointment details below and keep this email for reference.</p>${appointmentBlock(request)}${note ? `<p><strong>Admin note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Appointment Details")}`,
+      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Appointment Confirmed</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Appointment Is Confirmed</h1><p>Hello ${esc(first)},</p><p>Your ${esc(service)} appointment has been confirmed. Please review the appointment details below and keep this email for reference.</p><p>If additional services are completed on site, a final balance invoice may be issued before the order is marked complete.</p>${appointmentBlock(request)}${note ? `<p><strong>Admin note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Appointment Details")}`,
     };
   }
 
@@ -199,6 +216,7 @@ Deno.serve(async (req) => {
     const requestId = String(body.request_id || "").trim();
     const status = String(body.status || "status_update").trim();
     const note = String(body.note || "").trim();
+    const invoiceId = String(body.invoice_id || body.invoiceId || "").trim();
 
     if (!requestId) throw new Error("Missing request_id.");
 
@@ -216,10 +234,20 @@ Deno.serve(async (req) => {
     }
     if (!customer?.email) throw new Error("Customer email missing.");
 
-    const itemsRes = await supabaseFetch(`invoice_items?select=*&service_request_id=eq.${requestId}&order=created_at.asc`);
+    let invoice: any = null;
+    if (invoiceId) {
+      const invoiceRes = await supabaseFetch(`invoices?select=*&id=eq.${invoiceId}&limit=1`);
+      const invoiceRows = await readJsonOrEmpty(invoiceRes);
+      invoice = invoiceRows?.[0] || null;
+    }
+
+    const itemsQuery = invoiceId
+      ? `invoice_items?select=*&invoice_id=eq.${invoiceId}&order=created_at.asc`
+      : `invoice_items?select=*&service_request_id=eq.${requestId}&invoice_id=is.null&order=created_at.asc`;
+    const itemsRes = await supabaseFetch(itemsQuery);
     const items = (await readJsonOrEmpty(itemsRes)) || [];
 
-    const customerContent = buildCustomerContent(status, request, customer, items, note);
+    const customerContent = buildCustomerContent(status, request, customer, items, note, invoice);
 
     // Admin emails are reserved for customer/admin-action events.
     // Do not email admin for statuses the admin manually sets, such as quote_ready.
