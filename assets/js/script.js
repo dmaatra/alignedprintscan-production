@@ -404,14 +404,23 @@ async function getPublicStatus(requestId,ref){
     return data;
   }catch(err){console.warn('Status function unavailable. Using local confirmation fallback.',err);return null;}
 }
- async function startEmbeddedPayment(requestId, invoiceId=null){
-  if(!requestId){
-    const params = new URLSearchParams(window.location.search);
-    requestId = params.get('request_id');
-  }
+function getSuccessRequestId(fallback=null){
+  const params = new URLSearchParams(window.location.search);
+  return String(
+    fallback ||
+    window.__alignedCurrentRequestId ||
+    params.get('request_id') ||
+    params.get('id') ||
+    ''
+  ).trim();
+}
+
+async function startEmbeddedPayment(requestId, invoiceId=null){
+  requestId = getSuccessRequestId(requestId);
 
   if(!requestId){
     alert('Missing request reference. Please reopen your quote link from your email.');
+    console.error('Aligned payment error: missing request_id before checkout call.');
     return;
   }
 
@@ -419,21 +428,25 @@ async function getPublicStatus(requestId,ref){
   if(box) box.replaceChildren();
 
   try{
-    const {data,error} = await supabaseClient.functions.invoke('create-embedded-checkout',{
-      body:{ request_id: requestId, invoice_id: invoiceId || null }
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/create-embedded-checkout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'apikey': SUPABASE_ANON_KEY
+      },
+      body: JSON.stringify({ request_id: requestId, requestId, invoice_id: invoiceId || null })
     });
 
-    if(error) throw error;
+    const data = await response.json().catch(() => ({}));
+    if(!response.ok || data?.ok === false) throw new Error(data?.error || `Checkout failed with status ${response.status}`);
     if(!data?.client_secret) throw new Error('Missing Stripe client secret.');
     if(typeof Stripe === 'undefined') throw new Error('Stripe.js has not loaded.');
 
     const stripe = Stripe(data.publishable_key);
-    const checkout = await stripe.initEmbeddedCheckout({
-      clientSecret: data.client_secret
-    });
-    
-    if(box) box.replaceChildren();
+    const checkout = await stripe.initEmbeddedCheckout({ clientSecret: data.client_secret });
 
+    if(box) box.replaceChildren();
     checkout.mount('#embeddedPaymentBox');
     startStatusPolling(requestId, 'awaiting_payment');
   }catch(err){
@@ -542,6 +555,8 @@ async function initSuccessPage(){
   const ref=params.get('ref')||saved.ref||null;
   const result=await getPublicStatus(requestId,ref) || renderSuccessFallback(params,saved);
   const request=result.request||{};
+  if(!request.id && requestId) request.id = requestId;
+  window.__alignedCurrentRequestId = request.id || requestId || null;
   const items=result.items||[];
   const invoices=result.invoices||[];
   const additionalItems=result.additional_invoice_items||[];
@@ -623,8 +638,8 @@ async function initSuccessPage(){
       if(statusBox) statusBox.textContent='We could not approve the quote online. Please contact customer support with your reference number.';
     }
   });
-  qs('#startPaymentBtn')?.addEventListener('click',()=>startEmbeddedPayment(request.id));
-  qsa('.payAdditionalInvoice').forEach(btn=>btn.addEventListener('click',()=>startEmbeddedPayment(request.id, btn.dataset.invoiceId)));
+  qs('#startPaymentBtn')?.addEventListener('click',()=>startEmbeddedPayment(request.id || requestId));
+  qsa('.payAdditionalInvoice').forEach(btn=>btn.addEventListener('click',()=>startEmbeddedPayment(request.id || requestId, btn.dataset.invoiceId))); 
   if(sessionId || ['awaiting_payment','payment_pending'].includes(status)){
     startStatusPolling(request.id, status);
   }

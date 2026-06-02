@@ -220,23 +220,35 @@ Deno.serve(async (req) => {
     const items = (await readJsonOrEmpty(itemsRes)) || [];
 
     const customerContent = buildCustomerContent(status, request, customer, items, note);
-    const adminContent = buildAdminContent(status, request, customer, note);
+
+    // Admin emails are reserved for customer/admin-action events.
+    // Do not email admin for statuses the admin manually sets, such as quote_ready.
+    const adminEmailStatuses = ["payment_submitted", "quote_approved", "changes_requested", "support_requested"];
+    const shouldSendAdmin = adminEmailStatuses.includes(status);
 
     const customerSend = await sendEmail(customer.email, customerContent.subject, emailShell(customerContent.html, customerContent.preheader));
-    const adminSend = await sendEmail(ADMIN_EMAIL, adminContent.subject, emailShell(adminContent.html, adminContent.preheader));
+    let adminSend: any = null;
+    let adminSubject = "Not sent";
+    if (shouldSendAdmin) {
+      const adminContent = buildAdminContent(status, request, customer, note);
+      adminSubject = adminContent.subject;
+      adminSend = await sendEmail(ADMIN_EMAIL, adminContent.subject, emailShell(adminContent.html, adminContent.preheader));
+    }
 
     await supabaseFetch("request_status_updates", {
       method: "POST",
       body: JSON.stringify({
         service_request_id: requestId,
         status,
-        message: `Emails sent. Customer: ${customerContent.subject}. Admin: ${adminContent.subject}.`,
+        message: shouldSendAdmin
+          ? `Emails sent. Customer: ${customerContent.subject}. Admin: ${adminSubject}.`
+          : `Customer email sent. Admin email skipped for ${status}.`,
         sent_email: true,
         sent_sms: false,
       }),
     });
 
-    return json({ ok: true, customer_email_id: customerSend?.id, admin_email_id: adminSend?.id, status });
+    return json({ ok: true, customer_email_id: customerSend?.id, admin_email_id: adminSend?.id || null, admin_email_sent: shouldSendAdmin, status });
   } catch (err) {
     return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 400);
   }

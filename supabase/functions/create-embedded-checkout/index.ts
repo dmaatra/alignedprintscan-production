@@ -52,9 +52,21 @@ Deno.serve(async (req) => {
     if (!STRIPE_SECRET_KEY || !STRIPE_PUBLISHABLE_KEY) throw new Error("Stripe keys are not configured.");
 
     const body = await readBody(req);
-    const requestId = String(body.request_id || body.id || "").trim();
-    const invoiceId = String(body.invoice_id || "").trim() || null;
-    if (!requestId) throw new Error("Missing request_id.");
+    const url = new URL(req.url);
+    const requestId = String(
+      body.request_id ||
+      body.requestId ||
+      body.id ||
+      url.searchParams.get("request_id") ||
+      url.searchParams.get("requestId") ||
+      url.searchParams.get("id") ||
+      ""
+    ).trim();
+    const invoiceId = String(body.invoice_id || body.invoiceId || url.searchParams.get("invoice_id") || "").trim() || null;
+    if (!requestId) {
+      console.error("create-embedded-checkout missing request_id", { hasBodyKeys: Object.keys(body || {}), url: req.url });
+      throw new Error("Missing request_id.");
+    }
 
     const requestRes = await supabaseFetch(`service_requests?select=id,service_type,quote_amount,estimated_total,invoice_number,customers(email,first_name,last_name)&id=eq.${requestId}&limit=1`);
     const requestRows = await readJsonOrEmpty(requestRes);
