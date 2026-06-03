@@ -165,7 +165,7 @@ function appointmentUrgencyFlags(dateValue){
 }
 function estimateNumber(){return Number((qs('#estimateTotal')?.textContent||'0').replace(/[^0-9.]/g,''))||0;}
 function serviceLabel(service){return {ron:'Remote Online Notary',mobile:'Mobile Notary',print:'Document Services'}[service]||'Service Request';}
-function statusLabel(status){return ({under_review:'Request Received / Under Review',quote_ready:'Quote Ready',quote_sent:'Quote Sent',awaiting_approval:'Quote Ready / Awaiting Approval',awaiting_payment:'Quote Approved / Awaiting Payment',payment_pending:'Awaiting Payment',payment_submitted:'Payment Submitted',payment_received:'Payment Received',paid_confirmed:'Payment Received',scheduling:'Scheduling In Progress',scheduled:'Appointment Confirmed',appointment_confirmed:'Appointment Confirmed',appointment_needs_rescheduling:'Appointment Needs Rescheduling',quote_expired:'Quote Expired',completed:'Completed',changes_requested:'Changes Requested',cancelled:'Cancelled',declined:'Declined'}[status]||String(status||'Under Review').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()));}
+function statusLabel(status){return ({under_review:'Request Received / Under Review',quote_ready:'Quote Ready',quote_sent:'Quote Sent',awaiting_approval:'Quote Ready / Awaiting Approval',awaiting_payment:'Quote Approved / Awaiting Payment',payment_pending:'Awaiting Payment',payment_submitted:'Payment Submitted',payment_received:'Payment Received',paid_confirmed:'Payment Received',scheduling:'Scheduling In Progress',scheduled:'Appointment Confirmed',appointment_confirmed:'Appointment Confirmed',appointment_needs_rescheduling:'Appointment Needs Rescheduling',quote_expired:'Quote Expired',final_balance_due:'Final Balance Due',final_balance_payment_submitted:'Final Balance Payment Submitted',final_payment_received:'Final Payment Received',completed:'Completed',changes_requested:'Changes Requested',cancelled:'Cancelled',declined:'Declined'}[status]||String(status||'Under Review').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()));}
 function setSubmitState(isSubmitting,msg){const btn=wizard?.querySelector('button[type="submit"]');if(btn){btn.disabled=isSubmitting;btn.textContent=isSubmitting?'Submitting…':'Submit Request';}let status=qs('#formSubmitStatus');if(!status&&wizard){status=document.createElement('div');status.id='formSubmitStatus';status.className='form-submit-status';wizard.querySelector('.wizard-step[data-step="4"]')?.appendChild(status);}if(status)status.textContent=msg||'';}
 async function uploadFileGroup(serviceRequestId,inputName,category){
  const input=wizard.elements[inputName];
@@ -315,7 +315,8 @@ const publicStatusCopy={
   awaiting_payment:{eyebrow:'Awaiting Payment',headline:'Secure Payment Required',lead:'Your quote has been approved or prepared for payment. Complete secure payment to move your request toward confirmation.',title:'Awaiting Payment',body:'Once payment is received, we will continue with appointment confirmation, production scheduling, or fulfillment instructions.'},
   payment_submitted:{eyebrow:'Payment Submitted',headline:'Thank You — Your Payment Was Submitted',lead:'Your secure payment was completed through Stripe. Aligned Print & Scan has been notified and will manually confirm the payment record before sending your official payment-received confirmation and appointment instructions.',title:'Payment Submitted — Admin Review Pending',body:'Thank you for your payment. Once your payment has been reviewed and recorded by Aligned Print & Scan, you will receive a confirmation email with your receipt/status link and the next appointment or fulfillment steps.'},
   payment_received:{eyebrow:'Payment Received',headline:'Payment Received',lead:'Thank you. Your payment has been received and your request is confirmed for the next scheduling or fulfillment step.',title:'Payment Received — Appointment Confirmation',body:'Your payment has been recorded. We will now confirm appointment details, RON platform instructions, delivery timing, or production next steps based on your service type.'},
-  final_payment_received:{eyebrow:'Final Payment Received',headline:'Final Balance Payment Received',lead:'Thank you. Your final balance payment has been received and recorded.',title:'Final Payment Received',body:'Your final payment has been recorded. Your order is now ready for completion review.'},
+  final_balance_payment_submitted:{eyebrow:'Final Payment Submitted',headline:'Final Payment Submitted',lead:'Thank you. Your final balance payment has been submitted successfully.',title:'Final Payment Submitted',body:'Your final payment has been submitted. Aligned Print & Scan has been notified and your payment record is being finalized.'},
+  final_payment_received:{eyebrow:'Final Payment Received',headline:'Final Payment Received',lead:'Thank you. All outstanding payments connected to this request have been received.',title:'Final Payment Received',body:'Your final payment has been received. Your service summary, payment summary, and receipts are available below.'},
   appointment_confirmed:{eyebrow:'Appointment Confirmed',headline:'Your Appointment Is Confirmed',lead:'Your request is confirmed. Please review the preparation details so your appointment or fulfillment can proceed smoothly.',title:'Confirmed — Appointment Details',body:'Please have required identification, documents, technology, witnesses, or access details ready according to your service type. If additional services are completed on site, a final balance invoice may be issued before the order is marked complete.'},
   completed:{eyebrow:'Completed',headline:'Service Completed',lead:'Thank you for trusting Aligned Print & Scan. Your invoice/receipt details are available for your records.',title:'Completed — Receipt & Review',body:'We appreciate your business and would be grateful for a review if you were pleased with your experience.'},
   appointment_needs_rescheduling:{eyebrow:'Rescheduling Needed',headline:'Appointment Needs Rescheduling',lead:'Your requested appointment time is no longer available or requires adjustment.',title:'Appointment Needs Rescheduling',body:'Please contact support with your next best availability, or watch for an updated appointment option from Aligned Print & Scan.'},
@@ -366,30 +367,37 @@ function paymentSchedulePanel({request={}, invoices=[], quoteItems=[], additiona
   const quoteTotal = Number(quoteAmount || invoiceTotal(quoteItems) || request.quote_amount || request.estimated_total || 0) || 0;
   const initial = findInitialInvoice(invoices);
   const finals = finalBalanceInvoices(invoices);
-  const paidStatuses = ['paid','payment_received','final_payment_received'];
-  const submittedStatuses = ['payment_submitted','final_balance_payment_submitted','processing'];
-  const activeFinal = finals.find(inv => ![...paidStatuses,...submittedStatuses,'void','cancelled'].includes(String(inv.status||'').toLowerCase()));
-  const paidFinals = finals.filter(inv => paidStatuses.includes(String(inv.status || '').toLowerCase()) || submittedStatuses.includes(String(inv.status || '').toLowerCase()));
-  const initialPaid = ['payment_received','paid','paid_confirmed','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(request.status || '').toLowerCase()) || paidStatuses.includes(String(initial?.status || '').toLowerCase());
+  const paidStatuses = ['paid','payment_received','final_payment_received','payment_submitted','final_balance_payment_submitted'];
+  const closedStatuses = ['void','cancelled'];
+
+  const activeFinal = finals.find(inv => !paidStatuses.includes(String(inv.status||'').toLowerCase()) && !closedStatuses.includes(String(inv.status||'').toLowerCase()));
+  const initialPaid = paidStatuses.includes(String(initial?.status || '').toLowerCase()) || ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(request.status || '').toLowerCase());
+
   const initialAmount = Number(initial?.amount_due || request.initial_payment_amount || quoteTotal || 0) || 0;
-  const initialPaidAmount = initialPaid ? initialAmount : 0;
-  const paidFinalAmount = paidFinals.reduce((sum, inv)=>sum+Number(inv.amount_paid || inv.paid_amount || inv.amount_due || 0),0);
-  const paidToDate = Number(request.paid_amount || 0) + paidFinalAmount || (initialPaidAmount + paidFinalAmount);
+  const paidInitial = initialPaid ? Number(initial?.amount_paid || initial?.paid_amount || initialAmount || 0) : 0;
+  const paidFinalAmount = finals
+    .filter(inv => paidStatuses.includes(String(inv.status || '').toLowerCase()))
+    .reduce((sum, inv)=>sum+Number(inv.amount_paid || inv.paid_amount || inv.amount_due || 0),0);
+
   const finalDueAmount = activeFinal ? Number(activeFinal.amount_due || 0) : 0;
-  const totalCollectedPotential = quoteTotal + finals.reduce((sum, inv)=>sum+Number(inv.amount_due||0),0);
-  const balanceDue = activeFinal ? finalDueAmount : (initialPaid ? 0 : initialAmount);
+  const finalIssuedTotal = finals.reduce((sum, inv)=>sum+Number(inv.amount_due||0),0);
+  const totalServiceValue = quoteTotal + finalIssuedTotal;
+  const paidToDate = invoices.length ? paidInitial + paidFinalAmount : Number(request.paid_amount || 0) || 0;
+  const balanceDue = Math.max(0, totalServiceValue - paidToDate);
   const showInitialPay = ['awaiting_payment','payment_pending','awaiting_approval','quote_ready'].includes(String(request.status || '').toLowerCase()) && initialAmount > 0 && !initialPaid && !activeFinal;
-  const showFinalPay = !!(activeFinal && finalDueAmount > 0);
 
   const initialNumber = initial?.invoice_number || (request.invoice_number ? `${String(request.invoice_number).replace(/^QUOTE-/,'INV-')}-01`.replace(/-01-01$/,'-01') : 'Initial payment');
+  const initialReceipt = initial?.receipt_url || initial?.receipt_pdf_url || (!finals.length ? (request.receipt_url || request.receipt_pdf_url || '') : '');
+
   const finalHtml = finals.length ? finals.map(inv => {
     const invItems = additionalItems.filter(item => String(item.invoice_id || '') === String(inv.id || ''));
     const total = Number(inv.amount_due || invoiceTotal(invItems) || 0);
     const receiptUrl = inv.receipt_url || inv.receipt_pdf_url || '';
+    const statusText = invoiceStatusLabel(inv.status);
     const payable = String(activeFinal?.id || '') === String(inv.id || '') && total > 0;
     return `<div class="payment-schedule-row final-balance-row">
       <span class="small-label">Final Balance</span>
-      <div class="payment-row-main"><strong>${escapePublic(inv.invoice_number || 'Final Balance Invoice')}</strong><span>${escapePublic(invoiceStatusLabel(inv.status))} · ${money(total)}</span></div>
+      <div class="payment-row-main"><strong>${escapePublic(inv.invoice_number || 'Final Balance Invoice')}</strong><span>${escapePublic(statusText)} · ${money(total)}</span></div>
       ${inv.note ? `<p class="payment-row-note">${escapePublic(inv.note)}</p>` : ''}
       ${invItems.length ? invoiceList(invItems) : ''}
       <div class="cta-row">
@@ -399,240 +407,47 @@ function paymentSchedulePanel({request={}, invoices=[], quoteItems=[], additiona
     </div>`;
   }).join('') : `<div class="payment-schedule-row final-balance-row not-issued"><span class="small-label">Final Balance</span><div class="payment-row-main"><strong>Not issued</strong><span>Only appears if additional on-site or fulfillment charges are added.</span></div></div>`;
 
-  return `<div class="next-panel payment-schedule-panel reveal">
-    <h3>Payment Schedule</h3>
+  const fullyPaid = balanceDue <= 0 && (initialPaid || finals.length > 0);
+  const summaryLabel = finals.length ? 'Original Service Quote' : 'Service Quote';
+
+  return `<div class="next-panel payment-schedule-panel reveal ${fullyPaid ? 'settled-payment-panel' : ''}">
+    <h3>${fullyPaid ? 'Payment Summary' : 'Payment Schedule'}</h3>
     <div class="request-public-detail-grid payment-summary-grid-public">
-      <div><span class="small-label">${finals.length ? 'Original Service Quote' : 'Service Quote'}</span><strong>${money(quoteTotal)}</strong></div>
+      <div><span class="small-label">${summaryLabel}</span><strong>${money(quoteTotal)}</strong></div>
       <div><span class="small-label">Paid to Date</span><strong>${money(paidToDate)}</strong></div>
       <div><span class="small-label">${activeFinal ? 'Additional Final Balance' : 'Balance Due'}</span><strong>${money(balanceDue)}</strong></div>
-      ${finals.length ? `<div><span class="small-label">Total After Final Payment</span><strong>${money(totalCollectedPotential)}</strong></div>` : ''}
+      ${finals.length ? `<div><span class="small-label">Total Collected / Service Value</span><strong>${money(totalServiceValue)}</strong></div>` : ''}
     </div>
-    <div class="payment-schedule-list">
+    <div class="payment-schedule-list clean-payment-schedule">
       <div class="payment-schedule-row initial-payment-row">
         <span class="small-label">Initial Payment</span>
         <div class="payment-row-main"><strong>${escapePublic(initialNumber)}</strong><span>${initialPaid ? 'Paid' : 'Due'} · ${money(initialAmount)}</span></div>
         <div class="cta-row">
+          ${initialReceipt ? `<a class="btn dark" href="${escapePublic(initialReceipt)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
           ${showInitialPay ? `<button id="startPaymentBtn" class="btn primary" type="button">Pay Initial Payment</button>` : ''}
-          ${request.receipt_url || request.receipt_pdf_url ? `<a class="btn dark" href="${escapePublic(request.receipt_url || request.receipt_pdf_url)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
         </div>
       </div>
       ${finalHtml}
     </div>
-    <p class="secure-note">Only the currently due payment is available to pay. Final balance invoices appear only after Aligned Print & Scan issues them.</p>
     <div id="embeddedPaymentBox" class="embedded-payment-box"></div>
   </div>`;
 }
 
-function escapePublic(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
-function refFromPublicId(id){return id?'APS-'+String(id).slice(0,8).toUpperCase():'APS-REQUEST';}
-
-function formatDateValue(value){
-  if(!value)return 'Not selected';
-  const d=new Date(value+'T12:00:00');
-  if(Number.isNaN(d.getTime())) return escapePublic(value);
-  return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
-}
-function formatTimeWindow(value){return value?escapePublic(value):'Not selected';}
-function serviceDetailSummary(service, detail){
-  if(!detail)return '<p class="admin-muted">Specific service details are being reviewed.</p>';
-  const rows=[];
-  const add=(label,val)=>{ if(val!==null && val!==undefined && val!=='' && val!==false) rows.push(`<div><span class="small-label">${escapePublic(label)}</span><strong>${escapePublic(String(val))}</strong></div>`); };
-  if(service==='ron'){
-    add('Document Type', detail.document_type);
-    add('Signers', detail.number_of_signers);
-    add('Notarizations', detail.number_of_notarizations);
-    add('Valid ID Confirmed', detail.valid_id_confirmed?'Yes':null);
-    add('Tech Ready', detail.tech_ready?'Yes':null);
-  } else if(service==='mobile'){
-    const address=[detail.street_address,detail.city,detail.state,detail.zip].filter(Boolean).join(', ');
-    add('Service Address', address);
-    add('Signers', detail.number_of_signers);
-    add('Notarizations', detail.number_of_notarizations);
-    add('Witnesses Needed', detail.witnesses_needed?'Yes':'No');
-    add('Print Add-On', detail.print_add_on?'Yes':null);
-    add('Scan to PDF Needed', detail.scan_to_pdf_needed || detail.scan_back_needed ? 'Yes' : null);
-  } else if(service==='print'){
-    add('Fulfillment', String(detail.fulfillment_type || '').replace('courier','Courier Delivery').replace('mobile-service','Mobile Document Service'));
-    add('Service / Courier Address', detail.delivery_address);
-    add('B/W Pages', detail.black_white_pages);
-    add('Color Pages', detail.color_pages);
-    add('Paper Size', detail.paper_size);
-    add('Print Sides', detail.print_sides);
-    add('Paper Type', detail.paper_type);
-    add('Scan Pages', detail.scan_pages);
-  }
-  return rows.length?`<div class="request-public-detail-grid">${rows.join('')}</div>`:'<p class="admin-muted">Specific service details are being reviewed.</p>';
-}
-async function submitQuoteDecision(requestId, reference, action, message=''){
-  if(!supabaseClient) throw new Error('System is not connected.');
-  const {data,error}=await supabaseClient.functions.invoke('client-quote-action',{body:{request_id:requestId,reference_number:reference,action,message}});
-  if(error) throw error;
-  return data;
-}
-async function getPublicStatus(requestId,ref){
-  if(!supabaseClient)return null;
-  try{
-    const {data,error}=await supabaseClient.functions.invoke('get-request-status',{body:{request_id:requestId||null,reference_number:ref||null}});
-    if(error)throw error;
-    return data;
-  }catch(err){console.warn('Status function unavailable. Using local confirmation fallback.',err);return null;}
-}
-function getSuccessRequestId(fallback=null){
-  const params = new URLSearchParams(window.location.search);
-  return String(
-    fallback ||
-    window.__alignedCurrentRequestId ||
-    params.get('request_id') ||
-    params.get('id') ||
-    ''
-  ).trim();
-}
-
-async function startEmbeddedPayment(requestId, invoiceId=null){
-  requestId = getSuccessRequestId(requestId);
-
-  if(!requestId){
-    alert('Missing request reference. Please reopen your quote link from your email.');
-    console.error('Aligned payment error: missing request_id before checkout call.');
-    return;
-  }
-
-  const box = qs('#embeddedPaymentBox');
-  if(!box) return;
-
-  if(window.__alignedCheckoutMounted){
-    box.scrollIntoView({behavior:'smooth', block:'center'});
-    return;
-  }
-
-  try{
-    window.__alignedPaymentActive = true;
-    window.__alignedCheckoutMounted = true;
-    if(window.__alignedEmbeddedCheckout && typeof window.__alignedEmbeddedCheckout.destroy === 'function'){
-      try{ window.__alignedEmbeddedCheckout.destroy(); }catch(_){ }
-    }
-    window.__alignedEmbeddedCheckout = null;
-    box.replaceChildren();
-    box.innerHTML = '<div class="payment-loading-note">Loading secure payment…</div>';
-
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/create-embedded-checkout`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'apikey': SUPABASE_ANON_KEY
-      },
-      body: JSON.stringify({ request_id: requestId, requestId, invoice_id: invoiceId || null })
-    });
-
-    const data = await response.json().catch(() => ({}));
-    if(!response.ok || data?.ok === false) throw new Error(data?.error || `Checkout failed with status ${response.status}`);
-    if(!data?.client_secret) throw new Error('Missing Stripe client secret.');
-    if(typeof Stripe === 'undefined') throw new Error('Stripe.js has not loaded.');
-
-    const stripe = Stripe(data.publishable_key);
-    const checkout = await stripe.initEmbeddedCheckout({ clientSecret: data.client_secret });
-    window.__alignedEmbeddedCheckout = checkout;
-
-    box.replaceChildren();
-    checkout.mount('#embeddedPaymentBox');
-    box.scrollIntoView({behavior:'smooth', block:'center'});
-  }catch(err){
-    window.__alignedCheckoutMounted = false;
-    window.__alignedPaymentActive = false;
-    console.error(err);
-    const msg = err?.message || err?.context?.error || err?.details || 'Secure payment is not available yet.';
-    if(box){
-      box.innerHTML = `<div class="payment-error-note"><h3>Secure payment is not available yet</h3><p>${escapePublic(msg)}</p><p>Please contact Aligned Print & Scan with your APS reference if this continues.</p></div>`;
-    }
-  }
-}
-
-async function startStatusPolling(requestId, currentStatus){
-  if(!requestId || window.__alignedStatusPolling) return;
-  window.__alignedStatusPolling = true;
-  let attempts = 0;
-  const maxAttempts = 40;
-  const timer = setInterval(async()=>{
-    attempts += 1;
-    try{
-      const result = await getPublicStatus(requestId, null);
-      const nextStatus = result?.request?.status;
-      if(nextStatus && nextStatus !== currentStatus && !window.__alignedPaymentActive){
-        clearInterval(timer);
-        const url = new URL(window.location.href);
-        url.searchParams.set('request_id', requestId);
-        if(result.reference_number) url.searchParams.set('ref', result.reference_number);
-        window.location.href = url.toString();
-      }
-      if(attempts >= maxAttempts){ clearInterval(timer); window.__alignedStatusPolling = false; }
-    }catch(_){ if(attempts >= maxAttempts){ clearInterval(timer); window.__alignedStatusPolling = false; } }
-  }, 3500);
-}
-function renderSuccessFallback(params,saved){
-  const service=params.get('service')||saved.service||'request';
-  const ref=params.get('ref')||saved.ref||'APS-REQUEST';
-  const labels={ron:'Remote Online Notary request',mobile:'Mobile Notary request',print:'Print & Scan request'};
-  return {
-    request:{
-      id:saved.requestId||null,
-      status:'under_review',
-      service_type:service,
-      estimated_total:saved.total||null,
-      quote_amount:null,
-      invoice_number:null,
-      invoice_pdf_url:null,
-      receipt_url:null,
-      receipt_pdf_url:null,
-      prep_video_url:null,
-      review_link_google:null,
-      review_link_yelp:null
-    },
-    reference_number:ref,
-    items:[],
-    label:labels[service]||'Service Request'
-  };
-}
-
-function customerCard(customer={}){
-  const full=[customer.first_name,customer.last_name].filter(Boolean).join(' ')||'Client';
-  return `<div class="client-info-card reveal"><h3>Client Information</h3><div class="request-public-detail-grid"><div><span class="small-label">Prepared For</span><strong>${escapePublic(full)}</strong></div><div><span class="small-label">Email</span><strong>${escapePublic(customer.email||'Not provided')}</strong></div><div><span class="small-label">Phone</span><strong>${escapePublic(customer.phone||'Not provided')}</strong></div></div></div>`;
-}
-function printControls(reference){
-  return `<div class="client-print-actions reveal"><button class="btn dark" type="button" onclick="window.print()">Print / Save PDF</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}">Contact Support</a></div>`;
-}
-function ronNextStepPanel(request, detail){
-  if(request.service_type!=='ron') return '';
-  const platform=detail?.ron_platform || 'Proof / RON platform pending';
-  const sessionLink=detail?.session_link || request.ron_session_url || '';
-  return `<div class="next-panel ron-appointment-panel reveal"><h3>RON Appointment Preparation</h3><p>Your Remote Online Notary session details will appear here once scheduling is confirmed.</p><div class="request-public-detail-grid"><div><span class="small-label">Platform</span><strong>${escapePublic(platform)}</strong></div><div><span class="small-label">Session Link</span><strong>${sessionLink?`<a href="${escapePublic(sessionLink)}" target="_blank" rel="noopener">Open Secure Session</a>`:'Pending'}</strong></div><div><span class="small-label">Appointment Status</span><strong>${escapePublic(statusLabel(request.status||'under_review'))}</strong></div></div><ul class="premium-checklist"><li>Have your valid ID ready.</li><li>Join from a quiet, well-lit place.</li><li>Use a device with camera, microphone, and stable internet.</li><li>Do not sign documents before the notarial session unless instructed.</li></ul></div>`;
-}
-
-function appointmentDetailsPanel(request){
-  const active=['appointment_confirmed','scheduled','final_balance_due','final_payment_received','completed'].includes(String(request.status||'').toLowerCase());
-  if(!active) return '';
-  const date=formatDateValue(request.appointment_date||request.preferred_date);
-  const time=formatTimeWindow(request.appointment_time||request.preferred_time_window);
-  const instructions=request.appointment_instructions||'';
-  const addNote=request.appointment_line_items_note||'';
-  const due=Number(request.balance_due_at_appointment||0);
-  const service=String(request.service_type||'').toLowerCase();
-  const methodLabel = service === 'ron' ? 'RON Platform' : 'Service Method';
-  const defaultMethod = service === 'ron' ? 'RON platform pending' : service === 'mobile' ? 'Mobile notary appointment' : 'Mobile document service / courier delivery';
-  const method=request.appointment_platform||defaultMethod;
-  const locationLabel = service === 'ron' ? 'Secure Session Link' : 'Service Address / Delivery Address';
-  const location=request.appointment_location || request.appointment_link || request.ron_session_url || '';
-  const isLink=String(location).startsWith('http');
-  return `<div class="next-panel appointment-confirmed-panel reveal"><h3>Appointment / Fulfillment Details</h3><p>Your confirmed service details are listed below. Please review carefully before your scheduled service time.</p><div class="request-public-detail-grid"><div><span class="small-label">Date</span><strong>${escapePublic(date)}</strong></div><div><span class="small-label">Time</span><strong>${escapePublic(time)}</strong></div><div><span class="small-label">${methodLabel}</span><strong>${escapePublic(method)}</strong></div>${location?`<div><span class="small-label">${locationLabel}</span><strong>${isLink?`<a href="${escapePublic(location)}" target="_blank" rel="noopener">Open Secure Link</a>`:escapePublic(location)}</strong></div>`:''}${due?`<div><span class="small-label">Due at Appointment</span><strong>${money(due)}</strong></div>`:''}</div>${instructions?`<div class="email-notice slim-note"><h3>Preparation Instructions</h3><p>${escapePublic(instructions)}</p></div>`:''}${addNote?`<div class="email-notice slim-note"><h3>Additional / Onsite Items</h3><p>${escapePublic(addNote)}</p></div>`:''}</div>`;
-}
-
 function receiptPanel(request, reference){
-  if(!['payment_submitted','payment_received','paid_confirmed','scheduling','appointment_confirmed','scheduled','completed'].includes(request.status||'')) return '';
+  if(!['payment_submitted','payment_received','paid_confirmed','scheduling','appointment_confirmed','scheduled','final_balance_due','final_balance_payment_submitted','final_payment_received','completed'].includes(request.status||'')) return '';
   const amount=Number(request.paid_amount||request.quote_amount||request.estimated_total||0)||0;
-  const paidDate=request.paid_at?new Date(request.paid_at).toLocaleString():'Received / processing receipt details';
-  const submitted=(request.status==='payment_submitted');
-  return `<div class="next-panel receipt-panel reveal"><h3>${submitted?'Payment Submitted':'Payment Receipt'}</h3><p>${submitted?'Thank you. Your secure payment was completed through Stripe. Aligned Print & Scan has been notified and will send your official payment-received confirmation after admin review.':'Thank you. Your payment has been received and recorded for your request.'}</p><div class="request-public-detail-grid"><div><span class="small-label">Reference</span><strong>${escapePublic(reference)}</strong></div><div><span class="small-label">Amount Paid</span><strong>${money(amount)}</strong></div><div><span class="small-label">Paid On</span><strong>${escapePublic(paidDate)}</strong></div></div><div class="cta-row">${request.receipt_url||request.receipt_pdf_url?`<a class="btn dark" href="${escapePublic(request.receipt_url||request.receipt_pdf_url)}" target="_blank" rel="noopener">View Receipt</a>`:`<button class="btn dark" type="button" onclick="window.print()">Print Confirmation</button>`}<a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}">Questions? Contact Support</a></div></div>`;
+  const paidDate=request.paid_at?new Date(request.paid_at).toLocaleString():'Processed / received';
+  const submitted=(request.status==='payment_submitted' || request.status==='final_balance_payment_submitted');
+  const finalPaid=(request.status==='final_payment_received');
+  const heading = finalPaid ? 'Final Payment Receipt' : submitted ? 'Payment Submitted' : 'Payment Receipt';
+  const body = finalPaid
+    ? 'Your final payment has been received. All outstanding payment items connected to this request are now settled.'
+    : submitted
+    ? 'Thank you. Your secure payment was submitted through Stripe. Aligned Print & Scan has been notified.'
+    : 'Thank you. Your payment has been received and recorded for your request.';
+  return `<div class="next-panel receipt-panel reveal"><h3>${heading}</h3><p>${body}</p><div class="request-public-detail-grid"><div><span class="small-label">Reference</span><strong>${escapePublic(reference)}</strong></div><div><span class="small-label">Amount Recorded</span><strong>${money(amount)}</strong></div><div><span class="small-label">Status</span><strong>${escapePublic(finalPaid ? 'Final payment received' : submitted ? 'Payment submitted' : 'Payment received')}</strong></div><div><span class="small-label">Processed</span><strong>${escapePublic(paidDate)}</strong></div></div><div class="cta-row">${request.receipt_url||request.receipt_pdf_url?`<a class="btn dark" href="${escapePublic(request.receipt_url||request.receipt_pdf_url)}" target="_blank" rel="noopener">View Receipt</a>`:`<button class="btn dark" type="button" onclick="window.print()">Print Confirmation</button>`}<a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}">Questions? Contact Support</a></div></div>`;
 }
+
 function workflowKind(service){
   const s = String(service || '').toLowerCase();
   if (s === 'ron' || s.includes('remote')) return 'ron';
@@ -767,7 +582,7 @@ async function initSuccessPage(){
     ${ronNextStepPanel(request, detail)}
     ${prepVideo}
     ${completed?`<div class="next-panel reveal"><h3>Receipt & Review</h3><p>Your service has been completed. Please keep this page for your invoice/receipt reference. We appreciate your trust and welcome your feedback.</p>${reviewButtons}</div>`:''}
-    <div class="timeline-list reveal"><h3>${hasQuote?'What Happens Next':'General Review Process'}</h3><div><span>01</span><p>${hasQuote?'Review the itemized quote and service details before payment.':'Your request and uploaded documents are received securely.'}</p></div><div><span>02</span><p>${hasQuote?'Approve the quote, request an edit, or proceed to secure payment when payment is available.':'Aligned Print & Scan reviews the details, availability, fulfillment needs, and service requirements.'}</p></div><div><span>03</span><p>${hasQuote?'Once payment is received, appointment or fulfillment confirmation details will be provided.':'You receive the appropriate next step by email, such as a quote, payment link, RON platform instructions, or preparation checklist.'}</p></div></div>
+    ${['final_payment_received','completed'].includes(displayStatus)?'':`<div class="timeline-list reveal"><h3>${hasQuote?'What Happens Next':'General Review Process'}</h3><div><span>01</span><p>${hasQuote?'Review the itemized quote and service details before payment.':'Your request and uploaded documents are received securely.'}</p></div><div><span>02</span><p>${hasQuote?'Approve the quote, request an edit, or proceed to secure payment when payment is available.':'Aligned Print & Scan reviews the details, availability, fulfillment needs, and service requirements.'}</p></div><div><span>03</span><p>${hasQuote?'Once payment is received, appointment or fulfillment confirmation details will be provided.':'You receive the appropriate next step by email, such as a quote, payment link, RON platform instructions, or preparation checklist.'}</p></div></div>`}
     <div class="next-panel support-panel reveal"><h3>Need Help?</h3><p>Questions about this request, invoice, or appointment? Contact customer support and include your reference number.</p><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Contact Customer Support</a></div>
   `;
   qs('#approveQuoteBtn')?.addEventListener('click',async()=>{

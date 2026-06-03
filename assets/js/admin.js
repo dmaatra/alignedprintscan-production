@@ -213,7 +213,27 @@ async function getInvoiceItems(requestId) {
   if (error) return [];
   return data || [];
 }
-async function getInvoices(requestId) {
+async 
+function detailMap(rows) {
+  const list = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+  if (!list.length) return '<p class="admin-muted">No service-specific details found for this request.</p>';
+  const hidden = new Set(['id','service_request_id','created_at','updated_at']);
+  const labels = key => String(key || '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+  const cells = [];
+  list.forEach(row => {
+    Object.entries(row || {}).forEach(([key, value]) => {
+      if (hidden.has(key) || value === null || value === undefined || value === '') return;
+      cells.push(`<div><span class="small-label">${escapeHtml(labels(key))}</span><strong>${escapeHtml(String(value))}</strong></div>`);
+    });
+  });
+  return cells.length
+    ? `<div class="admin-detail-grid service-detail-map">${cells.join('')}</div>`
+    : '<p class="admin-muted">No service-specific details found for this request.</p>';
+}
+
+function getInvoices(requestId) {
   const { data, error } = await adminClient
     .from('invoices')
     .select('*')
@@ -227,38 +247,54 @@ function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
   const originalQuote = Number(request?.quote_amount || request?.estimated_total || quoteTotal || 0) || 0;
   const initial = invoices.find(inv => String(inv.invoice_type || '').includes('initial') || String(inv.invoice_number || '').endsWith('-01')) || null;
   const finals = invoices.filter(inv => String(inv.invoice_type || '').includes('final') || String(inv.invoice_number || '').endsWith('-02') || String(inv.status || '').includes('final'));
+
   const paidStatuses = new Set(['paid','payment_received','final_payment_received','payment_submitted','final_balance_payment_submitted']);
-  const initialPaid = paidStatuses.has(String(initial?.status || '').toLowerCase()) || ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(request?.status || '').toLowerCase());
-  const initialAmount = Number(initial?.amount_due || originalQuote || 0) || 0;
-  const paidInitial = initialPaid ? (Number(request?.paid_amount || 0) || initialAmount) : 0;
-  const paidFinal = finals.filter(inv => paidStatuses.has(String(inv.status || '').toLowerCase())).reduce((sum, inv) => sum + Number(inv.amount_paid || inv.paid_amount || inv.amount_due || 0), 0);
-  const unpaidFinal = finals.filter(inv => !paidStatuses.has(String(inv.status || '').toLowerCase()) && !['void','cancelled'].includes(String(inv.status || '').toLowerCase())).reduce((sum, inv) => sum + Number(inv.amount_due || 0), 0);
-  const paidToDate = paidInitial + paidFinal;
-  const balanceDue = (!initialPaid ? initialAmount : 0) + unpaidFinal;
+  const closedStatuses = new Set(['void','cancelled']);
+  const initialStatus = String(initial?.status || '').toLowerCase();
+  const initialPaid = paidStatuses.has(initialStatus) || ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(request?.status || '').toLowerCase());
+
+  const initialAmount = Number(initial?.amount_due || request?.initial_payment_amount || originalQuote || 0) || 0;
+  const paidInitial = initialPaid
+    ? Number(initial?.amount_paid || initial?.paid_amount || initialAmount || 0)
+    : 0;
+
+  const paidFinal = finals
+    .filter(inv => paidStatuses.has(String(inv.status || '').toLowerCase()))
+    .reduce((sum, inv) => sum + Number(inv.amount_paid || inv.paid_amount || inv.amount_due || 0), 0);
+
+  const unpaidFinal = finals
+    .filter(inv => !paidStatuses.has(String(inv.status || '').toLowerCase()) && !closedStatuses.has(String(inv.status || '').toLowerCase()))
+    .reduce((sum, inv) => sum + Number(inv.amount_due || 0), 0);
+
+  const paidToDate = invoices.length
+    ? paidInitial + paidFinal
+    : Number(request?.paid_amount || 0) || 0;
+
   const totalServiceValue = originalQuote + finals.reduce((sum, inv) => sum + Number(inv.amount_due || 0), 0);
+  const balanceDue = Math.max(0, totalServiceValue - paidToDate);
 
   const rows = [];
   if (initial || originalQuote) {
+    const initialNumber = initial?.invoice_number || ((request?.invoice_number || refFromId(request?.id || '').replace('APS-','INV-')) + '-01').replace('-01-01','-01');
     rows.push(`<div class="invoice-summary-item clean-summary-item">
-      <strong>${escapeHtml(initial?.invoice_number || ((request?.invoice_number || refFromId(request?.id || '').replace('APS-','INV-')) + '-01').replace('-01-01','-01'))}</strong>
-      <span>Initial Payment / Dispatch</span>
-      <span>${initialPaid ? 'Paid' : 'Due / Pending'} · ${money(initialAmount)}</span>
+      <div><span class="small-label">Initial Payment</span><strong>${escapeHtml(initialNumber)}</strong></div>
+      <div><span>${initialPaid ? 'Paid' : 'Due / Pending'}</span><strong>${money(initialAmount)}</strong></div>
       ${initial?.receipt_url || initial?.receipt_pdf_url ? `<a href="${escapeHtml(initial.receipt_url || initial.receipt_pdf_url)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
     </div>`);
   }
+
   if (finals.length) {
     finals.forEach(inv => {
       const status = statusLabel(inv.status || 'final_balance_due');
       const receipt = inv.receipt_url || inv.receipt_pdf_url;
       rows.push(`<div class="invoice-summary-item clean-summary-item">
-        <strong>${escapeHtml(inv.invoice_number || 'Final Balance')}</strong>
-        <span>Final Balance</span>
-        <span>${status} · ${money(inv.amount_due || 0)}</span>
+        <div><span class="small-label">Final Balance</span><strong>${escapeHtml(inv.invoice_number || 'Final Balance')}</strong></div>
+        <div><span>${escapeHtml(status)}</span><strong>${money(inv.amount_due || 0)}</strong></div>
         ${receipt ? `<a href="${escapeHtml(receipt)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
       </div>`);
     });
   } else {
-    rows.push('<div class="invoice-summary-item clean-summary-item muted-summary-item"><strong>Final Balance</strong><span>Not issued</span><span>Only appears when a final balance invoice is issued.</span></div>');
+    rows.push('<div class="invoice-summary-item clean-summary-item muted-summary-item"><div><span class="small-label">Final Balance</span><strong>Not issued</strong></div><div><span>Only appears when a final balance invoice is issued.</span></div></div>');
   }
 
   return `<div class="financial-summary-grid">
@@ -566,29 +602,36 @@ function addSelectedPresetInvoiceRow(){
 }
 async function createAdditionalInvoice(){
   if(!selectedRequest) return;
-  const items = invoiceRowsFromDom();
+  if(window.__alignedIssuingFinalInvoice) return;
+
+  const items = invoiceRowsFromDom().filter(item => item.description || Number(item.unit_price || 0) > 0);
   const total = items.reduce((sum, item) => sum + item.line_total, 0);
-  if(total <= 0){ alert('Add at least one line item before creating an additional invoice.'); return; }
+  if(total <= 0){ alert('Add at least one final-balance line item before issuing the invoice.'); return; }
+
   const note = $('#invoiceNote')?.value || 'Final balance invoice for additional on-site or fulfillment services.';
   const btn = $('#createAdditionalInvoiceBtn');
+  window.__alignedIssuingFinalInvoice = true;
   if(btn){ btn.disabled = true; btn.textContent = 'Issuing…'; }
+
   try{
     const { data, error } = await adminClient.functions.invoke('create-additional-invoice', {
       body: { request_id: selectedRequest.id, note, items }
     });
     if(error) throw error;
-    if(data && data.ok === false) throw new Error(data.error || 'Additional invoice was not created.');
+    if(data && data.ok === false) throw new Error(data.error || 'Final balance invoice was not created.');
+
+    showToast('Final balance invoice issued and customer email sent.');
     await loadRequests();
     await selectRequest(selectedRequest.id);
-    renderInvoiceRows([]);
-    showToast('Final balance invoice issued and linked to this order.');
   }catch(err){
     console.error(err);
     alert('Final balance invoice failed. Confirm create-additional-invoice is deployed and the invoice SQL migration has been run.');
   } finally {
+    window.__alignedIssuingFinalInvoice = false;
     if(btn){ btn.disabled = false; btn.textContent = 'Issue Final Balance Invoice'; }
   }
 }
+
 async function saveInvoice() {
   if (!selectedRequest) return;
   const items = invoiceRowsFromDom();
