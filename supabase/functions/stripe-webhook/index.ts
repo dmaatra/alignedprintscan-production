@@ -82,10 +82,13 @@ Deno.serve(async (req) => {
           const invRes = await supabaseFetch(`invoices?select=*&id=eq.${invoiceId}&limit=1`);
           const invRows = invRes.ok ? await invRes.json().catch(() => []) : [];
           invoice = invRows?.[0] || null;
+          const nextStatus = String(invoice?.invoice_type || "").includes("final") || String(invoice?.invoice_number || "").endsWith("-02")
+            ? "final_payment_received"
+            : "payment_submitted";
           await supabaseFetch(`invoices?id=eq.${invoiceId}`, {
             method: "PATCH",
             body: JSON.stringify({
-              status: "payment_submitted",
+              status: nextStatus,
               stripe_checkout_session_id: session.id,
               stripe_payment_intent_id: session.payment_intent || null,
               paid_amount: amount,
@@ -94,6 +97,16 @@ Deno.serve(async (req) => {
               receipt_url: receiptUrl,
             }),
           });
+
+          if (nextStatus === "final_payment_received") {
+            await supabaseFetch(`service_requests?id=eq.${requestId}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                status: "final_payment_received",
+                payment_status: "final_payment_received",
+              }),
+            });
+          }
         } else {
           await supabaseFetch(`service_requests?id=eq.${requestId}`, {
             method: "PATCH",
@@ -107,8 +120,19 @@ Deno.serve(async (req) => {
             }),
           });
         }
-        await supabaseFetch(`request_status_updates`, { method: "POST", body: JSON.stringify({ service_request_id: requestId, status: invoiceId ? "final_balance_payment_submitted" : "payment_submitted", message: `Stripe checkout completed for ${ref}. Admin payment review needed.`, sent_email: !!RESEND_API_KEY, sent_sms: false }) });
+        const statusForHistory = invoiceId
+          ? ((String(invoice?.invoice_type || "").includes("final") || String(invoice?.invoice_number || "").endsWith("-02")) ? "final_payment_received" : "final_balance_payment_submitted")
+          : "payment_submitted";
+        await supabaseFetch(`request_status_updates`, { method: "POST", body: JSON.stringify({ service_request_id: requestId, status: statusForHistory, message: `Stripe checkout completed for ${ref}. Admin payment review needed.`, sent_email: !!RESEND_API_KEY, sent_sms: false }) });
         await notifyPaymentSubmitted(requestId, session, invoice);
+
+        if (invoiceId && (String(invoice?.invoice_type || "").includes("final") || String(invoice?.invoice_number || "").endsWith("-02"))) {
+          await fetch(`${SUPABASE_URL}/functions/v1/send-order-email`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ request_id: requestId, status: "final_payment_received", invoice_id: invoiceId }),
+          }).catch(() => null);
+        }
       }
     }
     return new Response(JSON.stringify({ received: true }), { headers: { "Content-Type": "application/json" } });
