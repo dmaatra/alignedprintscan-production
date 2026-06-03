@@ -278,7 +278,7 @@ function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
     rows.push(`<div class="invoice-summary-item clean-summary-item">
       <div><span class="small-label">Initial Payment</span><strong>${escapeHtml(initialNumber)}</strong></div>
       <div><span>${initialPaid ? 'Paid' : 'Due / Pending'}</span><strong>${money(initialAmount)}</strong></div>
-      ${initial?.receipt_url || initial?.receipt_pdf_url ? `<a href="${escapeHtml(initial.receipt_url || initial.receipt_pdf_url)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
+      ${(initial?.receipt_url || initial?.receipt_pdf_url || request?.receipt_url || request?.receipt_pdf_url) ? `<a href="${escapeHtml(initial?.receipt_url || initial?.receipt_pdf_url || request?.receipt_url || request?.receipt_pdf_url)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
     </div>`);
   }
 
@@ -313,21 +313,52 @@ function workflowKind(service){
 }
 function internalWorkflowGuide(request){
   const kind = workflowKind(request?.service_type);
-  const label = kind === 'ron' ? 'RON Workflow' : kind === 'mobile' ? 'Mobile Notary Workflow' : 'Document Services Workflow';
+  const label = kind === 'ron' ? 'Remote Online Notary Workflow' : kind === 'mobile' ? 'Mobile Notary Workflow' : 'Document Services Workflow';
   const steps = {
-    ron: [['under_review','Request Received'],['awaiting_approval','Quote Prepared'],['payment_received','Payment Received'],['appointment_confirmed','RON Session Confirmed'],['completed','Completed']],
-    mobile: [['under_review','Request Received'],['awaiting_approval','Quote Prepared'],['payment_received','Reservation Payment Received'],['appointment_confirmed','Appointment Confirmed'],['final_balance_due','Final Balance Due'],['final_payment_received','Final Payment Received'],['completed','Completed']],
-    document: [['under_review','Request Received'],['awaiting_approval','Quote Prepared'],['payment_received','Production Payment Received'],['appointment_confirmed','Fulfillment Scheduled'],['final_balance_due','Final Balance Due'],['final_payment_received','Final Payment Received'],['completed','Completed']]
+    ron: [
+      ['under_review','Request Submitted'],
+      ['awaiting_approval','Quote Prepared'],
+      ['payment_received','Payment Received'],
+      ['appointment_confirmed','Appointment Confirmed'],
+      ['identity_verification','Identity Verification'],
+      ['ron_session','RON Session'],
+      ['completed','Completed'],
+      ['review','Review Requested']
+    ],
+    mobile: [
+      ['under_review','Request Submitted'],
+      ['awaiting_approval','Quote Prepared'],
+      ['payment_received','Payment Received'],
+      ['appointment_confirmed','Appointment Confirmed'],
+      ['mobile_visit','Mobile Visit Completed'],
+      ['final_balance_due','Final Balance Due'],
+      ['final_payment_received','Final Payment Received'],
+      ['completed','Completed']
+    ],
+    document: [
+      ['under_review','Request Submitted'],
+      ['awaiting_approval','Quote Prepared'],
+      ['approved','Quote Approved'],
+      ['payment_received','Production Payment Received'],
+      ['appointment_confirmed','Fulfillment Scheduled'],
+      ['final_balance_due','Final Balance Due'],
+      ['final_payment_received','Final Payment Received'],
+      ['completed','Service Completed']
+    ]
   }[kind];
-  const aliases = { quote_ready:'awaiting_approval', quote_sent:'awaiting_approval', awaiting_payment:'awaiting_approval', payment_pending:'awaiting_approval', payment_submitted:'payment_received', paid_confirmed:'payment_received', scheduled:'appointment_confirmed', scheduling:'payment_received' };
+  const aliases = {
+    quote_ready:'awaiting_approval', quote_sent:'awaiting_approval', awaiting_payment:'approved', payment_pending:'approved',
+    payment_submitted:'payment_received', paid_confirmed:'payment_received', scheduled:'appointment_confirmed', scheduling:'payment_received',
+    final_balance_payment_submitted:'final_payment_received'
+  };
   const current = aliases[request?.status] || request?.status || 'under_review';
   let index = steps.findIndex(s => s[0] === current);
+  if (index < 0 && ['identity_verification','ron_session','mobile_visit','review'].includes(current)) index = steps.findIndex(s => s[0] === current);
   if (index < 0) index = 0;
   const next = steps[Math.min(index + 1, steps.length - 1)]?.[1] || steps[index]?.[1] || 'Review request';
-  return `<div class="admin-detail-section internal-workflow-card">
-    <h3>Internal Workflow Guide</h3>
-    <p class="admin-muted">${label} · Current step highlighted for internal review.</p>
-    <div class="internal-workflow-steps clean-workflow-steps">
+  return `<div class="admin-detail-section internal-workflow-card premium-workflow-card">
+    <div class="section-title-row"><div><h3>Internal Workflow Guide</h3><p class="admin-muted">${label} · Current step highlighted for internal review.</p></div></div>
+    <div class="internal-workflow-steps clean-workflow-steps compact-workflow-steps">
       ${steps.map((step, i) => `<div class="internal-workflow-step ${i < index ? 'done' : ''} ${i === index ? 'current' : ''}"><span>${String(i+1).padStart(2,'0')}</span><strong>${escapeHtml(step[1])}</strong></div>`).join('')}
     </div>
     <div class="next-action-card"><span class="small-label">Next recommended action</span><strong>${escapeHtml(next)}</strong></div>

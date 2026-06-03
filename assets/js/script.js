@@ -363,79 +363,83 @@ function finalBalanceInvoices(invoices=[]){
   return (invoices || []).filter(inv => String(inv.invoice_type || '').includes('final') || String(inv.invoice_number || '').endsWith('-02') || String(inv.status || '').includes('final'));
 }
 
-function paymentSchedulePanel({request={}, invoices=[], quoteItems=[], additionalItems=[], quoteAmount=0}={}){
+function paymentSchedulePanel({request={}, invoices=[], quoteItems=[], additionalItems=[], quoteAmount=0, compact=false}={}){
   const quoteTotal = Number(quoteAmount || invoiceTotal(quoteItems) || request.quote_amount || request.estimated_total || 0) || 0;
   const initial = findInitialInvoice(invoices);
   const finals = finalBalanceInvoices(invoices);
   const paidStatuses = ['paid','payment_received','final_payment_received','payment_submitted','final_balance_payment_submitted'];
   const closedStatuses = ['void','cancelled'];
+  const statusNow = String(request.status || '').toLowerCase();
 
   const activeFinal = finals.find(inv => !paidStatuses.includes(String(inv.status||'').toLowerCase()) && !closedStatuses.includes(String(inv.status||'').toLowerCase()));
-  const initialPaid = paidStatuses.includes(String(initial?.status || '').toLowerCase()) || ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(request.status || '').toLowerCase());
+  const initialPaid = paidStatuses.includes(String(initial?.status || '').toLowerCase()) || ['payment_received','appointment_confirmed','scheduled','final_balance_due','final_payment_received','completed'].includes(statusNow);
 
-  // Keep display math stable: Invoice #1 represents the original/initial approved quote.
-  // Later final-balance invoices should not inflate Invoice #1 even if request-level paid_amount is cumulative.
   const rawInitialAmount = Number(initial?.amount_due || request.initial_payment_amount || quoteTotal || 0) || 0;
-  const initialAmount = finals.length && quoteTotal ? quoteTotal : rawInitialAmount;
+  const initialAmount = quoteTotal ? quoteTotal : rawInitialAmount;
   const paidInitial = initialPaid ? initialAmount : 0;
   const paidFinalAmount = finals
     .filter(inv => paidStatuses.includes(String(inv.status || '').toLowerCase()))
-    .reduce((sum, inv)=>sum+Number(inv.amount_due || inv.amount_paid || inv.paid_amount || 0),0);
+    .reduce((sum, inv)=>sum+Number(inv.amount_paid || inv.paid_amount || inv.amount_due || 0),0);
 
-  const finalDueAmount = activeFinal ? Number(activeFinal.amount_due || 0) : 0;
   const finalIssuedTotal = finals.reduce((sum, inv)=>sum+Number(inv.amount_due||0),0);
   const totalServiceValue = quoteTotal + finalIssuedTotal;
   const paidToDate = invoices.length ? paidInitial + paidFinalAmount : Number(request.paid_amount || 0) || 0;
   const balanceDue = Math.max(0, totalServiceValue - paidToDate);
-  const showInitialPay = ['awaiting_payment','payment_pending','awaiting_approval','quote_ready'].includes(String(request.status || '').toLowerCase()) && initialAmount > 0 && !initialPaid && !activeFinal;
+  const showInitialPay = ['awaiting_payment','payment_pending','awaiting_approval','quote_ready'].includes(statusNow) && initialAmount > 0 && !initialPaid && !activeFinal;
 
   const initialNumber = initial?.invoice_number || (request.invoice_number ? `${String(request.invoice_number).replace(/^QUOTE-/,'INV-')}-01`.replace(/-01-01$/,'-01') : 'Initial payment');
-  const initialReceipt = initial?.receipt_url || initial?.receipt_pdf_url || (!finals.length ? (request.receipt_url || request.receipt_pdf_url || '') : '');
+  const initialReceipt = initial?.receipt_url || initial?.receipt_pdf_url || request.receipt_url || request.receipt_pdf_url || '';
 
-  const finalHtml = finals.length ? finals.map(inv => {
-    const invItems = additionalItems.filter(item => String(item.invoice_id || '') === String(inv.id || ''));
-    const total = Number(inv.amount_due || invoiceTotal(invItems) || 0);
-    const receiptUrl = inv.receipt_url || inv.receipt_pdf_url || '';
-    const statusText = invoiceStatusLabel(inv.status);
-    const payable = String(activeFinal?.id || '') === String(inv.id || '') && total > 0;
-    return `<div class="payment-schedule-row final-balance-row">
-      <span class="small-label">Final Balance</span>
-      <div class="payment-row-main"><strong>${escapePublic(inv.invoice_number || 'Final Balance Invoice')}</strong><span>${escapePublic(statusText)} · ${money(total)}</span></div>
-      ${inv.note ? `<p class="payment-row-note">${escapePublic(inv.note)}</p>` : ''}
-      ${invItems.length ? invoiceList(invItems) : ''}
-      <div class="cta-row">
-        ${receiptUrl ? `<a class="btn dark" href="${escapePublic(receiptUrl)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
-        ${payable ? `<button class="btn primary payAdditionalInvoice" data-invoice-id="${escapePublic(inv.id)}" type="button">Pay Final Balance</button>` : ''}
+  const invoiceRows = [];
+  if (initial || quoteTotal || initialAmount) {
+    invoiceRows.push(`<div class="payment-schedule-row initial-payment-row premium-receipt-row">
+      <span class="small-label">Initial Payment</span>
+      <div class="payment-row-main"><strong>${escapePublic(initialNumber)}</strong><span>${initialPaid ? 'Paid' : 'Due'} · ${money(initialAmount)}</span></div>
+      <div class="cta-row compact-cta-row">
+        ${initialReceipt ? `<a class="btn dark" href="${escapePublic(initialReceipt)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
+        ${showInitialPay ? `<button id="startPaymentBtn" class="btn primary" type="button">Pay Initial Payment</button>` : ''}
       </div>
-    </div>`;
-  }).join('') : `<div class="payment-schedule-row final-balance-row not-issued"><span class="small-label">Final Balance</span><div class="payment-row-main"><strong>Not issued</strong><span>Only appears if additional on-site or fulfillment charges are added.</span></div></div>`;
+    </div>`);
+  }
 
-  const fullyPaid = balanceDue <= 0 && (initialPaid || finals.length > 0);
-  const summaryLabel = finals.length ? 'Original Service Quote' : 'Service Quote';
-
-  return `<div class="next-panel payment-schedule-panel reveal ${fullyPaid ? 'settled-payment-panel' : ''}">
-    <h3>${fullyPaid ? 'Payment Summary' : 'Payment Schedule'}</h3>
-    <div class="request-public-detail-grid payment-summary-grid-public">
-      <div><span class="small-label">${summaryLabel}</span><strong>${money(quoteTotal)}</strong></div>
-      <div><span class="small-label">Paid to Date</span><strong>${money(paidToDate)}</strong></div>
-      <div><span class="small-label">${finals.length ? 'Additional Final Balance' : 'Balance Due'}</span><strong>${money(finals.length ? finalIssuedTotal : balanceDue)}</strong></div>
-      ${finals.length ? `<div><span class="small-label">Total Paid / Service Total</span><strong>${money(paidToDate || totalServiceValue)}</strong></div><div><span class="small-label">Balance Due</span><strong>${money(balanceDue)}</strong></div>` : ''}
-    </div>
-    <div class="payment-schedule-list clean-payment-schedule">
-      <div class="payment-schedule-row initial-payment-row">
-        <span class="small-label">Initial Payment</span>
-        <div class="payment-row-main"><strong>${escapePublic(initialNumber)}</strong><span>${initialPaid ? 'Paid' : 'Due'} · ${money(initialAmount)}</span></div>
-        <div class="cta-row">
-          ${initialReceipt ? `<a class="btn dark" href="${escapePublic(initialReceipt)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
-          ${showInitialPay ? `<button id="startPaymentBtn" class="btn primary" type="button">Pay Initial Payment</button>` : ''}
+  if (finals.length) {
+    finals.forEach(inv => {
+      const invItems = additionalItems.filter(item => String(item.invoice_id || '') === String(inv.id || ''));
+      const total = Number(inv.amount_due || invoiceTotal(invItems) || 0);
+      const receiptUrl = inv.receipt_url || inv.receipt_pdf_url || '';
+      const statusText = invoiceStatusLabel(inv.status);
+      const payable = String(activeFinal?.id || '') === String(inv.id || '') && total > 0;
+      invoiceRows.push(`<div class="payment-schedule-row final-balance-row premium-receipt-row">
+        <span class="small-label">Final Balance</span>
+        <div class="payment-row-main"><strong>${escapePublic(inv.invoice_number || 'Final Balance Invoice')}</strong><span>${escapePublic(statusText)} · ${money(total)}</span></div>
+        ${inv.note ? `<p class="payment-row-note">${escapePublic(inv.note)}</p>` : ''}
+        ${invItems.length && !compact ? invoiceList(invItems) : ''}
+        <div class="cta-row compact-cta-row">
+          ${receiptUrl ? `<a class="btn dark" href="${escapePublic(receiptUrl)}" target="_blank" rel="noopener">View Receipt</a>` : ''}
+          ${payable ? `<button class="btn primary payAdditionalInvoice" data-invoice-id="${escapePublic(inv.id)}" type="button">Pay Final Balance</button>` : ''}
         </div>
-      </div>
-      ${finalHtml}
+      </div>`);
+    });
+  } else if (!compact) {
+    invoiceRows.push(`<div class="payment-schedule-row final-balance-row not-issued"><span class="small-label">Final Balance</span><div class="payment-row-main"><strong>Not issued</strong><span>Only appears if additional on-site or fulfillment charges are added.</span></div></div>`);
+  }
+
+  const settled = balanceDue <= 0 && paidToDate > 0;
+  return `<div class="next-panel payment-schedule-panel reveal ${settled ? 'settled-payment-panel' : ''}">
+    <h3>${settled ? 'Payment Summary' : 'Payment Schedule'}</h3>
+    <div class="request-public-detail-grid payment-summary-grid-public premium-payment-metrics">
+      <div><span class="small-label">Service Total</span><strong>${money(totalServiceValue || quoteTotal)}</strong></div>
+      <div><span class="small-label">Initial Payment</span><strong>${initialPaid ? `${money(paidInitial)} paid` : `${money(initialAmount)} due`}</strong></div>
+      ${finals.length ? `<div><span class="small-label">Final Balance</span><strong>${money(finalIssuedTotal)}${activeFinal ? ' due' : ' paid'}</strong></div>` : ''}
+      <div><span class="small-label">Paid to Date</span><strong>${money(paidToDate)}</strong></div>
+      <div><span class="small-label">Balance Due</span><strong>${money(balanceDue)}</strong></div>
+    </div>
+    <div class="payment-schedule-list clean-payment-schedule receipt-archive-list">
+      ${invoiceRows.join('')}
     </div>
     <div id="embeddedPaymentBox" class="embedded-payment-box"></div>
   </div>`;
 }
-
 function receiptPanel(request, reference){
   if(!['payment_submitted','payment_received','paid_confirmed','scheduling','appointment_confirmed','scheduled','final_balance_due','final_balance_payment_submitted','final_payment_received','completed'].includes(request.status||'')) return '';
   const amount=Number(request.paid_amount||request.quote_amount||request.estimated_total||0)||0;
@@ -606,6 +610,91 @@ function conciseServiceSummaryPanel(request={}, reference=''){
   return `<div class="next-panel service-summary-panel reveal"><h3>Service Summary</h3><div class="request-public-detail-grid"><div><span class="small-label">Service</span><strong>${escapePublic(serviceName)}</strong></div><div><span class="small-label">Date</span><strong>${escapePublic(date)}</strong></div><div><span class="small-label">Time</span><strong>${escapePublic(time)}</strong></div><div><span class="small-label">Service Method</span><strong>${escapePublic(method)}</strong></div>${location ? `<div><span class="small-label">Service Address / Location</span><strong>${escapePublic(location)}</strong></div>` : ''}${instructions ? `<div><span class="small-label">Service Notes</span><strong>${escapePublic(instructions)}</strong></div>` : ''}</div></div>`;
 }
 
+function clientServiceDetailsPanel({request={}, customer=null, reference='', fileCount=0, detail=null}={}){
+  const c = customer || (Array.isArray(request.customers) ? request.customers[0] : request.customers || {});
+  const name = `${c?.first_name || ''} ${c?.last_name || ''}`.trim() || 'Client';
+  const serviceName = serviceLabel(request.service_type) || 'Service Request';
+  const requestedDate = formatDateValue(request.appointment_date || request.preferred_date);
+  const requestedTime = formatTimeWindow(request.appointment_time || request.preferred_time_window);
+  const method = serviceMethodLabel(request);
+  const location = serviceLocationValue(request);
+  const instructions = request.appointment_instructions || request.appointment_line_items_note || request.notes || '';
+  return `<div class="request-public-summary client-service-combo reveal">
+    <h3>Client & Service Details</h3>
+    <div class="request-public-detail-grid">
+      <div><span class="small-label">Client</span><strong>${escapePublic(name)}</strong></div>
+      ${c?.email ? `<div><span class="small-label">Email</span><strong>${escapePublic(c.email)}</strong></div>` : ''}
+      ${c?.phone ? `<div><span class="small-label">Phone</span><strong>${escapePublic(c.phone)}</strong></div>` : ''}
+      <div><span class="small-label">Service</span><strong>${escapePublic(serviceName)}</strong></div>
+      <div><span class="small-label">Date</span><strong>${escapePublic(requestedDate)}</strong></div>
+      <div><span class="small-label">Time</span><strong>${escapePublic(requestedTime)}</strong></div>
+      <div><span class="small-label">Service Method</span><strong>${escapePublic(method)}</strong></div>
+      ${location ? `<div><span class="small-label">Address / Location</span><strong>${escapePublic(location)}</strong></div>` : ''}
+      ${fileCount ? `<div><span class="small-label">Uploaded Files</span><strong>${fileCount} received</strong></div>` : ''}
+      ${instructions ? `<div><span class="small-label">Instructions</span><strong>${escapePublic(instructions)}</strong></div>` : ''}
+    </div>
+    ${serviceDetailSummary(request.service_type, detail)}
+  </div>`;
+}
+
+function approvedServiceQuotePanel({items=[], quoteAmount=0, reference='', note='', includeDisclaimer=false}={}){
+  const hasItems = (items || []).length;
+  if(!hasItems && !quoteAmount) return '';
+  return `<div class="next-panel invoice-panel approved-service-quote reveal">
+    <h3>Approved Service Quote</h3>
+    <p class="premium-intro">This is the approved service estimate for your request.</p>
+    ${hasItems ? invoiceList(items) : `<p class="admin-muted">Service quote total: <strong>${money(quoteAmount)}</strong></p>`}
+    <p class="admin-muted">Quote Reference: <strong>QUOTE-${escapePublic(String(reference).replace(/^APS-/,''))}</strong></p>
+    ${includeDisclaimer ? `<div class="email-notice slim-note"><h3>Possible Additional Charges</h3><p>If additional pages, travel, rush handling, after-hours support, witnesses, scanning, courier delivery, or on-site additions are completed, a final balance invoice may be issued before the request is marked complete.</p></div>` : ''}
+    ${note ? `<div class="email-notice slim-note"><h3>Client Note</h3><p>${escapePublic(note)}</p></div>` : ''}
+  </div>`;
+}
+
+function nextStepsPanel(status='', service=''){
+  const kind = workflowKind(service);
+  if(String(status).toLowerCase()==='payment_received' || String(status).toLowerCase()==='paid_confirmed' || String(status).toLowerCase()==='scheduling'){
+    return `<div class="timeline-list reveal"><h3>What Happens Next</h3><div><span>01</span><p>Aligned Print & Scan will confirm your appointment, delivery, session, or fulfillment details.</p></div><div><span>02</span><p>You will receive a confirmation email with the date, time, address, method, and preparation instructions.</p></div><div><span>03</span><p>${kind === 'ron' ? 'Please keep your ID and technology ready for the remote session.' : 'If additional services are completed, a final balance invoice may be issued before completion.'}</p></div></div>`;
+  }
+  return '';
+}
+
+function preparationTipsPanel(request={}){
+  const kind = workflowKind(request.service_type);
+  const text = kind === 'ron'
+    ? 'Please have your valid identification, required documents, stable internet, camera, microphone, and any platform instructions ready before your session time.'
+    : kind === 'mobile'
+    ? 'Please have valid identification, unsigned documents, required witnesses, and access details ready at the appointment location. If additional notarial acts, travel, or on-site support are added, a final balance invoice may be issued.'
+    : 'Please have documents, access details, delivery instructions, labels, or pickup/courier information ready according to your service type. If additional pages, scanning, delivery, or on-site support are added, a final balance invoice may be issued.';
+  return `<div class="next-panel prep-tips-panel reveal"><h3>Preparation Tips</h3><p>${escapePublic(text)}</p></div>`;
+}
+
+function paymentReceivedView({request={}, invoices=[], items=[], additionalItems=[], quoteAmount=0, reference='', customer=null, fileCount=0, detail=null, displayStatus='payment_received'}={}){
+  const quoteNote = request.quote_notes || request.customer_message || '';
+  return `
+    <div class="success-ref reveal">${escapePublic(reference)}</div>
+    ${statusTimeline(displayStatus, request.service_type)}
+    <div class="next-panel payment-received-hero reveal"><h3>Payment Received</h3><p>Your payment has been recorded. Aligned Print & Scan will confirm your appointment, session, delivery, or fulfillment details next.</p></div>
+    ${clientServiceDetailsPanel({request, customer, reference, fileCount, detail})}
+    ${approvedServiceQuotePanel({items, quoteAmount, reference, note: quoteNote, includeDisclaimer:true})}
+    ${paymentSchedulePanel({request:{...request,status:displayStatus}, invoices, quoteItems:items, additionalItems, quoteAmount, compact:true})}
+    ${nextStepsPanel(displayStatus, request.service_type)}
+    <div class="next-panel support-panel reveal"><h3>Need Help?</h3><p>Questions about your request or payment? Contact customer support and include your APS reference number.</p><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Contact Customer Support</a></div>
+  `;
+}
+
+function appointmentConfirmedView({request={}, invoices=[], items=[], additionalItems=[], quoteAmount=0, reference='', customer=null, fileCount=0, detail=null, displayStatus='appointment_confirmed'}={}){
+  return `
+    <div class="success-ref reveal">${escapePublic(reference)}</div>
+    ${statusTimeline(displayStatus, request.service_type)}
+    <div class="next-panel appointment-confirmed-hero reveal"><h3>Appointment Confirmed</h3><p>Your appointment or fulfillment has been confirmed. Please review the details below and prepare for your scheduled service time.</p></div>
+    ${appointmentDetailsPanel({...request,status:displayStatus})}
+    ${preparationTipsPanel(request)}
+    ${clientServiceDetailsPanel({request, customer, reference, fileCount, detail})}
+    ${paymentSchedulePanel({request:{...request,status:displayStatus}, invoices, quoteItems:items, additionalItems, quoteAmount, compact:true})}
+    <div class="next-panel support-panel reveal"><h3>Need Help?</h3><p>Need to update your appointment details or ask a question? Contact customer support and include your APS reference number.</p><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Contact Customer Support</a></div>
+  `;
+}
+
 function finalPaymentReceivedView({request={}, invoices=[], items=[], additionalItems=[], quoteAmount=0, reference='', customer=null, displayStatus='final_payment_received'}={}){
   return `
     <div class="success-ref reveal">${escapePublic(reference)}</div>
@@ -613,7 +702,7 @@ function finalPaymentReceivedView({request={}, invoices=[], items=[], additional
     <div class="next-panel final-paid-hero reveal"><h3>Final Payment Received</h3><p>Thank you. Your final payment has been received and your balance is now settled.</p></div>
     ${customerCard(customer || {})}
     ${conciseServiceSummaryPanel(request, reference)}
-    ${paymentSchedulePanel({request:{...request,status:displayStatus}, invoices, quoteItems:items, additionalItems, quoteAmount})}
+    ${paymentSchedulePanel({request:{...request,status:displayStatus}, invoices, quoteItems:items, additionalItems, quoteAmount, compact:true})}
     <div class="next-panel support-panel reveal"><h3>Need Help?</h3><p>Questions about this request or receipt? Contact customer support and include your reference number.</p><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Contact Customer Support</a></div>
   `;
 }
@@ -624,7 +713,7 @@ function completedSuccessView({request={}, invoices=[], items=[], additionalItem
     <div class="success-ref reveal">${escapePublic(reference)}</div>
     ${statusTimeline(displayStatus, request.service_type)}
     <div class="next-panel completed-hero reveal"><h3>Service Completed</h3><p>Thank you for choosing Aligned Print & Scan. Your request has been completed and your receipts are available below.</p>${reviewButtons}</div>
-    ${paymentSchedulePanel({request:{...request,status:displayStatus}, invoices, quoteItems:items, additionalItems, quoteAmount})}
+    ${paymentSchedulePanel({request:{...request,status:displayStatus}, invoices, quoteItems:items, additionalItems, quoteAmount, compact:true})}
     <div class="next-panel support-panel reveal"><h3>Need Help?</h3><p>Questions about this completed request? Contact customer support and include your reference number.</p><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Contact Customer Support</a></div>
   `;
 }
@@ -757,6 +846,14 @@ async function initSuccessPage(){
   const canPay=!sessionId && ['awaiting_payment','payment_pending'].includes(status)&&quoteAmount>0&&request.id && status !== 'quote_expired';
 
   const customer = Array.isArray(request.customers) ? request.customers[0] : (request.customers || {});
+  if (['payment_received','paid_confirmed','scheduling'].includes(displayStatus)) {
+    successBox.innerHTML = paymentReceivedView({request, invoices, items, additionalItems, quoteAmount, reference, customer, fileCount, detail, displayStatus});
+    return;
+  }
+  if (['appointment_confirmed','scheduled'].includes(displayStatus)) {
+    successBox.innerHTML = appointmentConfirmedView({request, invoices, items, additionalItems, quoteAmount, reference, customer, fileCount, detail, displayStatus});
+    return;
+  }
   if (displayStatus === 'final_payment_received') {
     successBox.innerHTML = finalPaymentReceivedView({request, invoices, items, additionalItems, quoteAmount, reference, customer, displayStatus});
     return;
