@@ -95,11 +95,14 @@ function itemTable(items: any[], total: number) {
 }
 
 function appointmentBlock(request: any) {
+  const service = String(request.service_type || "").toLowerCase();
+  const methodLabel = service === "ron" ? "RON Platform / Method" : "Service Method";
+  const locationLabel = service === "ron" ? "Secure Session Link" : "Service Address / Delivery Address";
   const details = [
     ["Date", request.appointment_date],
     ["Time", request.appointment_time],
-    ["Platform / Method", request.appointment_platform],
-    ["Location", request.appointment_location],
+    [methodLabel, request.appointment_platform],
+    [locationLabel, request.appointment_location],
     ["Secure Link", request.appointment_link || request.ron_session_url],
   ].filter(([, value]) => value);
 
@@ -168,7 +171,7 @@ function buildCustomerContent(status: string, request: any, customer: any, items
     return {
       subject: `Final payment received: ${ref}`,
       preheader: `Your final balance payment has been received.`,
-      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Final Payment Received</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Final Balance Payment Received</h1><p>Hello ${esc(first)},</p><p>Thank you. Your final balance payment for <strong>${esc(ref)}</strong> has been received and recorded. Your order is now ready for completion review.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Amount Recorded:</strong> ${money(total)}<br><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}</div>${button(statusUrl, "View Updated Status")}`,
+      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Final Payment Received</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Final Balance Payment Received</h1><p>Hello ${esc(first)},</p><p>Thank you. Your final balance payment for <strong>${esc(ref)}</strong> has been received and recorded. Your request is fully paid. Your service summary and receipts are available on your status page. Aligned Print & Scan will close the request once the service record is reviewed.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Amount Recorded:</strong> ${money(total)}<br><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}</div>${button(statusUrl, "View Updated Status")}`,
     };
   }
 
