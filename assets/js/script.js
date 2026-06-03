@@ -373,11 +373,14 @@ function paymentSchedulePanel({request={}, invoices=[], quoteItems=[], additiona
   const activeFinal = finals.find(inv => !paidStatuses.includes(String(inv.status||'').toLowerCase()) && !closedStatuses.includes(String(inv.status||'').toLowerCase()));
   const initialPaid = paidStatuses.includes(String(initial?.status || '').toLowerCase()) || ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(request.status || '').toLowerCase());
 
-  const initialAmount = Number(initial?.amount_due || request.initial_payment_amount || quoteTotal || 0) || 0;
-  const paidInitial = initialPaid ? Number(initial?.amount_paid || initial?.paid_amount || initialAmount || 0) : 0;
+  // Keep display math stable: Invoice #1 represents the original/initial approved quote.
+  // Later final-balance invoices should not inflate Invoice #1 even if request-level paid_amount is cumulative.
+  const rawInitialAmount = Number(initial?.amount_due || request.initial_payment_amount || quoteTotal || 0) || 0;
+  const initialAmount = finals.length && quoteTotal ? quoteTotal : rawInitialAmount;
+  const paidInitial = initialPaid ? initialAmount : 0;
   const paidFinalAmount = finals
     .filter(inv => paidStatuses.includes(String(inv.status || '').toLowerCase()))
-    .reduce((sum, inv)=>sum+Number(inv.amount_paid || inv.paid_amount || inv.amount_due || 0),0);
+    .reduce((sum, inv)=>sum+Number(inv.amount_due || inv.amount_paid || inv.paid_amount || 0),0);
 
   const finalDueAmount = activeFinal ? Number(activeFinal.amount_due || 0) : 0;
   const finalIssuedTotal = finals.reduce((sum, inv)=>sum+Number(inv.amount_due||0),0);
@@ -415,8 +418,8 @@ function paymentSchedulePanel({request={}, invoices=[], quoteItems=[], additiona
     <div class="request-public-detail-grid payment-summary-grid-public">
       <div><span class="small-label">${summaryLabel}</span><strong>${money(quoteTotal)}</strong></div>
       <div><span class="small-label">Paid to Date</span><strong>${money(paidToDate)}</strong></div>
-      <div><span class="small-label">${activeFinal ? 'Additional Final Balance' : 'Balance Due'}</span><strong>${money(balanceDue)}</strong></div>
-      ${finals.length ? `<div><span class="small-label">Total Collected / Service Value</span><strong>${money(totalServiceValue)}</strong></div>` : ''}
+      <div><span class="small-label">${finals.length ? 'Additional Final Balance' : 'Balance Due'}</span><strong>${money(finals.length ? finalIssuedTotal : balanceDue)}</strong></div>
+      ${finals.length ? `<div><span class="small-label">Total Paid / Service Total</span><strong>${money(paidToDate || totalServiceValue)}</strong></div><div><span class="small-label">Balance Due</span><strong>${money(balanceDue)}</strong></div>` : ''}
     </div>
     <div class="payment-schedule-list clean-payment-schedule">
       <div class="payment-schedule-row initial-payment-row">
@@ -592,6 +595,40 @@ function appointmentDetailsPanel(request={}){
   const instructions = request.appointment_instructions || request.appointment_line_items_note || request.notes || '';
   return `<div class="next-panel appointment-panel reveal"><h3>Service Details</h3><p>Your appointment or fulfillment details are listed below.</p><div class="request-public-detail-grid"><div><span class="small-label">Date</span><strong>${escapePublic(date)}</strong></div><div><span class="small-label">Time</span><strong>${escapePublic(time)}</strong></div><div><span class="small-label">Service Method</span><strong>${escapePublic(method)}</strong></div>${location ? `<div><span class="small-label">Service Address / Location</span><strong>${escapePublic(location)}</strong></div>` : ''}${instructions ? `<div><span class="small-label">Instructions</span><strong>${escapePublic(instructions)}</strong></div>` : ''}</div></div>`;
 }
+
+function conciseServiceSummaryPanel(request={}, reference=''){
+  const serviceName = serviceLabel(request.service_type) || 'Service Request';
+  const date = formatDateValue(request.appointment_date || request.preferred_date);
+  const time = formatTimeWindow(request.appointment_time || request.preferred_time_window);
+  const method = serviceMethodLabel(request);
+  const location = serviceLocationValue(request);
+  const instructions = request.appointment_instructions || request.appointment_line_items_note || request.notes || '';
+  return `<div class="next-panel service-summary-panel reveal"><h3>Service Summary</h3><div class="request-public-detail-grid"><div><span class="small-label">Service</span><strong>${escapePublic(serviceName)}</strong></div><div><span class="small-label">Date</span><strong>${escapePublic(date)}</strong></div><div><span class="small-label">Time</span><strong>${escapePublic(time)}</strong></div><div><span class="small-label">Service Method</span><strong>${escapePublic(method)}</strong></div>${location ? `<div><span class="small-label">Service Address / Location</span><strong>${escapePublic(location)}</strong></div>` : ''}${instructions ? `<div><span class="small-label">Service Notes</span><strong>${escapePublic(instructions)}</strong></div>` : ''}</div></div>`;
+}
+
+function finalPaymentReceivedView({request={}, invoices=[], items=[], additionalItems=[], quoteAmount=0, reference='', customer=null, displayStatus='final_payment_received'}={}){
+  return `
+    <div class="success-ref reveal">${escapePublic(reference)}</div>
+    ${statusTimeline(displayStatus, request.service_type)}
+    <div class="next-panel final-paid-hero reveal"><h3>Final Payment Received</h3><p>Thank you. Your final payment has been received and your balance is now settled.</p></div>
+    ${customerCard(customer || {})}
+    ${conciseServiceSummaryPanel(request, reference)}
+    ${paymentSchedulePanel({request:{...request,status:displayStatus}, invoices, quoteItems:items, additionalItems, quoteAmount})}
+    <div class="next-panel support-panel reveal"><h3>Need Help?</h3><p>Questions about this request or receipt? Contact customer support and include your reference number.</p><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Contact Customer Support</a></div>
+  `;
+}
+
+function completedSuccessView({request={}, invoices=[], items=[], additionalItems=[], quoteAmount=0, reference='', displayStatus='completed'}={}){
+  const reviewButtons = `<div class="cta-row review-buttons"><a class="btn primary" href="${escapePublic(request.review_link_google||'https://www.google.com/search?q=Aligned+Print+%26+Scan+reviews')}" target="_blank" rel="noopener">Leave a Google Review</a><a class="btn secondary" href="${escapePublic(request.review_link_yelp||'support.html')}">Share Feedback</a></div>`;
+  return `
+    <div class="success-ref reveal">${escapePublic(reference)}</div>
+    ${statusTimeline(displayStatus, request.service_type)}
+    <div class="next-panel completed-hero reveal"><h3>Service Completed</h3><p>Thank you for choosing Aligned Print & Scan. Your request has been completed and your receipts are available below.</p>${reviewButtons}</div>
+    ${paymentSchedulePanel({request:{...request,status:displayStatus}, invoices, quoteItems:items, additionalItems, quoteAmount})}
+    <div class="next-panel support-panel reveal"><h3>Need Help?</h3><p>Questions about this completed request? Contact customer support and include your reference number.</p><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Contact Customer Support</a></div>
+  `;
+}
+
 function ronNextStepPanel(request={}, detail={}){
   if(workflowKind(request.service_type) !== 'ron') return '';
   const link = request.appointment_link || request.ron_session_url || '';
@@ -719,12 +756,22 @@ async function initSuccessPage(){
   const canApprove=['quote_ready','quote_sent','awaiting_approval'].includes(status)&&hasQuote&&request.id;
   const canPay=!sessionId && ['awaiting_payment','payment_pending'].includes(status)&&quoteAmount>0&&request.id && status !== 'quote_expired';
 
+  const customer = Array.isArray(request.customers) ? request.customers[0] : (request.customers || {});
+  if (displayStatus === 'final_payment_received') {
+    successBox.innerHTML = finalPaymentReceivedView({request, invoices, items, additionalItems, quoteAmount, reference, customer, displayStatus});
+    return;
+  }
+  if (displayStatus === 'completed') {
+    successBox.innerHTML = completedSuccessView({request, invoices, items, additionalItems, quoteAmount, reference, displayStatus});
+    return;
+  }
+
   successBox.innerHTML=`
     <div class="success-ref reveal">${escapePublic(reference)}</div>
     ${statusTimeline(displayStatus, request.service_type)}
     <div class="success-grid reveal">
       <div><span class="small-label">Selected Service</span><strong>${escapePublic(serviceName)}</strong></div>
-      <div><span class="small-label">${hasQuote?'Invoice Total':'Estimated Total'}</span><strong>${quoteAmount?money(quoteAmount):'Pending review'}</strong></div>
+      <div><span class="small-label">${hasQuote?'Service Total':'Estimated Total'}</span><strong>${quoteAmount?money(quoteAmount):'Pending review'}</strong></div>
       <div><span class="small-label">Current Status</span><strong>${escapePublic(copy.title)}</strong></div>
     </div>
     ${customerCard(Array.isArray(request.customers)?request.customers[0]:request.customers||{})}
