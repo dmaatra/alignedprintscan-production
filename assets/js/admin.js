@@ -213,7 +213,6 @@ async function getInvoiceItems(requestId) {
   if (error) return [];
   return data || [];
 }
-async 
 function detailMap(rows) {
   const list = Array.isArray(rows) ? rows : (rows ? [rows] : []);
   if (!list.length) return '<p class="admin-muted">No service-specific details found for this request.</p>';
