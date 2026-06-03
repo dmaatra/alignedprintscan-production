@@ -546,6 +546,109 @@ async function getPublicStatus(requestId, ref) {
   }
 }
 
+
+
+// Public status page safety helpers. These are intentionally small and defensive
+// so the status page can still render if an optional helper from an older patch is missing.
+function escapePublic(value){
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+function refFromPublicId(id){
+  return id ? 'APS-' + String(id).replace(/-/g,'').slice(0,8).toUpperCase() : 'APS-REQUEST';
+}
+function customerCard(customer={}){
+  const name = `${customer.first_name || ''} ${customer.last_name || ''}`.trim();
+  if(!name && !customer.email && !customer.phone) return '';
+  return `<div class="request-public-summary reveal"><h3>Client Information</h3><div class="request-public-detail-grid"><div><span class="small-label">Prepared For</span><strong>${escapePublic(name || 'Client')}</strong></div>${customer.email ? `<div><span class="small-label">Email</span><strong>${escapePublic(customer.email)}</strong></div>` : ''}${customer.phone ? `<div><span class="small-label">Phone</span><strong>${escapePublic(customer.phone)}</strong></div>` : ''}</div></div>`;
+}
+function printControls(reference){
+  return `<div class="cta-row print-controls reveal"><button class="btn dark" type="button" onclick="window.print()">Print Confirmation</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference || '')}">Contact Support</a></div>`;
+}
+function serviceMethodLabel(request={}){
+  const raw = String(request.appointment_platform || request.fulfillment_method || request.fulfillment || request.service_method || '').trim();
+  if(raw) return raw;
+  const service = workflowKind(request.service_type);
+  if(service === 'ron') return 'Remote Online Notary';
+  if(service === 'mobile') return 'Mobile appointment';
+  return 'Mobile document service / courier delivery';
+}
+function serviceLocationValue(request={}){
+  return request.appointment_location || request.service_address || request.delivery_address || request.print_address || request.address || request.street_address || request.location || '';
+}
+function serviceDetailSummary(serviceType, detail={}){
+  if(!detail || typeof detail !== 'object') return '';
+  const hidden = new Set(['id','service_request_id','customer_id','created_at','updated_at']);
+  const rows = Object.entries(detail).filter(([k,v]) => !hidden.has(k) && v !== null && v !== undefined && String(v).trim() !== '').slice(0,10);
+  if(!rows.length) return '';
+  return `<div class="request-public-detail-grid service-detail-map">${rows.map(([k,v]) => `<div><span class="small-label">${escapePublic(k.replace(/_/g,' ').replace(/\w/g,c=>c.toUpperCase()))}</span><strong>${escapePublic(String(v))}</strong></div>`).join('')}</div>`;
+}
+function appointmentDetailsPanel(request={}){
+  const statuses = ['payment_received','paid_confirmed','scheduling','scheduled','appointment_confirmed','final_balance_due','final_balance_payment_submitted','final_payment_received','completed'];
+  if(!statuses.includes(String(request.status || '').toLowerCase())) return '';
+  const date = formatDateValue(request.appointment_date || request.preferred_date);
+  const time = formatTimeWindow(request.appointment_time || request.preferred_time_window);
+  const method = serviceMethodLabel(request);
+  const location = serviceLocationValue(request);
+  const instructions = request.appointment_instructions || request.appointment_line_items_note || request.notes || '';
+  return `<div class="next-panel appointment-panel reveal"><h3>Service Details</h3><p>Your appointment or fulfillment details are listed below.</p><div class="request-public-detail-grid"><div><span class="small-label">Date</span><strong>${escapePublic(date)}</strong></div><div><span class="small-label">Time</span><strong>${escapePublic(time)}</strong></div><div><span class="small-label">Service Method</span><strong>${escapePublic(method)}</strong></div>${location ? `<div><span class="small-label">Service Address / Location</span><strong>${escapePublic(location)}</strong></div>` : ''}${instructions ? `<div><span class="small-label">Instructions</span><strong>${escapePublic(instructions)}</strong></div>` : ''}</div></div>`;
+}
+function ronNextStepPanel(request={}, detail={}){
+  if(workflowKind(request.service_type) !== 'ron') return '';
+  const link = request.appointment_link || request.ron_session_url || '';
+  if(!link) return '';
+  return `<div class="next-panel reveal"><h3>Secure Online Session</h3><p>Your RON session link is available below.</p><a class="btn primary" href="${escapePublic(link)}" target="_blank" rel="noopener">Open Secure Session</a></div>`;
+}
+async function submitQuoteDecision(requestId, reference, decision){
+  if(!supabaseClient || !requestId) throw new Error('Missing request information.');
+  const { data, error } = await supabaseClient.functions.invoke('client-quote-action', { body: { request_id: requestId, reference_number: reference, action: decision } });
+  if(error) throw error;
+  return data;
+}
+let embeddedCheckoutInstance = null;
+let embeddedCheckoutLoading = false;
+async function startEmbeddedPayment(requestId, invoiceId){
+  const box = qs('#embeddedPaymentBox');
+  if(!box || !requestId || embeddedCheckoutLoading) return;
+  if(embeddedCheckoutInstance){
+    try{ await embeddedCheckoutInstance.destroy(); }catch(_){ }
+    embeddedCheckoutInstance = null;
+  }
+  embeddedCheckoutLoading = true;
+  box.innerHTML = '<div class="email-notice"><h3>Preparing secure payment…</h3><p>Please do not refresh this page while the payment form is loading.</p></div>';
+  try{
+    const { data, error } = await supabaseClient.functions.invoke('create-embedded-checkout', { body: { request_id: requestId, invoice_id: invoiceId || null } });
+    if(error) throw error;
+    const clientSecret = data?.client_secret || data?.clientSecret;
+    const publishableKey = data?.publishable_key || data?.publishableKey || data?.stripe_publishable_key;
+    if(!clientSecret) throw new Error(data?.error || 'Secure payment is not available yet.');
+    if(!window.Stripe) throw new Error('Stripe did not load. Please refresh and try again.');
+    const stripe = window.__alignedStripe || (window.__alignedStripe = Stripe(publishableKey || window.STRIPE_PUBLISHABLE_KEY));
+    box.innerHTML = '<div id="embeddedCheckoutMount" class="embedded-checkout-mount"></div>';
+    embeddedCheckoutInstance = await stripe.initEmbeddedCheckout({ clientSecret });
+    await embeddedCheckoutInstance.mount('#embeddedCheckoutMount');
+    document.body.dataset.paymentOpen = 'true';
+  }catch(err){
+    console.error(err);
+    box.innerHTML = `<div class="email-notice"><h3>Secure payment is not available yet</h3><p>${escapePublic(err.message || 'Please contact Aligned Print & Scan with your APS reference if this continues.')}</p></div>`;
+  }finally{
+    embeddedCheckoutLoading = false;
+  }
+}
+function startStatusPolling(requestId, currentStatus){
+  if(!requestId) return;
+  let attempts = 0;
+  const timer = setInterval(async()=>{
+    attempts += 1;
+    if(document.body.dataset.paymentOpen === 'true') return;
+    try{
+      const result = await getPublicStatus(requestId, null);
+      const next = result?.request?.status;
+      if(next && next !== currentStatus){ clearInterval(timer); location.reload(); }
+    }catch(_){ }
+    if(attempts > 20) clearInterval(timer);
+  }, 4000);
+}
+
 function renderSuccessFallback(params, saved) {
   const requestId = params.get('request_id') || params.get('id') || saved.requestId || '';
   const ref = params.get('ref') || saved.ref || (requestId ? refFromPublicId(requestId) : 'APS-REQUEST');

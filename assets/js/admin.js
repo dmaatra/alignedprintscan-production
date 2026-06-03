@@ -361,6 +361,19 @@ function updateInvoiceTotalPreview() {
   const total = invoiceRowsFromDom().reduce((sum, item) => sum + item.line_total, 0);
   setText('invoiceTotalPreview', money(total));
 }
+
+
+function defaultInvoiceRows(request = {}) {
+  const service = String(request.service_type || '').toLowerCase();
+  const amount = Number(request.quote_amount || request.estimated_total || 0) || 0;
+  if (amount > 0) {
+    return [{ description: serviceLabel(service), quantity: 1, unit_price: amount, line_total: amount }];
+  }
+  if (service === 'ron') return [{ description: 'Remote Online Notary Session', quantity: 1, unit_price: 40, line_total: 40 }];
+  if (service === 'mobile') return [{ description: 'Mobile Appointment Base (0–15 miles)', quantity: 1, unit_price: 50, line_total: 50 }];
+  return [{ description: 'Document Services', quantity: 1, unit_price: 0, line_total: 0 }];
+}
+
 async function selectRequest(id) {
   selectedRequest = requests.find(r => r.id === id);
   renderStats();
