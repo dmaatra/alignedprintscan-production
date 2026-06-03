@@ -504,6 +504,54 @@ function statusTimeline(status, service=''){
   return `<div class="portal-progress reveal">${steps.map((s,i)=>`<div class="portal-step ${i<=idx?'done':''} ${i===idx?'current':''}"><span>${String(i+1).padStart(2,'0')}</span><strong>${s[1]}</strong></div>`).join('')}</div>`;
 }
 
+
+async function getPublicStatus(requestId, ref) {
+  if (!requestId && !ref) return null;
+  if (!supabaseClient || !supabaseClient.functions || !supabaseClient.functions.invoke) {
+    console.warn('Supabase client is not available for public status lookup.');
+    return null;
+  }
+  try {
+    const payload = {};
+    if (requestId) payload.request_id = requestId;
+    if (ref) payload.ref = ref;
+    const { data, error } = await supabaseClient.functions.invoke('get-request-status', { body: payload });
+    if (error) {
+      console.warn('get-request-status error', error);
+      return null;
+    }
+    if (!data || data.ok === false) {
+      console.warn('get-request-status returned no usable data', data);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    console.warn('Public status lookup failed', err);
+    return null;
+  }
+}
+
+function renderSuccessFallback(params, saved) {
+  const requestId = params.get('request_id') || params.get('id') || saved.requestId || '';
+  const ref = params.get('ref') || saved.ref || (requestId ? refFromPublicId(requestId) : 'APS-REQUEST');
+  return {
+    ok: false,
+    request: {
+      id: requestId,
+      status: 'under_review',
+      service_type: saved.serviceType || 'print',
+      quote_amount: Number(saved.total || saved.estimatedTotal || 0) || 0,
+      estimated_total: Number(saved.total || saved.estimatedTotal || 0) || 0
+    },
+    items: [],
+    invoices: [],
+    additional_invoice_items: [],
+    service_detail: null,
+    file_count: 0,
+    reference_number: ref
+  };
+}
+
 async function initSuccessPage(){
   const successBox=qs('#successDetails');
   if(!successBox)return;
