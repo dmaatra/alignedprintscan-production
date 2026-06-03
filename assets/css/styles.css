@@ -433,3 +433,64 @@ button.btn.secondary:hover{
     padding: 1rem;
   }
 }
+
+/* Patch 18.9 — premium status + dashboard workflow cleanup */
+.payment-received-hero,
+.appointment-confirmed-hero,
+.prep-tips-panel,
+.approved-service-quote,
+.client-service-combo {
+  border: 1px solid rgba(197,166,99,.32);
+  background: linear-gradient(135deg, rgba(255,251,244,.98), rgba(255,255,255,.96));
+  box-shadow: 0 18px 46px rgba(8,12,48,.06);
+}
+.payment-received-hero h3,
+.appointment-confirmed-hero h3,
+.prep-tips-panel h3,
+.approved-service-quote h3,
+.client-service-combo h3 {
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.client-service-combo .request-public-detail-grid,
+.premium-payment-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.receipt-archive-list .premium-receipt-row {
+  background: rgba(255,255,255,.78);
+  border-color: rgba(197,166,99,.28);
+}
+.compact-cta-row {
+  margin-top: .5rem;
+  gap: .7rem;
+}
+.compact-cta-row .btn {
+  min-width: 150px;
+}
+.premium-workflow-card {
+  background: linear-gradient(135deg, rgba(255,251,244,.96), rgba(255,255,255,.92));
+}
+.compact-workflow-steps {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.compact-workflow-steps .internal-workflow-step {
+  min-height: 54px;
+  border: 1px solid rgba(22,28,77,.08);
+}
+.compact-workflow-steps .internal-workflow-step.done {
+  opacity: .82;
+}
+.compact-workflow-steps .internal-workflow-step.current {
+  border-color: rgba(197,166,99,.65);
+  box-shadow: 0 10px 28px rgba(197,166,99,.12);
+}
+@media (max-width: 900px) {
+  .client-service-combo .request-public-detail-grid,
+  .premium-payment-metrics,
+  .compact-workflow-steps {
+    grid-template-columns: 1fr;
+  }
+  .compact-cta-row .btn {
+    width: 100%;
+  }
+}
