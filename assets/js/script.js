@@ -504,6 +504,21 @@ function statusTimeline(status, service=''){
   return `<div class="portal-progress reveal">${steps.map((s,i)=>`<div class="portal-step ${i<=idx?'done':''} ${i===idx?'current':''}"><span>${String(i+1).padStart(2,'0')}</span><strong>${s[1]}</strong></div>`).join('')}</div>`;
 }
 
+function formatDateValue(value){
+  if(!value) return 'Pending';
+  try{
+    const d = new Date(String(value).includes('T') ? value : `${value}T12:00:00`);
+    if(Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'});
+  }catch(_){ return String(value); }
+}
+
+function formatTimeWindow(value){
+  if(!value) return 'Pending';
+  return String(value).replace(/\s*-\s*/g,'–').replace(/\b(am|pm)\b/gi, m=>m.toUpperCase());
+}
+
+
 
 async function getPublicStatus(requestId, ref) {
   if (!requestId && !ref) return null;
