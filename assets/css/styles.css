@@ -301,3 +301,74 @@ button.btn.secondary:hover{
   }
   .payment-schedule-row .btn{width:100%;justify-content:center;}
 }
+
+
+/* Patch 18.8 — workflow spacing and mobile payment stability */
+.embedded-payment-box {
+  width: 100%;
+  max-width: 680px;
+  margin: 18px auto 0;
+  overflow-x: hidden;
+}
+.embedded-payment-box iframe,
+.embedded-payment-box > div {
+  max-width: 100% !important;
+}
+@media (max-width: 680px) {
+  .embedded-payment-box {
+    max-width: 100%;
+    padding: 0;
+    overflow-x: hidden;
+  }
+  .payment-schedule-panel {
+    overflow-x: hidden;
+  }
+}
+.clean-payment-schedule,
+.clean-invoice-summary {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+.payment-schedule-row,
+.invoice-summary-item.clean-summary-item {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid rgba(200,169,107,.35);
+  border-radius: 18px;
+  background: rgba(255,250,242,.72);
+}
+.payment-row-main,
+.invoice-summary-item.clean-summary-item {
+  align-items: start;
+}
+.payment-row-main {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.payment-row-main span,
+.invoice-summary-item.clean-summary-item span {
+  color: rgba(17,21,34,.72);
+}
+.internal-workflow-steps.clean-workflow-steps {
+  display: grid;
+  gap: 10px;
+}
+.internal-workflow-step {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.55);
+}
+.internal-workflow-step.current {
+  outline: 1px solid rgba(200,169,107,.65);
+  background: rgba(200,169,107,.12);
+}
+.service-detail-map {
+  margin-top: 12px;
+}
