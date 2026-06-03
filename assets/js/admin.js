@@ -233,7 +233,7 @@ function detailMap(rows) {
     : '<p class="admin-muted">No service-specific details found for this request.</p>';
 }
 
-function getInvoices(requestId) {
+async function getInvoices(requestId) {
   const { data, error } = await adminClient
     .from('invoices')
     .select('*')
