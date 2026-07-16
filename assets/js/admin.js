@@ -1,13 +1,31 @@
 const SUPABASE_URL = 'https://sfsdniavqldgbiretply.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmc2RuaWF2cWxkZ2JpcmV0cGx5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTY5MTEsImV4cCI6MjA5MDk5MjkxMX0.3tcbpUVDq9J80f5CdngDxdJ1T70vlouCrfGuv55JCco';
+const SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmc2RuaWF2cWxkZ2JpcmV0cGx5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTY5MTEsImV4cCI6MjA5MDk5MjkxMX0.3tcbpUVDq9J80f5CdngDxdJ1T70vlouCrfGuv55JCco';
 const SITE_URL = window.location.origin;
-const adminClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+const PRICING = window.ALIGNED_PRICING || {
+  ron: {
+    onlineServiceFee: 25,
+    notarialAct: 10,
+    providedWitness: 25
+  },
+  mobile: {
+    appointmentBase: 50,
+    notarialAct: 10,
+    providedWitness: 50
+  }
+};
+const adminClient = window.supabase ? window.supabase.createClient(SUPABASE_URL,
+  SUPABASE_ANON_KEY) : null;
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const money = (n) => '$' + Number(n || 0).toFixed(2);
 const refFromId = (id) => id ? 'APS-' + String(id).slice(0, 8).toUpperCase() : 'APS-REQUEST';
-const serviceLabel = (s) => ({ ron: 'Remote Online Notary', mobile: 'Mobile Notary', print: 'Document Services' }[s] || 'Service Request');
+const serviceLabel = (s) => ({
+  ron: 'Remote Online Notary',
+  mobile: 'Mobile Notary',
+  print: 'Document Services'
+} [s] || 'Service Request');
 const statusLabel = (s) => ({
   under_review: 'Under Review',
   quote_ready: 'Quote Ready',
@@ -31,7 +49,8 @@ const statusLabel = (s) => ({
   in_progress: 'In Progress',
   resolved: 'Resolved',
   waiting_on_customer: 'Waiting on Customer'
-}[s] || String(s || 'under_review').replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase()));
+} [s] || String(s || 'under_review').replaceAll('_', ' ').replace(/\b\w/g, c => c
+  .toUpperCase()));
 
 let requests = [];
 let supportTickets = [];
@@ -43,15 +62,25 @@ function setText(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
 }
+
 function inputVal(id) {
   return document.getElementById(id)?.value || '';
 }
+
 function numericVal(id) {
   return Number(inputVal(id) || 0) || 0;
 }
+
 function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+  return String(value ?? '').replace(/[&<>'"]/g, (c) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&#39;',
+    '"': '&quot;'
+  } [c]));
 }
+
 function showToast(message) {
   const toast = $('#newRequestToast');
   if (!toast) return;
@@ -59,6 +88,7 @@ function showToast(message) {
   toast.classList.add('show');
   setTimeout(() => toast.classList.remove('show'), 5200);
 }
+
 function playNewRequestSound() {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -70,12 +100,19 @@ function playNewRequestSound() {
     gain.gain.setValueAtTime(0.0001, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.03);
     gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.45);
-    osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 0.5);
-  } catch (err) { console.warn('Audio alert unavailable:', err); }
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.5);
+  } catch (err) {
+    console.warn('Audio alert unavailable:', err);
+  }
 }
 async function ensureAdminSession() {
   if (!adminClient) return null;
-  const { data } = await adminClient.auth.getSession();
+  const {
+    data
+  } = await adminClient.auth.getSession();
   return data.session;
 }
 async function handleLogin() {
@@ -87,7 +124,12 @@ async function handleLogin() {
     if (status) status.textContent = 'Signing in…';
     const email = form.email.value.trim();
     const password = form.password.value;
-    const { error } = await adminClient.auth.signInWithPassword({ email, password });
+    const {
+      error
+    } = await adminClient.auth.signInWithPassword({
+      email,
+      password
+    });
     if (error) {
       if (status) status.textContent = error.message;
       return;
@@ -95,23 +137,29 @@ async function handleLogin() {
     window.location.href = 'admin-dashboard.html';
   });
 }
+
 function serviceColor(service) {
   if (service === 'ron') return 'tag-ron';
   if (service === 'mobile') return 'tag-mobile';
   if (service === 'print') return 'tag-print';
   return '';
 }
+
 function requestUrgencyBadge(r) {
   if (r.is_same_day_request) return '<span class="status-pill urgent-pill">Same-Day Request</span>';
-  if (r.is_next_day_request) return '<span class="status-pill nextday-pill">Next-Day Request</span>';
+  if (r.is_next_day_request)
+    return '<span class="status-pill nextday-pill">Next-Day Request</span>';
   if (!r.preferred_date) return '';
-  const today = new Date(); today.setHours(0,0,0,0);
-  const requested = new Date(r.preferred_date + 'T12:00:00'); requested.setHours(0,0,0,0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const requested = new Date(r.preferred_date + 'T12:00:00');
+  requested.setHours(0, 0, 0, 0);
   const diffDays = Math.round((requested - today) / 86400000);
   if (diffDays === 0) return '<span class="status-pill urgent-pill">Same-Day Request</span>';
   if (diffDays === 1) return '<span class="status-pill nextday-pill">Next-Day Request</span>';
   return '';
 }
+
 function quoteBuilderPresets() {
   return [
     ['Mobile Appointment Base (0–15 miles)', 1, 50],
@@ -120,7 +168,10 @@ function quoteBuilderPresets() {
     ['Extended Travel (26–30 miles)', 1, 30],
     ['Extended Travel (31–40 miles)', 1, 45],
     ['Notarial Act', 1, 10],
-    ['RON Session', 1, 40],
+    ['Online Notarization Service Fee', 1, PRICING.ron.onlineServiceFee],
+    ['Notarial Act', 1, PRICING.ron.notarialAct],
+    ['Remote Witness — Aligned Print & Scan Provided', 1, PRICING.ron.providedWitness],
+    ['Mobile Witness — Aligned Print & Scan Provided', 1, PRICING.mobile.providedWitness],
     ['Printing / Copies — B&W Letter', 1, 0.25],
     ['Printing / Copies — B&W Legal', 1, 0.35],
     ['Printing / Copies — Color Letter', 1, 0.50],
@@ -134,22 +185,30 @@ function quoteBuilderPresets() {
     ['Custom Line Item', 1, 0]
   ];
 }
-function isArchived(r) { return !!r.archived_at; }
+
+function isArchived(r) {
+  return !!r.archived_at;
+}
+
 function isOpenValueStatus(status) {
   return !['completed', 'cancelled', 'declined', 'archived'].includes(status || 'under_review');
 }
+
 function displayValue(r) {
   return Number(r.quote_amount || r.estimated_total || 0);
 }
+
 function renderStats() {
   const active = requests.filter(r => !isArchived(r));
   const newCount = active.filter(r => (r.status || 'under_review') === 'under_review').length;
-  const openValue = active.filter(r => isOpenValueStatus(r.status)).reduce((sum, r) => sum + displayValue(r), 0);
+  const openValue = active.filter(r => isOpenValueStatus(r.status)).reduce((sum, r) => sum +
+    displayValue(r), 0);
   setText('statNew', String(newCount));
   setText('statTotal', String(active.length));
   setText('statRevenue', money(openValue));
   setText('statSelected', selectedRequest ? refFromId(selectedRequest.id) : 'None');
 }
+
 function filteredRequests() {
   const service = $('#requestFilter')?.value || 'all';
   const status = $('#statusFilter')?.value || 'all';
@@ -157,10 +216,12 @@ function filteredRequests() {
   return requests.filter(r => {
     const serviceOk = service === 'all' || r.service_type === service;
     const statusOk = status === 'all' || (r.status || 'under_review') === status;
-    const archiveOk = archive === 'all' || (archive === 'active' ? !isArchived(r) : isArchived(r));
+    const archiveOk = archive === 'all' || (archive === 'active' ? !isArchived(r) : isArchived(
+      r));
     return serviceOk && statusOk && archiveOk;
   });
 }
+
 function renderRequestList() {
   const list = $('#requestList');
   if (!list) return;
@@ -171,10 +232,12 @@ function renderRequestList() {
   }
   list.innerHTML = items.map(r => {
     const customer = Array.isArray(r.customers) ? r.customers[0] : r.customers;
-    const name = `${customer?.first_name || ''} ${customer?.last_name || ''}`.trim() || 'Client';
+    const name = `${customer?.first_name || ''} ${customer?.last_name || ''}`.trim() ||
+      'Client';
     const created = r.created_at ? new Date(r.created_at).toLocaleString() : '';
     const selected = selectedRequest?.id === r.id ? 'selected' : '';
-    const archivedBadge = isArchived(r) ? '<span class="status-pill archived-pill">Archived</span>' : '';
+    const archivedBadge = isArchived(r) ?
+      '<span class="status-pill archived-pill">Archived</span>' : '';
     return `
       <button class="request-row ${selected}" data-id="${r.id}" type="button">
         <span class="request-ref">${refFromId(r.id)}</span>
@@ -185,38 +248,58 @@ function renderRequestList() {
       </button>
     `;
   }).join('');
-  $$('.request-row', list).forEach(btn => btn.addEventListener('click', () => selectRequest(btn.dataset.id)));
+  $$('.request-row', list).forEach(btn => btn.addEventListener('click', () => selectRequest(btn
+    .dataset.id)));
 }
 async function getFiles(requestId) {
-  const { data, error } = await adminClient
+  const {
+    data,
+    error
+  } = await adminClient
     .from('request_files')
     .select('id,file_name,file_path,file_type,file_size,created_at')
     .eq('service_request_id', requestId)
-    .order('created_at', { ascending: false });
+    .order('created_at', {
+      ascending: false
+    });
   if (error) throw error;
   return data || [];
 }
 async function signedUrl(filePath) {
-  const { data, error } = await adminClient.storage
+  const {
+    data,
+    error
+  } = await adminClient.storage
     .from('service-request-files')
     .createSignedUrl(filePath, 60 * 60);
   if (error) return null;
   return data?.signedUrl || null;
 }
 async function getDetailRows(table, requestId) {
-  const { data, error } = await adminClient.from(table).select('*').eq('service_request_id', requestId).maybeSingle();
+  const {
+    data,
+    error
+  } = await adminClient.from(table).select('*').eq('service_request_id', requestId).maybeSingle();
   if (error) return null;
   return data;
 }
 async function getInvoiceItems(requestId) {
-  const { data, error } = await adminClient.from('invoice_items').select('*').eq('service_request_id', requestId).is('invoice_id', null).order('created_at', { ascending: true });
+  const {
+    data,
+    error
+  } = await adminClient.from('invoice_items').select('*').eq('service_request_id', requestId).is(
+    'invoice_id', null).order('created_at', {
+    ascending: true
+  });
   if (error) return [];
   return data || [];
 }
+
 function detailMap(rows) {
   const list = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-  if (!list.length) return '<p class="admin-muted">No service-specific details found for this request.</p>';
-  const hidden = new Set(['id','service_request_id','created_at','updated_at']);
+  if (!list.length)
+    return '<p class="admin-muted">No service-specific details found for this request.</p>';
+  const hidden = new Set(['id', 'service_request_id', 'created_at', 'updated_at']);
   const labels = key => String(key || '')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase());
@@ -224,57 +307,81 @@ function detailMap(rows) {
   list.forEach(row => {
     Object.entries(row || {}).forEach(([key, value]) => {
       if (hidden.has(key) || value === null || value === undefined || value === '') return;
-      cells.push(`<div><span class="small-label">${escapeHtml(labels(key))}</span><strong>${escapeHtml(String(value))}</strong></div>`);
+      cells.push(
+        `<div><span class="small-label">${escapeHtml(labels(key))}</span><strong>${escapeHtml(String(value))}</strong></div>`
+      );
     });
   });
-  return cells.length
-    ? `<div class="admin-detail-grid service-detail-map">${cells.join('')}</div>`
-    : '<p class="admin-muted">No service-specific details found for this request.</p>';
+  return cells.length ?
+    `<div class="admin-detail-grid service-detail-map">${cells.join('')}</div>` :
+    '<p class="admin-muted">No service-specific details found for this request.</p>';
 }
 
 async function getInvoices(requestId) {
-  const { data, error } = await adminClient
+  const {
+    data,
+    error
+  } = await adminClient
     .from('invoices')
     .select('*')
     .eq('service_request_id', requestId)
-    .order('created_at', { ascending: true });
-  if (error) { console.warn(error); return []; }
+    .order('created_at', {
+      ascending: true
+    });
+  if (error) {
+    console.warn(error);
+    return [];
+  }
   return data || [];
 }
+
 function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
-  const quoteTotal = quoteItems.reduce((sum, item) => sum + Number(item.line_total || (Number(item.quantity || 1) * Number(item.unit_price || 0)) || 0), 0);
-  const originalQuote = Number(request?.quote_amount || request?.estimated_total || quoteTotal || 0) || 0;
-  const initial = invoices.find(inv => String(inv.invoice_type || '').includes('initial') || String(inv.invoice_number || '').endsWith('-01')) || null;
-  const finals = invoices.filter(inv => String(inv.invoice_type || '').includes('final') || String(inv.invoice_number || '').endsWith('-02') || String(inv.status || '').includes('final'));
+  const quoteTotal = quoteItems.reduce((sum, item) => sum + Number(item.line_total || (Number(item
+    .quantity || 1) * Number(item.unit_price || 0)) || 0), 0);
+  const originalQuote = Number(request?.quote_amount || request?.estimated_total || quoteTotal ||
+    0) || 0;
+  const initial = invoices.find(inv => String(inv.invoice_type || '').includes('initial') || String(
+    inv.invoice_number || '').endsWith('-01')) || null;
+  const finals = invoices.filter(inv => String(inv.invoice_type || '').includes('final') || String(
+    inv.invoice_number || '').endsWith('-02') || String(inv.status || '').includes('final'));
 
-  const paidStatuses = new Set(['paid','payment_received','final_payment_received','payment_submitted','final_balance_payment_submitted']);
-  const closedStatuses = new Set(['void','cancelled']);
+  const paidStatuses = new Set(['paid', 'payment_received', 'final_payment_received',
+    'payment_submitted', 'final_balance_payment_submitted'
+  ]);
+  const closedStatuses = new Set(['void', 'cancelled']);
   const initialStatus = String(initial?.status || '').toLowerCase();
-  const initialPaid = paidStatuses.has(initialStatus) || ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(request?.status || '').toLowerCase());
+  const initialPaid = paidStatuses.has(initialStatus) || ['payment_received',
+    'appointment_confirmed', 'final_balance_due', 'final_payment_received', 'completed'
+  ].includes(String(request?.status || '').toLowerCase());
 
-  const initialAmount = Number(initial?.amount_due || request?.initial_payment_amount || originalQuote || 0) || 0;
-  const paidInitial = initialPaid
-    ? Number(initial?.amount_paid || initial?.paid_amount || initialAmount || 0)
-    : 0;
+  const initialAmount = Number(initial?.amount_due || request?.initial_payment_amount ||
+    originalQuote || 0) || 0;
+  const paidInitial = initialPaid ?
+    Number(initial?.amount_paid || initial?.paid_amount || initialAmount || 0) :
+    0;
 
   const paidFinal = finals
     .filter(inv => paidStatuses.has(String(inv.status || '').toLowerCase()))
-    .reduce((sum, inv) => sum + Number(inv.amount_paid || inv.paid_amount || inv.amount_due || 0), 0);
+    .reduce((sum, inv) => sum + Number(inv.amount_paid || inv.paid_amount || inv.amount_due || 0),
+      0);
 
   const unpaidFinal = finals
-    .filter(inv => !paidStatuses.has(String(inv.status || '').toLowerCase()) && !closedStatuses.has(String(inv.status || '').toLowerCase()))
+    .filter(inv => !paidStatuses.has(String(inv.status || '').toLowerCase()) && !closedStatuses.has(
+      String(inv.status || '').toLowerCase()))
     .reduce((sum, inv) => sum + Number(inv.amount_due || 0), 0);
 
-  const paidToDate = invoices.length
-    ? paidInitial + paidFinal
-    : Number(request?.paid_amount || 0) || 0;
+  const paidToDate = invoices.length ?
+    paidInitial + paidFinal :
+    Number(request?.paid_amount || 0) || 0;
 
-  const totalServiceValue = originalQuote + finals.reduce((sum, inv) => sum + Number(inv.amount_due || 0), 0);
+  const totalServiceValue = originalQuote + finals.reduce((sum, inv) => sum + Number(inv
+    .amount_due || 0), 0);
   const balanceDue = Math.max(0, totalServiceValue - paidToDate);
 
   const rows = [];
   if (initial || originalQuote) {
-    const initialNumber = initial?.invoice_number || ((request?.invoice_number || refFromId(request?.id || '').replace('APS-','INV-')) + '-01').replace('-01-01','-01');
+    const initialNumber = initial?.invoice_number || ((request?.invoice_number || refFromId(request
+      ?.id || '').replace('APS-', 'INV-')) + '-01').replace('-01-01', '-01');
     rows.push(`<div class="invoice-summary-item clean-summary-item">
       <div><span class="small-label">Initial Payment</span><strong>${escapeHtml(initialNumber)}</strong></div>
       <div><span>${initialPaid ? 'Paid' : 'Due / Pending'}</span><strong>${money(initialAmount)}</strong></div>
@@ -293,7 +400,9 @@ function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
       </div>`);
     });
   } else {
-    rows.push('<div class="invoice-summary-item clean-summary-item muted-summary-item"><div><span class="small-label">Final Balance</span><strong>Not issued</strong></div><div><span>Only appears when a final balance invoice is issued.</span></div></div>');
+    rows.push(
+      '<div class="invoice-summary-item clean-summary-item muted-summary-item"><div><span class="small-label">Final Balance</span><strong>Not issued</strong></div><div><span>Only appears when a final balance invoice is issued.</span></div></div>'
+    );
   }
 
   return `<div class="financial-summary-grid">
@@ -305,57 +414,67 @@ function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
   <div class="invoice-summary-list clean-invoice-summary">${rows.join('')}</div>`;
 }
 
-function workflowKind(service){
+function workflowKind(service) {
   const s = String(service || '').toLowerCase();
   if (s === 'ron' || s.includes('remote')) return 'ron';
   if (s === 'mobile' || s.includes('notary')) return 'mobile';
   return 'document';
 }
-function internalWorkflowGuide(request){
+
+function internalWorkflowGuide(request) {
   const kind = workflowKind(request?.service_type);
-  const label = kind === 'ron' ? 'Remote Online Notary Workflow' : kind === 'mobile' ? 'Mobile Notary Workflow' : 'Document Services Workflow';
+  const label = kind === 'ron' ? 'Remote Online Notary Workflow' : kind === 'mobile' ?
+    'Mobile Notary Workflow' : 'Document Services Workflow';
   const steps = {
     ron: [
-      ['under_review','Request Submitted'],
-      ['awaiting_approval','Quote Prepared'],
-      ['payment_received','Payment Received'],
-      ['appointment_confirmed','Appointment Confirmed'],
-      ['identity_verification','Identity Verification'],
-      ['ron_session','RON Session'],
-      ['completed','Completed'],
-      ['review','Review Requested']
+      ['under_review', 'Request Submitted'],
+      ['awaiting_approval', 'Quote Prepared'],
+      ['payment_received', 'Payment Received'],
+      ['appointment_confirmed', 'Appointment Confirmed'],
+      ['identity_verification', 'Identity Verification'],
+      ['ron_session', 'RON Session'],
+      ['completed', 'Completed'],
+      ['review', 'Review Requested']
     ],
     mobile: [
-      ['under_review','Request Submitted'],
-      ['awaiting_approval','Quote Prepared'],
-      ['payment_received','Payment Received'],
-      ['appointment_confirmed','Appointment Confirmed'],
-      ['mobile_visit','Mobile Visit Completed'],
-      ['final_balance_due','Final Balance Due'],
-      ['final_payment_received','Final Payment Received'],
-      ['completed','Completed']
+      ['under_review', 'Request Submitted'],
+      ['awaiting_approval', 'Quote Prepared'],
+      ['payment_received', 'Payment Received'],
+      ['appointment_confirmed', 'Appointment Confirmed'],
+      ['mobile_visit', 'Mobile Visit Completed'],
+      ['final_balance_due', 'Final Balance Due'],
+      ['final_payment_received', 'Final Payment Received'],
+      ['completed', 'Completed']
     ],
     document: [
-      ['under_review','Request Submitted'],
-      ['awaiting_approval','Quote Prepared'],
-      ['approved','Quote Approved'],
-      ['payment_received','Production Payment Received'],
-      ['appointment_confirmed','Fulfillment Scheduled'],
-      ['final_balance_due','Final Balance Due'],
-      ['final_payment_received','Final Payment Received'],
-      ['completed','Service Completed']
+      ['under_review', 'Request Submitted'],
+      ['awaiting_approval', 'Quote Prepared'],
+      ['approved', 'Quote Approved'],
+      ['payment_received', 'Production Payment Received'],
+      ['appointment_confirmed', 'Fulfillment Scheduled'],
+      ['final_balance_due', 'Final Balance Due'],
+      ['final_payment_received', 'Final Payment Received'],
+      ['completed', 'Service Completed']
     ]
-  }[kind];
+  } [kind];
   const aliases = {
-    quote_ready:'awaiting_approval', quote_sent:'awaiting_approval', awaiting_payment:'approved', payment_pending:'approved',
-    payment_submitted:'payment_received', paid_confirmed:'payment_received', scheduled:'appointment_confirmed', scheduling:'payment_received',
-    final_balance_payment_submitted:'final_payment_received'
+    quote_ready: 'awaiting_approval',
+    quote_sent: 'awaiting_approval',
+    awaiting_payment: 'approved',
+    payment_pending: 'approved',
+    payment_submitted: 'payment_received',
+    paid_confirmed: 'payment_received',
+    scheduled: 'appointment_confirmed',
+    scheduling: 'payment_received',
+    final_balance_payment_submitted: 'final_payment_received'
   };
   const current = aliases[request?.status] || request?.status || 'under_review';
   let index = steps.findIndex(s => s[0] === current);
-  if (index < 0 && ['identity_verification','ron_session','mobile_visit','review'].includes(current)) index = steps.findIndex(s => s[0] === current);
+  if (index < 0 && ['identity_verification', 'ron_session', 'mobile_visit', 'review'].includes(
+      current)) index = steps.findIndex(s => s[0] === current);
   if (index < 0) index = 0;
-  const next = steps[Math.min(index + 1, steps.length - 1)]?.[1] || steps[index]?.[1] || 'Review request';
+  const next = steps[Math.min(index + 1, steps.length - 1)]?.[1] || steps[index]?.[1] ||
+    'Review request';
   return `<div class="admin-detail-section internal-workflow-card premium-workflow-card">
     <div class="section-title-row"><div><h3>Internal Workflow Guide</h3><p class="admin-muted">${label} · Current step highlighted for internal review.</p></div></div>
     <div class="internal-workflow-steps clean-workflow-steps compact-workflow-steps">
@@ -367,12 +486,21 @@ function internalWorkflowGuide(request){
 
 function invoiceRowsFromDom() {
   return $$('.invoice-row').map(row => {
-    const description = row.querySelector('[data-field="description"]')?.value?.trim() || 'Service fee';
+    const description = row.querySelector('[data-field="description"]')?.value?.trim() ||
+      'Service fee';
     const quantity = Number(row.querySelector('[data-field="quantity"]')?.value || 1) || 1;
     const unit_price = Number(row.querySelector('[data-field="unit_price"]')?.value || 0) || 0;
-    return { item_type: 'service', description, quantity, unit_price, line_total: quantity * unit_price, taxable: false };
+    return {
+      item_type: 'service',
+      description,
+      quantity,
+      unit_price,
+      line_total: quantity * unit_price,
+      taxable: false
+    };
   });
 }
+
 function renderInvoiceRows(rows) {
   const wrap = $('#invoiceRows');
   if (!wrap) return;
@@ -384,25 +512,54 @@ function renderInvoiceRows(rows) {
       <button class="btn dark remove-invoice-row" type="button" aria-label="Remove line item">×</button>
     </div>
   `).join('');
-  $$('.invoice-row input', wrap).forEach(input => input.addEventListener('input', updateInvoiceTotalPreview));
-  $$('.remove-invoice-row', wrap).forEach(btn => btn.addEventListener('click', () => { btn.closest('.invoice-row')?.remove(); updateInvoiceTotalPreview(); }));
+  $$('.invoice-row input', wrap).forEach(input => input.addEventListener('input',
+    updateInvoiceTotalPreview));
+  $$('.remove-invoice-row', wrap).forEach(btn => btn.addEventListener('click', () => {
+    btn.closest('.invoice-row')?.remove();
+    updateInvoiceTotalPreview();
+  }));
   updateInvoiceTotalPreview();
 }
+
 function updateInvoiceTotalPreview() {
   const total = invoiceRowsFromDom().reduce((sum, item) => sum + item.line_total, 0);
   setText('invoiceTotalPreview', money(total));
 }
 
-
 function defaultInvoiceRows(request = {}) {
   const service = String(request.service_type || '').toLowerCase();
   const amount = Number(request.quote_amount || request.estimated_total || 0) || 0;
   if (amount > 0) {
-    return [{ description: serviceLabel(service), quantity: 1, unit_price: amount, line_total: amount }];
+    return [{
+      description: serviceLabel(service),
+      quantity: 1,
+      unit_price: amount,
+      line_total: amount
+    }];
   }
-  if (service === 'ron') return [{ description: 'Remote Online Notary Session', quantity: 1, unit_price: 40, line_total: 40 }];
-  if (service === 'mobile') return [{ description: 'Mobile Appointment Base (0–15 miles)', quantity: 1, unit_price: 50, line_total: 50 }];
-  return [{ description: 'Document Services', quantity: 1, unit_price: 0, line_total: 0 }];
+  if (service === 'ron') return [{
+    description: 'Online Notarization Service Fee',
+    quantity: 1,
+    unit_price: PRICING.ron.onlineServiceFee,
+    line_total: PRICING.ron.onlineServiceFee
+  }, {
+    description: 'Notarial Act',
+    quantity: 1,
+    unit_price: PRICING.ron.notarialAct,
+    line_total: PRICING.ron.notarialAct
+  }];
+  if (service === 'mobile') return [{
+    description: 'Mobile Appointment Base (0–15 miles)',
+    quantity: 1,
+    unit_price: 50,
+    line_total: 50
+  }];
+  return [{
+    description: 'Document Services',
+    quantity: 1,
+    unit_price: 0,
+    line_total: 0
+  }];
 }
 
 async function selectRequest(id) {
@@ -415,15 +572,22 @@ async function selectRequest(id) {
   setText('detailRef', ref);
   detail.innerHTML = '<p class="admin-muted">Loading details…</p>';
 
-  const customer = Array.isArray(selectedRequest.customers) ? selectedRequest.customers[0] : selectedRequest.customers;
-  const table = selectedRequest.service_type === 'ron' ? 'ron_requests' : selectedRequest.service_type === 'mobile' ? 'mobile_notary_requests' : 'print_scan_requests';
-  const [files, serviceDetails, invoiceItems, invoices] = await Promise.all([getFiles(id), getDetailRows(table, id), getInvoiceItems(id), getInvoices(id)]);
+  const customer = Array.isArray(selectedRequest.customers) ? selectedRequest.customers[0] :
+    selectedRequest.customers;
+  const table = selectedRequest.service_type === 'ron' ? 'ron_requests' : selectedRequest
+    .service_type === 'mobile' ? 'mobile_notary_requests' : 'print_scan_requests';
+  const [files, serviceDetails, invoiceItems, invoices] = await Promise.all([getFiles(id),
+    getDetailRows(table, id), getInvoiceItems(id), getInvoices(id)
+  ]);
   const fileItems = await Promise.all(files.map(async f => {
     const url = await signedUrl(f.file_path);
     return `<li>${url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(f.file_name)}</a>` : escapeHtml(f.file_name)}<small>${f.file_type || 'file'} · ${f.file_size ? Math.round(f.file_size / 1024) + ' KB' : ''}</small></li>`;
   }));
-  const quoteLocked = ['payment_received','appointment_confirmed','final_balance_due','final_payment_received','completed'].includes(String(selectedRequest.status || '').toLowerCase());
-  const rows = quoteLocked ? [] : (invoiceItems.length ? invoiceItems : defaultInvoiceRows(selectedRequest));
+  const quoteLocked = ['payment_received', 'appointment_confirmed', 'final_balance_due',
+    'final_payment_received', 'completed'
+  ].includes(String(selectedRequest.status || '').toLowerCase());
+  const rows = quoteLocked ? [] : (invoiceItems.length ? invoiceItems : defaultInvoiceRows(
+    selectedRequest));
 
   detail.innerHTML = `
     <div class="admin-detail-grid">
@@ -509,14 +673,26 @@ async function selectRequest(id) {
     </div>
   `;
   renderInvoiceRows(rows);
-  $$('.status-actions button[data-status]', detail).forEach(btn => btn.addEventListener('click', () => updateRequestStatus(btn.dataset.status)));
+  $$('.status-actions button[data-status]', detail).forEach(btn => btn.addEventListener('click',
+    () => updateRequestStatus(btn.dataset.status)));
   populateInvoicePresetSelect();
-  $('#addInvoiceRow')?.addEventListener('click', () => { const current = invoiceRowsFromDom(); current.push({ description: '', quantity: 1, unit_price: 0, line_total: 0 }); renderInvoiceRows(current); populateInvoicePresetSelect(); });
+  $('#addInvoiceRow')?.addEventListener('click', () => {
+    const current = invoiceRowsFromDom();
+    current.push({
+      description: '',
+      quantity: 1,
+      unit_price: 0,
+      line_total: 0
+    });
+    renderInvoiceRows(current);
+    populateInvoicePresetSelect();
+  });
   $('#addPresetInvoiceRow')?.addEventListener('click', () => addSelectedPresetInvoiceRow());
   $('#saveInvoiceBtn')?.addEventListener('click', saveInvoice);
   $('#createAdditionalInvoiceBtn')?.addEventListener('click', createAdditionalInvoice);
   $('#saveAppointmentBtn')?.addEventListener('click', saveAppointmentDetails);
-  $('#openStatusPageBtn')?.addEventListener('click', () => window.open(`success.html?request_id=${selectedRequest.id}&ref=${encodeURIComponent(ref)}`, '_blank'));
+  $('#openStatusPageBtn')?.addEventListener('click', () => window.open(
+    `success.html?request_id=${selectedRequest.id}&ref=${encodeURIComponent(ref)}`, '_blank'));
   $('#archiveRequestBtn')?.addEventListener('click', toggleArchiveRequest);
 }
 async function saveAppointmentDetails() {
@@ -525,13 +701,20 @@ async function saveAppointmentDetails() {
   // Blank fields should NOT wipe existing database values.
   if (!selectedRequest) return;
 
-  const dateValue = $('#appointmentDate')?.value || selectedRequest.appointment_date || selectedRequest.preferred_date || null;
-  const timeValue = $('#appointmentTime')?.value || selectedRequest.appointment_time || selectedRequest.preferred_time_window || null;
-  const platformValue = $('#appointmentPlatform')?.value || selectedRequest.appointment_platform || null;
-  const locationValue = $('#appointmentLocation')?.value || selectedRequest.appointment_location || null;
-  const linkValue = $('#appointmentLink')?.value || selectedRequest.appointment_link || selectedRequest.ron_session_url || null;
-  const instructionsValue = $('#appointmentInstructions')?.value || selectedRequest.appointment_instructions || null;
-  const lineNoteValue = $('#appointmentLineItemsNote')?.value || selectedRequest.appointment_line_items_note || null;
+  const dateValue = $('#appointmentDate')?.value || selectedRequest.appointment_date ||
+    selectedRequest.preferred_date || null;
+  const timeValue = $('#appointmentTime')?.value || selectedRequest.appointment_time ||
+    selectedRequest.preferred_time_window || null;
+  const platformValue = $('#appointmentPlatform')?.value || selectedRequest
+    .appointment_platform || null;
+  const locationValue = $('#appointmentLocation')?.value || selectedRequest
+    .appointment_location || null;
+  const linkValue = $('#appointmentLink')?.value || selectedRequest.appointment_link ||
+    selectedRequest.ron_session_url || null;
+  const instructionsValue = $('#appointmentInstructions')?.value || selectedRequest
+    .appointment_instructions || null;
+  const lineNoteValue = $('#appointmentLineItemsNote')?.value || selectedRequest
+    .appointment_line_items_note || null;
   const balanceValue = $('#balanceDueAtAppointment')?.value;
 
   const update = {
@@ -541,12 +724,15 @@ async function saveAppointmentDetails() {
     appointment_location: locationValue,
     appointment_link: linkValue,
     appointment_instructions: instructionsValue,
-    balance_due_at_appointment: balanceValue === '' ? Number(selectedRequest.balance_due_at_appointment || 0) : (Number(balanceValue || 0) || 0),
+    balance_due_at_appointment: balanceValue === '' ? Number(selectedRequest
+      .balance_due_at_appointment || 0) : (Number(balanceValue || 0) || 0),
     appointment_line_items_note: lineNoteValue,
     ron_session_url: linkValue || selectedRequest.ron_session_url || null
   };
 
-  const { error } = await adminClient
+  const {
+    error
+  } = await adminClient
     .from('service_requests')
     .update(update)
     .eq('id', selectedRequest.id);
@@ -583,23 +769,35 @@ async function updateRequestStatus(status) {
   }
 
   const appointmentPayload = {
-    appointment_date: $('#appointmentDate')?.value || selectedRequest.appointment_date || selectedRequest.preferred_date || null,
-    appointment_time: $('#appointmentTime')?.value || selectedRequest.appointment_time || selectedRequest.preferred_time_window || null,
-    appointment_platform: $('#appointmentPlatform')?.value || selectedRequest.appointment_platform || null,
-    appointment_location: $('#appointmentLocation')?.value || selectedRequest.appointment_location || null,
-    appointment_link: $('#appointmentLink')?.value || selectedRequest.appointment_link || selectedRequest.ron_session_url || null,
-    appointment_instructions: $('#appointmentInstructions')?.value || selectedRequest.appointment_instructions || null,
-    balance_due_at_appointment: $('#balanceDueAtAppointment')?.value || selectedRequest.balance_due_at_appointment || 0,
-    appointment_line_items_note: $('#appointmentLineItemsNote')?.value || selectedRequest.appointment_line_items_note || null
+    appointment_date: $('#appointmentDate')?.value || selectedRequest.appointment_date ||
+      selectedRequest.preferred_date || null,
+    appointment_time: $('#appointmentTime')?.value || selectedRequest.appointment_time ||
+      selectedRequest.preferred_time_window || null,
+    appointment_platform: $('#appointmentPlatform')?.value || selectedRequest
+      .appointment_platform || null,
+    appointment_location: $('#appointmentLocation')?.value || selectedRequest
+      .appointment_location || null,
+    appointment_link: $('#appointmentLink')?.value || selectedRequest.appointment_link ||
+      selectedRequest.ron_session_url || null,
+    appointment_instructions: $('#appointmentInstructions')?.value || selectedRequest
+      .appointment_instructions || null,
+    balance_due_at_appointment: $('#balanceDueAtAppointment')?.value || selectedRequest
+      .balance_due_at_appointment || 0,
+    appointment_line_items_note: $('#appointmentLineItemsNote')?.value || selectedRequest
+      .appointment_line_items_note || null
   };
 
   try {
-    const { data, error } = await adminClient.functions.invoke('update-request-status', {
+    const {
+      data,
+      error
+    } = await adminClient.functions.invoke('update-request-status', {
       body: {
         request_id: selectedRequest.id,
         status,
         note,
-        paid_amount: Number(selectedRequest.quote_amount || selectedRequest.estimated_total || 0) || null,
+        paid_amount: Number(selectedRequest.quote_amount || selectedRequest.estimated_total ||
+          0) || null,
         appointment: appointmentPayload
       }
     });
@@ -608,11 +806,16 @@ async function updateRequestStatus(status) {
     if (data && data.ok === false) throw new Error(data.error || 'Status update failed.');
   } catch (err) {
     console.error(err);
-    alert('Status update failed. Confirm update-request-status is deployed and all SQL migrations are run.');
+    alert(
+      'Status update failed. Confirm update-request-status is deployed and all SQL migrations are run.'
+    );
     return;
   }
 
-  Object.assign(selectedRequest, { status, ...appointmentPayload });
+  Object.assign(selectedRequest, {
+    status,
+    ...appointmentPayload
+  });
   if (status === 'payment_received') {
     selectedRequest.payment_status = 'paid';
     selectedRequest.paid_at = new Date().toISOString();
@@ -626,114 +829,232 @@ async function updateRequestStatus(status) {
   showToast(`Status updated and emails queued: ${statusLabel(status)}`);
 }
 
-function populateInvoicePresetSelect(){
+function populateInvoicePresetSelect() {
   const select = $('#invoicePresetSelect');
-  if(!select) return;
-  if(select.dataset.loaded === 'true') return;
-  select.insertAdjacentHTML('beforeend', quoteBuilderPresets().map((item, idx)=>`<option value="${idx}">${escapeHtml(item[0])} — ${money(item[2])}</option>`).join(''));
+  if (!select) return;
+  if (select.dataset.loaded === 'true') return;
+  select.insertAdjacentHTML('beforeend', quoteBuilderPresets().map((item, idx) =>
+    `<option value="${idx}">${escapeHtml(item[0])} — ${money(item[2])}</option>`).join(''));
   select.dataset.loaded = 'true';
 }
-function addSelectedPresetInvoiceRow(){
+
+function addSelectedPresetInvoiceRow() {
   const select = $('#invoicePresetSelect');
-  if(!select || select.value === '') return;
+  if (!select || select.value === '') return;
   const preset = quoteBuilderPresets()[Number(select.value)];
   const current = invoiceRowsFromDom();
-  current.push({ description: preset[0], quantity: preset[1], unit_price: preset[2], line_total: preset[1] * preset[2] });
+  current.push({
+    description: preset[0],
+    quantity: preset[1],
+    unit_price: preset[2],
+    line_total: preset[1] * preset[2]
+  });
   renderInvoiceRows(current);
   populateInvoicePresetSelect();
   select.value = '';
 }
-async function createAdditionalInvoice(){
-  if(!selectedRequest) return;
-  if(window.__alignedIssuingFinalInvoice) return;
+async function createAdditionalInvoice() {
+  if (!selectedRequest) return;
+  if (window.__alignedIssuingFinalInvoice) return;
 
-  const items = invoiceRowsFromDom().filter(item => item.description || Number(item.unit_price || 0) > 0);
+  const items = invoiceRowsFromDom().filter(item => item.description || Number(item.unit_price ||
+    0) > 0);
   const total = items.reduce((sum, item) => sum + item.line_total, 0);
-  if(total <= 0){ alert('Add at least one final-balance line item before issuing the invoice.'); return; }
+  if (total <= 0) {
+    alert('Add at least one final-balance line item before issuing the invoice.');
+    return;
+  }
 
-  const note = $('#invoiceNote')?.value || 'Final balance invoice for additional on-site or fulfillment services.';
+  const note = $('#invoiceNote')?.value ||
+    'Final balance invoice for additional on-site or fulfillment services.';
   const btn = $('#createAdditionalInvoiceBtn');
   window.__alignedIssuingFinalInvoice = true;
-  if(btn){ btn.disabled = true; btn.textContent = 'Issuing…'; }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Issuing…';
+  }
 
-  try{
-    const { data, error } = await adminClient.functions.invoke('create-additional-invoice', {
-      body: { request_id: selectedRequest.id, note, items }
+  try {
+    const {
+      data,
+      error
+    } = await adminClient.functions.invoke('create-additional-invoice', {
+      body: {
+        request_id: selectedRequest.id,
+        note,
+        items
+      }
     });
-    if(error) throw error;
-    if(data && data.ok === false) throw new Error(data.error || 'Final balance invoice was not created.');
+    if (error) throw error;
+    if (data && data.ok === false) throw new Error(data.error ||
+      'Final balance invoice was not created.');
 
     showToast('Final balance invoice issued and customer email sent.');
     await loadRequests();
     await selectRequest(selectedRequest.id);
-  }catch(err){
+  } catch (err) {
     console.error(err);
-    alert('Final balance invoice failed. Confirm create-additional-invoice is deployed and the invoice SQL migration has been run.');
+    alert(
+      'Final balance invoice failed. Confirm create-additional-invoice is deployed and the invoice SQL migration has been run.'
+    );
   } finally {
     window.__alignedIssuingFinalInvoice = false;
-    if(btn){ btn.disabled = false; btn.textContent = 'Issue Final Balance Invoice'; }
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Issue Final Balance Invoice';
+    }
   }
 }
 
 async function saveInvoice() {
   if (!selectedRequest) return;
+
+  // A paid or submitted initial invoice is immutable. Later charges must be
+  // issued through the separate Final Balance Invoice workflow.
+  const lockedPaymentStatuses = [
+    'submitted',
+    'paid',
+    'payment_received',
+    'final_payment_received',
+  ];
+  const initialInvoiceLocked =
+    lockedPaymentStatuses.includes(String(selectedRequest.payment_status || '').toLowerCase()) ||
+    Number(selectedRequest.paid_amount || 0) > 0;
+
+  if (initialInvoiceLocked) {
+    alert(
+      'Invoice #1 is locked because payment activity has been recorded. ' +
+      'Use “Issue Final Balance Invoice” for additional charges.'
+    );
+    return false;
+  }
+
   const items = invoiceRowsFromDom();
   const total = items.reduce((sum, item) => sum + item.line_total, 0);
-  const invoiceNumber = selectedRequest.invoice_number || refFromId(selectedRequest.id).replace('APS-', 'INV-');
+  const invoiceNumber = selectedRequest.invoice_number || refFromId(selectedRequest.id).replace(
+    'APS-', 'INV-');
   const note = $('#invoiceNote')?.value || '';
   const update = {
+    // Keep the full quote and initial payment explicit. These values are not
+    // reused for Invoice #2 or later invoices.
     quote_amount: total,
+    full_quote_amount: total,
+    initial_payment_amount: total,
     quote_notes: note,
     customer_message: note,
     invoice_number: invoiceNumber,
     invoice_status: 'draft',
     payment_status: selectedRequest.payment_status || 'unpaid'
   };
-  const { error: updateError } = await adminClient.from('service_requests').update(update).eq('id', selectedRequest.id);
-  if (updateError) { alert(updateError.message); return; }
-  await adminClient.from('invoice_items').delete().eq('service_request_id', selectedRequest.id);
-  const rows = items.map(item => ({ ...item, service_request_id: selectedRequest.id }));
+  const {
+    error: updateError
+  } = await adminClient.from('service_requests').update(update).eq('id', selectedRequest.id);
+  if (updateError) {
+    alert(updateError.message);
+    return false;
+  }
+  // Only replace the initial quote rows. Final-balance invoice items have an
+  // invoice_id and must never be deleted when Invoice #1 is edited.
+  await adminClient
+    .from('invoice_items')
+    .delete()
+    .eq('service_request_id', selectedRequest.id)
+    .is('invoice_id', null);
+  const rows = items.map((item) => ({
+    ...item,
+    service_request_id: selectedRequest.id,
+    invoice_id: null,
+  }));
   if (rows.length) {
-    const { error: itemError } = await adminClient.from('invoice_items').insert(rows);
-    if (itemError) { alert(itemError.message); return; }
+    const {
+      error: itemError
+    } = await adminClient.from('invoice_items').insert(rows);
+    if (itemError) {
+      alert(itemError.message);
+      return;
+    }
   }
   Object.assign(selectedRequest, update);
-  await adminClient.from('request_status_updates').insert({ service_request_id: selectedRequest.id, status: selectedRequest.status || 'under_review', message: 'Quote saved by admin. No customer email sent.', sent_email: false, sent_sms: false });
-  renderStats(); renderRequestList();
-  showToast('Quote saved. Use the Quote Ready status button when you are ready to notify the customer.');
+  await adminClient.from('request_status_updates').insert({
+    service_request_id: selectedRequest.id,
+    status: selectedRequest.status || 'under_review',
+    message: 'Quote saved by admin. No customer email sent.',
+    sent_email: false,
+    sent_sms: false
+  });
+  renderStats();
+  renderRequestList();
+  showToast(
+    'Quote saved. Use the Quote Ready status button when you are ready to notify the customer.');
+  return true;
 }
 async function sendInvoiceEmail() {
   if (!selectedRequest) return;
-  await saveInvoice();
+  const invoiceSaved = await saveInvoice();
+  if (!invoiceSaved) return;
+
   const ref = refFromId(selectedRequest.id);
   const status = $('#invoiceNote');
   try {
-    const { data, error } = await adminClient.functions.invoke('send-invoice-email', { body: { request_id: selectedRequest.id, reference_number: ref } });
+    const {
+      data,
+      error
+    } = await adminClient.functions.invoke('send-invoice-email', {
+      body: {
+        request_id: selectedRequest.id,
+        reference_number: ref
+      }
+    });
     if (error) throw error;
     await updateRequestStatus('awaiting_approval');
     showToast('Quote email requested through Resend.');
   } catch (err) {
     console.error(err);
-    alert('Invoice saved, but the email function did not complete yet. Deploy send-invoice-email and set RESEND_API_KEY.');
+    alert(
+      'Invoice saved, but the email function did not complete yet. Deploy send-invoice-email and set RESEND_API_KEY.'
+    );
   }
 }
 async function toggleArchiveRequest() {
   if (!selectedRequest) return;
   const archived = isArchived(selectedRequest);
-  const update = { archived_at: archived ? null : new Date().toISOString() };
-  const { error } = await adminClient.from('service_requests').update(update).eq('id', selectedRequest.id);
-  if (error) { alert(error.message); return; }
+  const update = {
+    archived_at: archived ? null : new Date().toISOString()
+  };
+  const {
+    error
+  } = await adminClient.from('service_requests').update(update).eq('id', selectedRequest.id);
+  if (error) {
+    alert(error.message);
+    return;
+  }
   Object.assign(selectedRequest, update);
-  await adminClient.from('request_status_updates').insert({ service_request_id: selectedRequest.id, status: archived ? (selectedRequest.status || 'under_review') : 'archived', message: archived ? 'Request restored to active dashboard.' : 'Request archived from active dashboard. Files retained.', sent_email: false, sent_sms: false });
-  renderStats(); renderRequestList(); await selectRequest(selectedRequest.id);
+  await adminClient.from('request_status_updates').insert({
+    service_request_id: selectedRequest.id,
+    status: archived ? (selectedRequest.status || 'under_review') : 'archived',
+    message: archived ? 'Request restored to active dashboard.' :
+      'Request archived from active dashboard. Files retained.',
+    sent_email: false,
+    sent_sms: false
+  });
+  renderStats();
+  renderRequestList();
+  await selectRequest(selectedRequest.id);
   showToast(archived ? 'Request restored.' : 'Request archived. Files were not deleted.');
 }
 async function loadRequests() {
   setText('adminLiveStatus', 'Loading requests…');
-  const { data, error } = await adminClient
+  const {
+    data,
+    error
+  } = await adminClient
     .from('service_requests')
-    .select('id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,quote_notes,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(first_name,last_name,email,phone,preferred_contact)')
-    .order('created_at', { ascending: false })
+    .select(
+      'id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(first_name,last_name,email,phone,preferred_contact)'
+    )
+    .order('created_at', {
+      ascending: false
+    })
     .limit(300);
   if (error) {
     setText('adminLiveStatus', `Could not load requests: ${error.message}`);
@@ -741,16 +1062,24 @@ async function loadRequests() {
     return;
   }
   requests = data || [];
-  if (selectedRequest) selectedRequest = requests.find(r => r.id === selectedRequest.id) || selectedRequest;
-  renderStats(); renderRequestList(); setText('adminLiveStatus', 'Live and listening for new requests.');
+  if (selectedRequest) selectedRequest = requests.find(r => r.id === selectedRequest.id) ||
+    selectedRequest;
+  renderStats();
+  renderRequestList();
+  setText('adminLiveStatus', 'Live and listening for new requests.');
 }
+
 function renderSupportTickets() {
   const list = $('#supportTicketList');
   if (!list) return;
-  if (!supportTickets.length) { list.innerHTML = '<div class="request-empty">No support tickets yet.</div>'; return; }
+  if (!supportTickets.length) {
+    list.innerHTML = '<div class="request-empty">No support tickets yet.</div>';
+    return;
+  }
   list.innerHTML = supportTickets.map(t => {
     const ref = t.reference_number || 'GENERAL SUPPORT';
-    const linked = ref !== 'GENERAL SUPPORT' ? requests.find(r => refFromId(r.id) === ref || refFromId(r.id).toLowerCase() === String(ref).toLowerCase()) : null;
+    const linked = ref !== 'GENERAL SUPPORT' ? requests.find(r => refFromId(r.id) === ref ||
+      refFromId(r.id).toLowerCase() === String(ref).toLowerCase()) : null;
     return `
     <div class="support-ticket-card ${t.urgency && t.urgency !== 'standard' ? 'urgent-ticket' : ''}">
       <div class="support-ticket-head"><span class="request-ref">${escapeHtml(ref)}</span><span class="status-pill">${statusLabel(t.status || 'new')}</span></div>
@@ -774,47 +1103,109 @@ function renderSupportTickets() {
       <small>${t.created_at ? new Date(t.created_at).toLocaleString() : ''}</small>
     </div>`;
   }).join('');
-  $$('.support-status', list).forEach(btn => btn.addEventListener('click', () => updateSupportTicket(btn.dataset.id, { status: btn.dataset.status })));
-  $$('.support-save-note', list).forEach(btn => btn.addEventListener('click', () => updateSupportTicket(btn.dataset.id, { internal_notes: $(`.support-internal-note[data-id="${btn.dataset.id}"]`)?.value || '' })));
-  $$('.support-archive', list).forEach(btn => btn.addEventListener('click', () => updateSupportTicket(btn.dataset.id, { archived_at: new Date().toISOString() })));
-  $$('.open-linked-request', list).forEach(btn => btn.addEventListener('click', () => selectRequest(btn.dataset.id)));
+  $$('.support-status', list).forEach(btn => btn.addEventListener('click', () =>
+    updateSupportTicket(btn.dataset.id, {
+      status: btn.dataset.status
+    })));
+  $$('.support-save-note', list).forEach(btn => btn.addEventListener('click', () =>
+    updateSupportTicket(btn.dataset.id, {
+      internal_notes: $(`.support-internal-note[data-id="${btn.dataset.id}"]`)?.value || ''
+    })));
+  $$('.support-archive', list).forEach(btn => btn.addEventListener('click', () =>
+    updateSupportTicket(btn.dataset.id, {
+      archived_at: new Date().toISOString()
+    })));
+  $$('.open-linked-request', list).forEach(btn => btn.addEventListener('click', () => selectRequest(
+    btn.dataset.id)));
 }
 async function updateSupportTicket(id, update) {
-  const { error } = await adminClient.from('support_tickets').update(update).eq('id', id);
-  if (error) { alert(error.message); return; }
-  await loadSupportTickets(); showToast('Support ticket updated.');
+  const {
+    error
+  } = await adminClient.from('support_tickets').update(update).eq('id', id);
+  if (error) {
+    alert(error.message);
+    return;
+  }
+  await loadSupportTickets();
+  showToast('Support ticket updated.');
 }
 async function loadSupportTickets() {
   const list = $('#supportTicketList');
   if (!list) return;
-  const { data, error } = await adminClient.from('support_tickets').select('*').is('archived_at', null).order('created_at', { ascending: false }).limit(100);
-  if (error) { list.innerHTML = `<div class="request-empty">${escapeHtml(error.message)}</div>`; return; }
-  supportTickets = data || []; renderSupportTickets();
+  const {
+    data,
+    error
+  } = await adminClient.from('support_tickets').select('*').is('archived_at', null).order(
+    'created_at', {
+      ascending: false
+    }).limit(100);
+  if (error) {
+    list.innerHTML = `<div class="request-empty">${escapeHtml(error.message)}</div>`;
+    return;
+  }
+  supportTickets = data || [];
+  renderSupportTickets();
 }
+
 function subscribeRealtime() {
   if (realtimeChannel) adminClient.removeChannel(realtimeChannel);
   realtimeChannel = adminClient.channel('aligned-admin-requests')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'service_requests' }, async () => { await loadRequests(); })
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'service_requests' }, async () => { playNewRequestSound(); showToast('New request received. Dashboard refreshed.'); })
-    .subscribe((status) => { if (status === 'SUBSCRIBED') setText('adminLiveStatus', 'Live and listening for new requests.'); });
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'service_requests'
+    }, async () => {
+      await loadRequests();
+    })
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'service_requests'
+    }, async () => {
+      playNewRequestSound();
+      showToast('New request received. Dashboard refreshed.');
+    })
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') setText('adminLiveStatus',
+        'Live and listening for new requests.');
+    });
   if (supportChannel) adminClient.removeChannel(supportChannel);
   supportChannel = adminClient.channel('aligned-support-tickets')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, async () => { await loadSupportTickets(); })
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'support_tickets'
+    }, async () => {
+      await loadSupportTickets();
+    })
     .subscribe();
 }
 async function initDashboard() {
   if (!$('#requestList')) return;
   if (!adminClient) return;
   const session = await ensureAdminSession();
-  if (!session) { window.location.href = 'admin-login.html'; return; }
+  if (!session) {
+    window.location.href = 'admin-login.html';
+    return;
+  }
   setText('adminLiveStatus', `Signed in as ${session.user.email}`);
-  $('#signOutBtn')?.addEventListener('click', async () => { await adminClient.auth.signOut(); window.location.href = 'admin-login.html'; });
+  $('#signOutBtn')?.addEventListener('click', async () => {
+    await adminClient.auth.signOut();
+    window.location.href = 'admin-login.html';
+  });
   $('#refreshRequests')?.addEventListener('click', loadRequests);
   $('#refreshSupport')?.addEventListener('click', loadSupportTickets);
   $('#requestFilter')?.addEventListener('change', renderRequestList);
   $('#statusFilter')?.addEventListener('change', renderRequestList);
   $('#archiveFilter')?.addEventListener('change', renderRequestList);
-  await loadRequests(); await loadSupportTickets(); subscribeRealtime();
+  await loadRequests();
+  await loadSupportTickets();
+  subscribeRealtime();
 }
 handleLogin();
 initDashboard();
+
+// Admin Portal v2 shell: keep planned navigation visibly disabled until its module is implemented.
+document.querySelectorAll('.admin-nav [data-disabled="true"]').forEach((link) => {
+  link.addEventListener('click', (event) => event.preventDefault());
+});
