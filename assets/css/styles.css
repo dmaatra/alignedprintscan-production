@@ -494,3 +494,16 @@ button.btn.secondary:hover{
     width: 100%;
   }
 }
+
+/* Aligned Print & Scan design-system aliases — July 2026 */
+:root{
+  --aps-navy:#161c4d;
+  --aps-navy-deep:#0d133c;
+  --aps-navy-alt:#101744;
+  --aps-gold:#c8a96b;
+  --aps-gold-light:#e8d28d;
+  --aps-cream:#f3eee4;
+  --aps-cream-soft:#f6f3ee;
+  --aps-cream-warm:#f8f0d7;
+}
+[data-witness-service],[data-witness-shared]{display:none;margin-top:16px}
