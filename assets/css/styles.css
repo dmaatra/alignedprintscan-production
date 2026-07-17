@@ -2828,3 +2828,42 @@ button.btn.secondary:hover {
     gap: 0.75rem;
   }
 }
+
+/* ========================================================================== 
+   Pass 3 — Embedded Stripe checkout spacing correction
+   ========================================================================== */
+
+.payment-panel {
+  padding-bottom: clamp(32px, 5vw, 56px);
+}
+
+.payment-panel .embedded-payment-box,
+#embeddedPaymentBox {
+  width: min(100%, 920px);
+  margin: 22px auto 0;
+  padding: clamp(18px, 3vw, 30px) clamp(16px, 3vw, 30px)
+    clamp(38px, 5vw, 54px);
+  overflow: hidden;
+  border-radius: 18px;
+}
+
+.payment-panel .embedded-payment-box iframe,
+#embeddedPaymentBox iframe {
+  display: block;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 auto;
+}
+
+@media (max-width: 640px) {
+  .payment-panel {
+    padding-bottom: 28px;
+  }
+
+  .payment-panel .embedded-payment-box,
+  #embeddedPaymentBox {
+    margin-top: 14px;
+    padding: 12px 10px 30px;
+    border-radius: 14px;
+  }
+}
