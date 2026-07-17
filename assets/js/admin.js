@@ -550,15 +550,9 @@ function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
   ]);
   const closedStatuses = new Set(["void", "cancelled"]);
   const initialStatus = String(initial?.status || "").toLowerCase();
-  const initialPaid =
-    paidStatuses.has(initialStatus) ||
-    [
-      "payment_received",
-      "appointment_confirmed",
-      "final_balance_due",
-      "final_payment_received",
-      "completed",
-    ].includes(String(request?.status || "").toLowerCase());
+  // Invoice payment display is derived from the invoice record itself.
+  // Workflow status must never make an unpaid invoice appear paid.
+  const initialPaid = paidStatuses.has(initialStatus);
 
   const initialAmount =
     Number(
@@ -613,11 +607,19 @@ function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
 
   if (finals.length) {
     finals.forEach((inv) => {
-      const status = statusLabel(inv.status || "final_balance_due");
+      const invoiceIsPaid = paidStatuses.has(
+        String(inv.status || "").toLowerCase(),
+      );
+      const status = invoiceIsPaid
+        ? "Paid"
+        : statusLabel(inv.status || "final_balance_due");
+      const displayAmount = invoiceIsPaid
+        ? Number(inv.amount_paid || inv.paid_amount || inv.amount_due || 0)
+        : Number(inv.amount_due || 0);
       const receipt = inv.receipt_url || inv.receipt_pdf_url;
       rows.push(`<div class="invoice-summary-item clean-summary-item">
         <div><span class="small-label">Final Balance</span><strong>${escapeHtml(inv.invoice_number || "Final Balance")}</strong></div>
-        <div><span>${escapeHtml(status)}</span><strong>${money(inv.amount_due || 0)}</strong></div>
+        <div><span>${escapeHtml(status)}</span><strong>${money(displayAmount)}</strong></div>
         ${receipt ? `<a href="${escapeHtml(receipt)}" target="_blank" rel="noopener">View Receipt</a>` : ""}
       </div>`);
     });
@@ -885,6 +887,9 @@ async function selectRequest(id) {
   renderStats();
   renderRequestList();
   if (!selectedRequest) return;
+
+  // Keep the Admin Portal v3 header synchronized with the active request.
+  window.AdminV3?.syncSelectedRequest(selectedRequest);
   const detail = $("#requestDetail");
   const ref = refFromId(selectedRequest.id);
   setText("detailRef", ref);
@@ -1041,7 +1046,11 @@ async function selectRequest(id) {
     ),
   );
   $("#archiveRequestBtn")?.addEventListener("click", toggleArchiveRequest);
+
+  // Convert the newly rendered long detail view into the v3 tab workspace.
+  window.AdminV3?.organizeRequestDetail();
 }
+
 async function saveAppointmentDetails() {
   // APPOINTMENT DETAILS
   // The dashboard shows the customer's requested date/time as a starting point.
@@ -1217,6 +1226,37 @@ async function updateRequestStatus(status) {
   // Uses the deployed Edge Function so status, history, customer email,
   // admin email, and success page movement stay in sync.
   if (!selectedRequest) return;
+
+  // Completion is blocked while an invoice still has a remaining balance.
+  // Administrators should record payment, waive the charge, or void the
+  // invoice explicitly rather than allowing a status click to erase debt.
+  if (status === "completed") {
+    const invoices = await getInvoices(selectedRequest.id);
+    const paidStatuses = new Set([
+      "paid",
+      "payment_received",
+      "final_payment_received",
+      "void",
+      "cancelled",
+    ]);
+    const openBalance = invoices.reduce((total, invoice) => {
+      const invoiceStatus = String(invoice.status || "").toLowerCase();
+      if (paidStatuses.has(invoiceStatus)) return total;
+
+      const due = Number(invoice.amount_due || 0);
+      const paid = Number(invoice.amount_paid || invoice.paid_amount || 0);
+      return total + Math.max(0, due - paid);
+    }, 0);
+
+    if (openBalance > 0) {
+      alert(
+        `This request has an outstanding invoice balance of ${money(openBalance)}. ` +
+          "Record payment or resolve the invoice before completing it.",
+      );
+      window.AdminV3?.activateTab("payments");
+      return;
+    }
+  }
 
   const note = $("#adminStatusNote")?.value || "";
 

@@ -111,7 +111,7 @@ function printCost({
   if (color === "bw" && sides === "single") rate = 0.25;
   if (color === "bw" && sides === "double") rate = 0.35;
   if (color === "color" && sides === "single") rate = 0.5;
-  if (color === "color" && sides === "double") rate = 0.65;
+  if (color === "color" && sides === "double") rate = 0.60;
   const size = paperSize === "legal" ? 0.1 : 0;
   const paper =
     {
