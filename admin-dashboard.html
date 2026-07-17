@@ -2,249 +2,266 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta content="width=device-width, initial-scale=1" name="viewport" />
-    <title>Admin Dashboard | Aligned Print & Scan</title>
-    <meta content="noindex,nofollow" name="robots" />
-    <link href="https://fonts.googleapis.com" rel="preconnect" />
-    <link crossorigin href="https://fonts.gstatic.com" rel="preconnect" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+
+    <title>Operations Portal | Aligned Print & Scan</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Playfair+Display:wght@700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Playfair+Display:wght@700;800&display=swap"
       rel="stylesheet"
     />
-    <link href="assets/css/styles.css" rel="stylesheet" />
-    <link href="assets/css/admin-v2.css" rel="stylesheet" />
+
+    <link rel="stylesheet" href="assets/css/styles.css" />
+    <link rel="stylesheet" href="assets/css/admin-v3.css" />
+
+    <link rel="icon" href="assets/images/logo-symbol.webp" type="image/webp" />
+    <link rel="apple-touch-icon" href="assets/images/logo-symbol.webp" />
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <meta content="Aligned Print & Scan" property="og:site_name" />
-    <meta
-      content="https://alignedprintscan.com/assets/images/logo-full.webp"
-      property="og:image"
-    />
-    <meta content="summary_large_image" name="twitter:card" />
-    <meta
-      content="https://alignedprintscan.com/assets/images/logo-full.webp"
-      name="twitter:image"
-    />
-    <link href="assets/images/logo-symbol.webp" rel="icon" type="image/webp" />
-    <link href="assets/images/logo-symbol.webp" rel="apple-touch-icon" />
   </head>
-  <body class="admin-body">
-    <aside class="admin-sidebar">
-      <div class="admin-brand">
-        <img alt="Aligned symbol" src="assets/images/logo-symbol.webp" />
-        <div>
-          <strong> Aligned </strong>
-          <span> Operations </span>
-        </div>
-      </div>
-      <nav aria-label="Admin navigation" class="admin-nav">
-        <div class="admin-nav-group">Operations</div>
-        <a class="active" href="#requests">
-          <span> Requests </span>
+
+  <body class="admin-v3-body">
+    <!-- ================================================================
+         Primary navigation
+         ================================================================ -->
+    <aside class="admin-v3-sidebar" id="adminSidebar">
+      <a class="admin-v3-brand" href="#requests" aria-label="Aligned Print & Scan Operations">
+        <img src="assets/images/logo-symbol.webp" alt="" />
+        <span class="admin-v3-brand-copy">
+          <strong>Aligned</strong>
+          <small>Print &amp; Scan</small>
+        </span>
+      </a>
+
+      <nav class="admin-v3-nav" aria-label="Operations navigation">
+        <p class="admin-v3-nav-label">Overview</p>
+        <a href="#requests" data-admin-view="requests" class="is-active">
+          <span aria-hidden="true">⌂</span>
+          <span>Dashboard</span>
         </a>
-        <a href="#invoiceWorkspace">
-          <span> Invoices </span>
+
+        <p class="admin-v3-nav-label">Operations</p>
+        <a href="#requests" data-admin-view="requests">
+          <span aria-hidden="true">▣</span>
+          <span>Requests</span>
+          <strong id="navRequestCount">0</strong>
         </a>
-        <a href="#supportDesk">
-          <span> Support </span>
+        <a href="#calendar" data-admin-view="calendar">
+          <span aria-hidden="true">□</span>
+          <span>Calendar</span>
         </a>
-        <a href="#uploads">
-          <span> Documents </span>
+        <a href="#sessions" data-admin-view="sessions">
+          <span aria-hidden="true">✣</span>
+          <span>RON Sessions</span>
+          <em>SOON</em>
         </a>
-        <div class="admin-nav-group">Coming next</div>
-        <a
-          aria-disabled="true"
-          data-disabled="true"
-          href="#"
-          title="Calendar is planned for a later dashboard pass"
-        >
-          <span> Calendar </span>
+
+        <p class="admin-v3-nav-label">Financial</p>
+        <a href="#invoices" data-admin-view="invoices">
+          <span aria-hidden="true">▤</span>
+          <span>Invoices</span>
         </a>
-        <a
-          aria-disabled="true"
-          data-disabled="true"
-          href="#"
-          title="Proof sessions are planned for the integration pass"
-        >
-          <span> RON Sessions </span>
+        <a href="#payments" data-admin-view="payments">
+          <span aria-hidden="true">⇄</span>
+          <span>Payments</span>
         </a>
-        <a aria-disabled="true" data-disabled="true" href="#">
-          <span> Customers </span>
+
+        <p class="admin-v3-nav-label">Clients</p>
+        <a href="#customers" data-admin-view="customers">
+          <span aria-hidden="true">♙</span>
+          <span>Customers</span>
         </a>
-        <div class="admin-nav-group">Links</div>
-        <a href="support.html">
-          <span> Customer Support Page </span>
+
+        <p class="admin-v3-nav-label">Documents</p>
+        <a href="#documents" data-admin-view="documents">
+          <span aria-hidden="true">▧</span>
+          <span>Documents</span>
         </a>
-        <a href="index.html">
-          <span> Public Website </span>
+        <a href="#templates" data-admin-view="templates">
+          <span aria-hidden="true">☷</span>
+          <span>Templates</span>
+        </a>
+
+        <p class="admin-v3-nav-label">Support</p>
+        <a href="#support" data-admin-view="support">
+          <span aria-hidden="true">◌</span>
+          <span>Support Tickets</span>
+        </a>
+
+        <p class="admin-v3-nav-label">System</p>
+        <a href="#settings" data-admin-view="settings">
+          <span aria-hidden="true">⚙</span>
+          <span>Settings</span>
         </a>
       </nav>
-      <button class="btn secondary admin-signout" id="signOutBtn" type="button">
-        Sign Out
-      </button>
-    </aside>
-    <main class="admin-main">
-      <section class="admin-hero" id="requests">
+
+      <div class="admin-v3-profile">
+        <span>DR</span>
         <div>
-          <p class="eyebrow">Private Dashboard</p>
-          <h1>Request Command Center</h1>
-          <p>
-            Review requests, prepare professional invoices, send payment links,
-            track support tickets, update statuses, and archive completed work
-            without digging through Supabase tables.
-          </p>
+          <strong>Doneisha Ra</strong>
+          <small>Administrator</small>
         </div>
-        <div class="admin-live-card">
-          <span class="live-dot"> </span>
+        <button id="signOutBtn" type="button">Sign out</button>
+      </div>
+    </aside>
+
+    <!-- ================================================================
+         Application top bar
+         ================================================================ -->
+    <header class="admin-v3-topbar">
+      <button
+        class="admin-v3-menu-button"
+        id="adminMenuButton"
+        type="button"
+        aria-label="Open navigation"
+        aria-controls="adminSidebar"
+        aria-expanded="false"
+      >
+        ☰
+      </button>
+
+      <label class="admin-v3-global-search">
+        <span aria-hidden="true">⌕</span>
+        <input
+          id="globalAdminSearch"
+          type="search"
+          placeholder="Search requests, customers, invoices…"
+          autocomplete="off"
+        />
+        <kbd>⌘ K</kbd>
+      </label>
+
+      <div class="admin-v3-top-actions">
+        <button class="admin-v3-button admin-v3-button--gold" id="newRequestButton" type="button">
+          <span aria-hidden="true">＋</span>
+          New Request
+        </button>
+        <button class="admin-v3-icon-button" type="button" aria-label="Notifications">♢</button>
+        <button class="admin-v3-icon-button" type="button" aria-label="Messages">□</button>
+      </div>
+    </header>
+
+    <!-- ================================================================
+         Main request workspace
+         ================================================================ -->
+    <main class="admin-v3-app" id="requests">
+      <section class="admin-v3-request-rail" aria-label="Request queue">
+        <div class="admin-v3-rail-heading">
           <div>
-            <strong> Realtime monitoring </strong>
-            <p id="adminLiveStatus">Checking session&hellip;</p>
+            <h1>Requests</h1>
+            <span id="requestCountBadge">0</span>
           </div>
+          <button class="admin-v3-icon-button" id="refreshRequests" type="button" aria-label="Refresh requests">↻</button>
         </div>
+
+        <div class="admin-v3-request-tabs" role="tablist" aria-label="Request filters">
+          <button type="button" data-quick-filter="all" class="is-active">All</button>
+          <button type="button" data-quick-filter="active">Active</button>
+          <button type="button" data-quick-filter="pending">Pending</button>
+          <button type="button" data-quick-filter="completed">Completed</button>
+        </div>
+
+        <label class="admin-v3-list-search">
+          <span aria-hidden="true">⌕</span>
+          <input id="requestSearch" type="search" placeholder="Search requests…" autocomplete="off" />
+        </label>
+
+        <div class="admin-v3-filter-row">
+          <select id="requestFilter" aria-label="Filter by service">
+            <option value="all">All services</option>
+            <option value="ron">Remote Online Notary</option>
+            <option value="mobile">Mobile Notary</option>
+            <option value="print">Print &amp; Scan</option>
+          </select>
+
+          <select id="statusFilter" aria-label="Filter by status">
+            <option value="all">All statuses</option>
+            <option value="under_review">Under Review</option>
+            <option value="quote_ready">Quote Ready</option>
+            <option value="awaiting_approval">Awaiting Approval</option>
+            <option value="awaiting_payment">Awaiting Payment</option>
+            <option value="payment_received">Payment Received</option>
+            <option value="appointment_confirmed">Appointment Confirmed</option>
+            <option value="final_balance_due">Final Balance Due</option>
+            <option value="final_payment_received">Final Payment Received</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+
+          <select id="archiveFilter" aria-label="Filter archived requests">
+            <option value="active">Active</option>
+            <option value="archived">Archived</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+
+        <div class="request-list admin-v3-request-list" id="requestList"></div>
       </section>
-      <section class="admin-stats-grid">
-        <div class="admin-stat">
-          <span> New / Under Review </span>
-          <strong id="statNew"> 0 </strong>
-        </div>
-        <div class="admin-stat">
-          <span> Active Requests </span>
-          <strong id="statTotal"> 0 </strong>
-        </div>
-        <div class="admin-stat">
-          <span> Open Request Value </span>
-          <strong id="statRevenue"> $0.00 </strong>
-        </div>
-        <div class="admin-stat">
-          <span> Selected Request </span>
-          <strong id="statSelected"> None </strong>
-        </div>
-      </section>
-      <section class="admin-panel-grid">
-        <div class="admin-panel request-list-panel">
-          <div class="admin-panel-head">
-            <h2>Incoming Requests</h2>
-            <button class="btn dark" id="refreshRequests" type="button">
-              Refresh
+
+      <section class="admin-v3-workspace" aria-live="polite">
+        <header class="admin-v3-workspace-header">
+          <div>
+            <p id="workspaceServiceLabel">Select a request</p>
+            <div class="admin-v3-workspace-title-row">
+              <h2 id="workspaceTitle">Request Workspace</h2>
+              <span id="workspaceStatus" class="admin-v3-status-badge">No request selected</span>
+            </div>
+            <small id="workspaceMeta">Choose a request from the queue to begin.</small>
+          </div>
+
+          <div class="admin-v3-workspace-actions">
+            <button class="admin-v3-button admin-v3-button--navy" id="workspacePrimaryAction" type="button" disabled>
+              Open Next Action
+            </button>
+            <button class="admin-v3-button admin-v3-button--outline" id="workspaceEmailAction" type="button" disabled>
+              Send Email
             </button>
           </div>
-          <div class="admin-filters stacked-filters">
-            <select id="requestFilter">
-              <option value="all">All services</option>
-              <option value="ron">RON</option>
-              <option value="mobile">Mobile</option>
-              <option value="print">Print & Scan</option>
-            </select>
-            <select id="statusFilter">
-              <option value="all">All statuses</option>
-              <option value="under_review">Under Review</option>
-              <option value="quote_ready">Quote Ready</option>
-              <option value="awaiting_approval">Awaiting Approval</option>
-              <option value="awaiting_payment">Awaiting Payment</option>
-              <option value="payment_received">Payment Received</option>
-              <option value="appointment_confirmed">
-                Appointment Confirmed
-              </option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-              <option value="declined">Declined</option>
-            </select>
-            <select id="archiveFilter">
-              <option value="active">Active requests</option>
-              <option value="archived">Archived requests</option>
-              <option value="all">Active + archived</option>
-            </select>
-          </div>
-          <div class="request-list" id="requestList"></div>
-        </div>
-        <div class="admin-panel request-detail-panel">
-          <div class="admin-panel-head">
-            <h2>Request Details</h2>
-            <span class="success-ref" id="detailRef"> Select a request </span>
-          </div>
-          <div class="request-detail-empty" id="requestDetail">
-            Select a request to view client details, service information,
-            uploaded files, invoice controls, and status actions.
+        </header>
+
+        <nav class="admin-v3-workspace-tabs" id="workspaceTabs" aria-label="Request workspace tabs">
+          <button type="button" data-workspace-tab="overview" class="is-active">Overview</button>
+          <button type="button" data-workspace-tab="customer">Customer</button>
+          <button type="button" data-workspace-tab="documents">Documents</button>
+          <button type="button" data-workspace-tab="payments">Payments</button>
+          <button type="button" data-workspace-tab="appointment">Appointment</button>
+          <button type="button" data-workspace-tab="ron">RON Session</button>
+          <button type="button" data-workspace-tab="communication">Communication</button>
+          <button type="button" data-workspace-tab="timeline">Timeline</button>
+          <button type="button" data-workspace-tab="notes">Notes</button>
+        </nav>
+
+        <div class="admin-v3-workspace-content" id="requestDetail">
+          <div class="admin-v3-empty-state">
+            <img src="assets/images/logo-symbol.webp" alt="" />
+            <h3>Select a request</h3>
+            <p>
+              Review client details, build invoices, manage appointments, prepare a RON session,
+              and track the complete service timeline from one workspace.
+            </p>
           </div>
         </div>
-      </section>
-      <section class="admin-panel" id="invoiceWorkspace">
-        <div class="admin-panel-head">
-          <div>
-            <p class="eyebrow">Invoice & Payment System</p>
-            <h2>Premium Client Workflow</h2>
-          </div>
-          <span class="admin-private-badge"> Stripe + Resend Ready </span>
-        </div>
-        <p class="admin-muted">
-          Select a request above, add invoice line items, save the invoice, and
-          send a branded quote/payment email. Embedded Stripe payment appears on
-          the customer status page once the payment function is deployed.
-        </p>
-        <div class="workflow-list">
-          <div>
-            <span> 01 </span>
-            <strong> Request Received &mdash; Under Review </strong>
-            <p>Client submits intake and sees their reference number.</p>
-          </div>
-          <div>
-            <span> 02 </span>
-            <strong> Quote Ready &mdash; Awaiting Approval </strong>
-            <p>You prepare invoice line items and send the quote email.</p>
-          </div>
-          <div>
-            <span> 03 </span>
-            <strong> Awaiting Payment </strong>
-            <p>Client reviews and pays through your branded status page.</p>
-          </div>
-          <div>
-            <span> 04 </span>
-            <strong> Payment Received &mdash; Appointment Confirmation </strong>
-            <p>Payment is recorded and appointment details are confirmed.</p>
-          </div>
-          <div>
-            <span> 05 </span>
-            <strong> Completed &mdash; Receipt & Review </strong>
-            <p>Client can reference the invoice/receipt and leave a review.</p>
-          </div>
-        </div>
-      </section>
-      <section class="admin-panel" id="supportDesk">
-        <div class="admin-panel-head">
-          <div>
-            <p class="eyebrow">Client Care</p>
-            <h2>Customer Support</h2>
-          </div>
-          <button class="btn dark" id="refreshSupport" type="button">
-            Refresh
-          </button>
-        </div>
-        <p class="admin-muted">
-          Support submissions from the customer support page appear here for
-          follow-up and resolution tracking.
-        </p>
-        <div class="support-ticket-list" id="supportTicketList"></div>
-      </section>
-      <section class="admin-panel" id="uploads">
-        <div class="admin-panel-head">
-          <h2>File Review Notes</h2>
-        </div>
-        <p class="admin-muted">
-          Uploaded file links are shown inside each request detail. Archiving a
-          request does not delete the client&rsquo;s uploaded files. Files
-          remain attached for recordkeeping until you intentionally create a
-          retention/deletion policy.
-        </p>
       </section>
     </main>
-    <div
-      aria-live="polite"
-      class="admin-toast"
-      id="newRequestToast"
-      role="status"
-    >
-      New request received.
+
+    <!-- Legacy IDs retained for existing dashboard logic and stats. -->
+    <div class="admin-v3-compatibility" aria-hidden="true">
+      <span id="adminLiveStatus"></span>
+      <span id="statNew">0</span>
+      <span id="statTotal">0</span>
+      <span id="statRevenue">$0.00</span>
+      <span id="statSelected">None</span>
+      <span id="detailRef"></span>
+      <button id="refreshSupport" type="button"></button>
+      <div id="supportList"></div>
     </div>
-    <script src="assets/js/pricing-config.js"></script>
+
+    <div class="admin-v3-toast" id="adminToast" role="status" aria-live="polite"></div>
+
     <script src="assets/js/admin.js"></script>
+    <script src="assets/js/admin-v3.js"></script>
   </body>
 </html>
