@@ -12,6 +12,35 @@ const PRICING = window.ALIGNED_PRICING || {
     appointmentBase: 50,
     notarialAct: 10,
     providedWitness: 50,
+    afterHours: {
+      after7pm: 25,
+      after9pm: 50,
+    },
+    travelTiers: {
+      "0-15": 0,
+      "16-20": 10,
+      "21-25": 20,
+      "26-30": 30,
+      "31-40": 45,
+    },
+  },
+  documentServices: {
+    bwLetter: 0.25,
+    bwLegal: 0.35,
+    colorLetter: 0.5,
+    colorLegal: 0.6,
+    colorPaperAddOn: 0.15,
+    cardstockAddOn: 0.4,
+    scanPerPage: 1,
+    pdfMerge: 5,
+    courierBase: 20,
+    mobileDocumentBase: 20,
+    courierTiers: {
+      "0-15": 20,
+      "16-20": 30,
+      "21-25": 40,
+      "26-30": 50,
+    },
   },
 };
 const adminClient = window.supabase
@@ -1176,6 +1205,63 @@ function promptForPaymentRecord(paymentStage) {
   };
 }
 
+/**
+ * Returns the active Supabase Auth session for protected admin actions.
+ *
+ * The dashboard login already uses email/password Supabase Auth. Protected
+ * Edge Functions still need the resulting access token sent explicitly so
+ * the function gateway can verify the administrator request.
+ */
+async function requireAdminSession() {
+  const {
+    data: { session },
+    error,
+  } = await adminClient.auth.getSession();
+
+  if (error) {
+    throw new Error(
+      `Unable to verify the administrator session: ${error.message}`,
+    );
+  }
+
+  if (!session?.access_token) {
+    throw new Error(
+      "Your administrator session is missing or expired. Sign out and sign " +
+        "back in before recording a payment.",
+    );
+  }
+
+  return session;
+}
+
+/**
+ * Extracts the safe response message returned by a Supabase Edge Function.
+ */
+async function getFunctionErrorMessage(error) {
+  const response = error?.context;
+
+  if (response && typeof response.clone === "function") {
+    try {
+      const payload = await response.clone().json();
+      return payload?.error || payload?.message || error.message;
+    } catch {
+      try {
+        return (await response.clone().text()) || error.message;
+      } catch {
+        // Fall through to the standard error message.
+      }
+    }
+  }
+
+  return error?.message || "The payment could not be recorded.";
+}
+
+/**
+ * Records a simulated or offline payment against the correct invoice.
+ *
+ * Test payments bypass Stripe but still create the same linked payment and
+ * invoice updates needed to validate Invoice #1 and Invoice #2 behavior.
+ */
 async function recordAdminPayment(paymentStage) {
   if (!selectedRequest) return false;
 
@@ -1183,6 +1269,8 @@ async function recordAdminPayment(paymentStage) {
   if (!payment) return false;
 
   try {
+    const session = await requireAdminSession();
+
     const { data, error } = await adminClient.functions.invoke(
       "record-admin-payment",
       {
@@ -1190,10 +1278,17 @@ async function recordAdminPayment(paymentStage) {
           request_id: selectedRequest.id,
           ...payment,
         },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
       },
     );
 
-    if (error) throw error;
+    if (error) {
+      const message = await getFunctionErrorMessage(error);
+      throw new Error(message);
+    }
+
     if (data?.ok === false) {
       throw new Error(data.error || "Payment record was not created.");
     }
@@ -1207,11 +1302,13 @@ async function recordAdminPayment(paymentStage) {
     await refreshSelectedRequest(selectedRequest.id);
     return true;
   } catch (error) {
-    console.error(error);
+    console.error("Payment recording failed:", error);
+
     alert(
-      "Payment recording failed. Confirm the record-admin-payment function " +
-        "and Pass 2 SQL migration are deployed.",
+      "Payment recording failed: " +
+        (error?.message || "The payment could not be recorded."),
     );
+
     return false;
   }
 }
