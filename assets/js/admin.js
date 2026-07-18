@@ -518,7 +518,17 @@ function detailMap(rows) {
     "created_at",
     "updated_at",
   ]);
+  const explicitLabels = {
+    witness_count: "Total Witnesses Required",
+    client_witness_count: "Customer Will Provide",
+    provided_witness_count: "Aligned Print & Scan Will Provide",
+    witness_provider: "Witness Provider",
+    witness_need: "Witnesses Required",
+    witnesses_needed: "Witnesses Required",
+  };
+
   const labels = (key) =>
+    explicitLabels[key] ||
     String(key || "")
       .replace(/_/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());

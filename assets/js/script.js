@@ -272,20 +272,75 @@ function applyService(service) {
   updateContinueState();
 }
 
-function providedWitnessCount(service) {
-  if (!wizard) return 0;
+/**
+ * Returns normalized witness allocation for the selected service path.
+ *
+ * Total witnesses, customer-provided witnesses, and Aligned Print & Scan-
+ * provided witnesses must never contradict one another. The allocation is
+ * derived from the selected provider instead of trusting hidden shared fields.
+ */
+function witnessAllocation(service) {
+  if (!wizard) {
+    return {
+      total: 0,
+      customerProvides: 0,
+      alignedProvides: 0,
+    };
+  }
+
   const need = wizard.elements[service + "WitnessNeed"]?.value;
   const provider = wizard.elements[service + "WitnessProvider"]?.value;
-  if (need !== "yes") return 0;
-  if (provider === "aligned") {
-    const count = wizard.elements[service + "WitnessCount"]?.value;
-    return count === "not_sure" ? 0 : Number(count) || 0;
+  const rawTotal = wizard.elements[service + "WitnessCount"]?.value;
+  const total = rawTotal === "not_sure" ? 0 : Number(rawTotal) || 0;
+
+  if (need !== "yes" || total <= 0) {
+    return {
+      total: 0,
+      customerProvides: 0,
+      alignedProvides: 0,
+    };
   }
-  if (provider === "shared")
-    return (
-      Number(wizard.elements[service + "ProvidedWitnessCount"]?.value || 0) || 0
+
+  if (provider === "aligned") {
+    return {
+      total,
+      customerProvides: 0,
+      alignedProvides: total,
+    };
+  }
+
+  if (provider === "client") {
+    return {
+      total,
+      customerProvides: total,
+      alignedProvides: 0,
+    };
+  }
+
+  if (provider === "shared") {
+    const requestedCustomerCount =
+      Number(wizard.elements[service + "ClientWitnessCount"]?.value || 0) || 0;
+    const customerProvides = Math.min(
+      total,
+      Math.max(0, requestedCustomerCount),
     );
-  return 0;
+
+    return {
+      total,
+      customerProvides,
+      alignedProvides: Math.max(0, total - customerProvides),
+    };
+  }
+
+  return {
+    total,
+    customerProvides: 0,
+    alignedProvides: 0,
+  };
+}
+
+function providedWitnessCount(service) {
+  return witnessAllocation(service).alignedProvides;
 }
 
 function updateConditional() {
@@ -718,6 +773,7 @@ async function submitRequestToSupabase(e) {
     if (requestError) throw requestError;
     const requestId = request.id;
     if (activeService === "ron") {
+      const ronWitnessAllocation = witnessAllocation("ron");
       const { error } = await supabaseClient.from("ron_requests").insert({
         service_request_id: requestId,
         document_type: f.documentType.value || null,
@@ -728,10 +784,13 @@ async function submitRequestToSupabase(e) {
         valid_id_confirmed: checkedValue("validId"),
         consent_to_recording: checkedValue("recordingConsent"),
         witness_need: f.ronWitnessNeed?.value || "no",
-        witness_count: f.ronWitnessCount?.value || null,
+        witness_count:
+          f.ronWitnessCount?.value === "not_sure"
+            ? null
+            : ronWitnessAllocation.total,
         witness_provider: f.ronWitnessProvider?.value || null,
-        client_witness_count: numericValue("ronClientWitnessCount"),
-        provided_witness_count: providedWitnessCount("ron"),
+        client_witness_count: ronWitnessAllocation.customerProvides,
+        provided_witness_count: ronWitnessAllocation.alignedProvides,
         witness_review_required:
           ["not_sure"].includes(f.ronWitnessNeed?.value) ||
           ["not_sure"].includes(f.ronWitnessProvider?.value) ||
@@ -742,6 +801,7 @@ async function submitRequestToSupabase(e) {
     }
     if (activeService === "mobile") {
       const witnessNeed = f.mobileWitnessNeed?.value || "no";
+      const mobileWitnessAllocation = witnessAllocation("mobile");
       const printAddon = checkedValue("mobilePrintAddon");
       const scanAddon = checkedValue("mobileScanAddon");
       const mobilePrintTotal = printAddon
@@ -766,10 +826,13 @@ async function submitRequestToSupabase(e) {
           number_of_notarizations: numericValue("notarizationCount"),
           witnesses_needed: witnessNeed === "yes",
           witness_need: witnessNeed,
-          witness_count: f.mobileWitnessCount?.value || null,
+          witness_count:
+            f.mobileWitnessCount?.value === "not_sure"
+              ? null
+              : mobileWitnessAllocation.total,
           witness_provider: f.mobileWitnessProvider?.value || null,
-          client_witness_count: numericValue("mobileClientWitnessCount"),
-          provided_witness_count: providedWitnessCount("mobile"),
+          client_witness_count: mobileWitnessAllocation.customerProvides,
+          provided_witness_count: mobileWitnessAllocation.alignedProvides,
           witness_review_required:
             witnessNeed === "not_sure" ||
             f.mobileWitnessProvider?.value === "not_sure" ||
@@ -976,7 +1039,7 @@ const publicStatusCopy = {
   awaiting_payment: {
     eyebrow: "Awaiting Payment",
     headline: "Secure Payment Required",
-    lead: "Your quote has been approved or prepared for payment. Complete secure payment to move your request toward confirmation.",
+    lead: "Your quote has been approved. Complete the secure initial payment to confirm your request and continue to scheduling.",
     title: "Awaiting Payment",
     body: "Once payment is received, we will continue with appointment confirmation, production scheduling, or fulfillment instructions.",
   },
@@ -1173,7 +1236,9 @@ function paymentSchedulePanel({
     "final_payment_received",
   ];
   const closedStatuses = ["void", "cancelled"];
-  const statusNow = String(request.status || "").toLowerCase();
+  const statusNow = String(
+    request.workflow_status || request.status || "",
+  ).toLowerCase();
 
   const activeFinal = finals.find(
     (inv) =>
@@ -1209,12 +1274,15 @@ function paymentSchedulePanel({
     ? paidInitial + paidFinalAmount
     : Number(request.paid_amount || 0) || 0;
   const balanceDue = Math.max(0, totalServiceValue - paidToDate);
+  const initialBalance = Math.max(
+    0,
+    Number(initial?.balance_due ?? initialAmount) || 0,
+  );
   const showInitialPay =
     ["awaiting_payment", "payment_pending"].includes(statusNow) &&
     Boolean(initial?.id) &&
-    initialAmount > 0 &&
-    !initialPaid &&
-    !activeFinal;
+    initialBalance > 0 &&
+    !initialPaid;
 
   const initialNumber =
     initial?.invoice_number ||
@@ -1238,7 +1306,7 @@ function paymentSchedulePanel({
       <div class="payment-row-main"><strong>${escapePublic(initialNumber)}</strong><span>${initialPaid ? "Paid" : "Due"} · ${money(initialAmount)}</span></div>
       <div class="cta-row compact-cta-row">
         ${initialReceipt ? `<a class="btn dark" href="${escapePublic(initialReceipt)}" target="_blank" rel="noopener">View Receipt</a>` : ""}
-        ${showInitialPay ? `<button id="startPaymentBtn" class="btn primary" type="button">Pay Initial Payment</button>` : ""}
+        ${showInitialPay ? `<button id="startPaymentBtn" class="btn primary" type="button">Continue to Secure Payment</button>` : ""}
       </div>
     </div>`);
   }
