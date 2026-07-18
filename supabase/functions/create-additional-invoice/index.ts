@@ -90,7 +90,9 @@ Deno.serve(async (req) => {
         method: "PATCH",
         body: JSON.stringify({
           status: "final_balance_due",
+          payment_status: "unpaid",
           amount_due: total,
+          balance_due: total,
           note,
         }),
       });
@@ -105,7 +107,9 @@ Deno.serve(async (req) => {
           invoice_number: invoiceNumber,
           invoice_type: "final_balance",
           status: "final_balance_due",
+          payment_status: "unpaid",
           amount_due: total,
+          balance_due: total,
           amount_paid: 0,
           paid_amount: 0,
           note,
@@ -137,7 +141,13 @@ Deno.serve(async (req) => {
 
     await supabaseFetch(`service_requests?id=eq.${requestId}`, {
       method: "PATCH",
-      body: JSON.stringify({ status: "final_balance_due" }),
+      body: JSON.stringify({
+        status: "final_balance_due",
+        workflow_status: "final_balance_due",
+        payment_state: "final_invoice_due",
+        balance_due: total,
+        balance_due_at_appointment: total,
+      }),
     });
 
     await supabaseFetch("request_status_updates", {
