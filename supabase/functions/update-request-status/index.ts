@@ -1,18 +1,31 @@
-// Aligned Print & Scan — Admin status updater
-// Purpose: Optional backend endpoint for dashboard status changes.
-// This keeps status updates, status history, and emails in one server-side place.
+/**
+ * Aligned Print & Scan — Admin status updater.
+ *
+ * Workflow, payment, and appointment states are stored separately. Payment
+ * buttons use record-admin-payment first; this function does not invent money
+ * or mark an invoice paid merely because a workflow button was clicked.
+ */
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "https://sfsdniavqldgbiretply.supabase.co";
+const SUPABASE_URL =
+  Deno.env.get("SUPABASE_URL") ||
+  "https://sfsdniavqldgbiretply.supabase.co";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+    },
+  });
 }
 
 async function supabaseFetch(path: string, init: RequestInit = {}) {
@@ -28,87 +41,102 @@ async function supabaseFetch(path: string, init: RequestInit = {}) {
   });
 }
 
-async function readJsonOrEmpty(response: Response) {
-  if (!response.ok) return null;
-  try { return await response.json(); } catch (_) { return null; }
-}
-
 function cleanUuid(value: unknown) {
   const text = String(value || "").trim();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text) ? text : "";
+
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    text,
+  )
+    ? text
+    : "";
 }
 
-function onlyNonEmptyAppointmentFields(details: any) {
+function appointmentFields(details: any) {
   const update: Record<string, unknown> = {};
-  const map: Record<string, string> = {
-    appointment_date: "appointment_date",
-    appointment_time: "appointment_time",
-    appointment_timezone: "appointment_timezone",
-    appointment_location: "appointment_location",
-    appointment_link: "appointment_link",
-    appointment_platform: "appointment_platform",
-    appointment_instructions: "appointment_instructions",
-    appointment_line_items_note: "appointment_line_items_note",
-  };
+  const keys = [
+    "appointment_date",
+    "appointment_time",
+    "appointment_timezone",
+    "appointment_location",
+    "appointment_link",
+    "appointment_platform",
+    "appointment_instructions",
+    "appointment_line_items_note",
+  ];
 
-  for (const [incoming, column] of Object.entries(map)) {
-    const value = details?.[incoming];
-    if (value !== undefined && value !== null && String(value).trim() !== "") update[column] = value;
+  keys.forEach((key) => {
+    const value = details?.[key];
+
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      update[key] = value;
+    }
+  });
+
+  if (details?.balance_due_at_appointment !== undefined) {
+    update.balance_due_at_appointment =
+      Number(details.balance_due_at_appointment) || 0;
   }
 
-  if (details?.balance_due_at_appointment !== undefined && details?.balance_due_at_appointment !== null && String(details.balance_due_at_appointment).trim() !== "") {
-    update.balance_due_at_appointment = Number(details.balance_due_at_appointment) || 0;
+  if (update.appointment_link) {
+    update.ron_session_url = update.appointment_link;
   }
 
-  if (update.appointment_link) update.ron_session_url = update.appointment_link;
   return update;
 }
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+Deno.serve(async (request) => {
+  if (request.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
   try {
-    const body = await req.json();
+    const body = await request.json();
     const requestId = cleanUuid(body.request_id);
     const status = String(body.status || "").trim();
     const note = String(body.note || "").trim();
 
-    if (!requestId) throw new Error("Missing or invalid request_id.");
-    if (!status) throw new Error("Missing status.");
-
-    const update: Record<string, unknown> = { status };
-    Object.assign(update, onlyNonEmptyAppointmentFields(body.appointment || {}));
-
-    if (status === "payment_received" || status === "final_payment_received") {
-      update.payment_status = "paid";
-      update.paid_at = new Date().toISOString();
-      if (body.paid_amount !== undefined && body.paid_amount !== null && String(body.paid_amount).trim() !== "") {
-        update.paid_amount = Number(body.paid_amount) || 0;
-      }
+    if (!requestId) {
+      throw new Error("Missing or invalid request_id.");
     }
 
-    if (status === "quote_expired") update.invoice_status = "expired";
-
-    if (status === "appointment_confirmed") update.appointment_confirmed_at = new Date().toISOString();
-
-    let statusInvoiceId = "";
-    if (status === "final_payment_received") {
-      const invoiceRes = await supabaseFetch(`invoices?select=id&service_request_id=eq.${requestId}&status=eq.payment_submitted&order=created_at.desc&limit=1`);
-      const invoiceRows = await readJsonOrEmpty(invoiceRes);
-      statusInvoiceId = invoiceRows?.[0]?.id || "";
-      if (statusInvoiceId) {
-        await supabaseFetch(`invoices?id=eq.${statusInvoiceId}`, {
-          method: "PATCH",
-          body: JSON.stringify({ status: "paid", amount_paid: update.paid_amount || body.paid_amount || null, paid_at: new Date().toISOString() }),
-        });
-      }
+    if (!status) {
+      throw new Error("Missing status.");
     }
 
-    const updateRes = await supabaseFetch(`service_requests?id=eq.${requestId}`, {
-      method: "PATCH",
-      body: JSON.stringify(update),
-    });
-    if (!updateRes.ok) throw new Error(await updateRes.text());
+    const update: Record<string, unknown> = {
+      status,
+      workflow_status: status,
+      ...appointmentFields(body.appointment || {}),
+    };
+
+    if (status === "quote_expired") {
+      update.invoice_status = "expired";
+    }
+
+    if (status === "appointment_confirmed") {
+      update.appointment_confirmed_at = new Date().toISOString();
+      update.appointment_state = "scheduled";
+    }
+
+    if (status === "appointment_needs_rescheduling") {
+      update.appointment_state = "rescheduling_requested";
+    }
+
+    if (status === "completed") {
+      update.appointment_state = "completed";
+    }
+
+    const updateResponse = await supabaseFetch(
+      `service_requests?id=eq.${requestId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(update),
+      },
+    );
+
+    if (!updateResponse.ok) {
+      throw new Error(await updateResponse.text());
+    }
 
     await supabaseFetch("request_status_updates", {
       method: "POST",
@@ -121,8 +149,17 @@ Deno.serve(async (req) => {
       }),
     });
 
-    // Trigger the branded customer/admin email for client-facing statuses.
-    const emailStatuses = ["quote_ready", "awaiting_approval", "payment_received", "final_payment_received", "appointment_confirmed", "appointment_needs_rescheduling", "quote_expired", "completed"];
+    const emailStatuses = [
+      "quote_ready",
+      "awaiting_approval",
+      "payment_received",
+      "final_payment_received",
+      "appointment_confirmed",
+      "appointment_needs_rescheduling",
+      "quote_expired",
+      "completed",
+    ];
+
     if (emailStatuses.includes(status)) {
       await fetch(`${SUPABASE_URL}/functions/v1/send-order-email`, {
         method: "POST",
@@ -130,12 +167,23 @@ Deno.serve(async (req) => {
           Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ request_id: requestId, status, note, invoice_id: statusInvoiceId || body.invoice_id || body.invoiceId || null }),
+        body: JSON.stringify({
+          request_id: requestId,
+          status,
+          note,
+          invoice_id: body.invoice_id || body.invoiceId || null,
+        }),
       });
     }
 
     return json({ ok: true, status, update });
-  } catch (err) {
-    return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 400);
+  } catch (error) {
+    return json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      400,
+    );
   }
 });
