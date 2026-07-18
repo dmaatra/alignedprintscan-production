@@ -134,16 +134,20 @@ function calculateEstimate() {
     items = [];
   const f = wizard.elements;
   if (activeService === "ron") {
+    const notarialActCount = Math.max(
+      1,
+      Number(f.notarizationCount?.value || 1),
+    );
+
     addItem(
       items,
       "Online notarization service fee",
       PRICING.ron.onlineServiceFee,
     );
-    addItem(items, "Notarial act", PRICING.ron.notarialAct);
     addItem(
       items,
-      "Additional notarial acts",
-      PRICING.ron.notarialAct * (+f.additionalNotarizations?.value || 0),
+      `${notarialActCount} notarial act${notarialActCount === 1 ? "" : "s"}`,
+      PRICING.ron.notarialAct * notarialActCount,
     );
     addItem(
       items,
@@ -1167,8 +1171,6 @@ function paymentSchedulePanel({
     "paid",
     "payment_received",
     "final_payment_received",
-    "payment_submitted",
-    "final_balance_payment_submitted",
   ];
   const closedStatuses = ["void", "cancelled"];
   const statusNow = String(request.status || "").toLowerCase();
@@ -1178,22 +1180,15 @@ function paymentSchedulePanel({
       !paidStatuses.includes(String(inv.status || "").toLowerCase()) &&
       !closedStatuses.includes(String(inv.status || "").toLowerCase()),
   );
-  const initialPaid =
-    paidStatuses.includes(String(initial?.status || "").toLowerCase()) ||
-    [
-      "payment_received",
-      "appointment_confirmed",
-      "scheduled",
-      "final_balance_due",
-      "final_payment_received",
-      "completed",
-    ].includes(statusNow);
+  const initialPaid = paidStatuses.includes(
+    String(initial?.status || "").toLowerCase(),
+  );
 
   const rawInitialAmount =
     Number(
       initial?.amount_due || request.initial_payment_amount || quoteTotal || 0,
     ) || 0;
-  const initialAmount = quoteTotal ? quoteTotal : rawInitialAmount;
+  const initialAmount = rawInitialAmount || quoteTotal;
   const paidInitial = initialPaid ? initialAmount : 0;
   const paidFinalAmount = finals
     .filter((inv) =>
@@ -1215,12 +1210,8 @@ function paymentSchedulePanel({
     : Number(request.paid_amount || 0) || 0;
   const balanceDue = Math.max(0, totalServiceValue - paidToDate);
   const showInitialPay =
-    [
-      "awaiting_payment",
-      "payment_pending",
-      "awaiting_approval",
-      "quote_ready",
-    ].includes(statusNow) &&
+    ["awaiting_payment", "payment_pending"].includes(statusNow) &&
+    Boolean(initial?.id) &&
     initialAmount > 0 &&
     !initialPaid &&
     !activeFinal;
@@ -1352,6 +1343,7 @@ function statusTimeline(status, service = "") {
     ron: [
       ["under_review", "Request Received"],
       ["awaiting_approval", "Quote Prepared"],
+      ["awaiting_payment", "Payment Due"],
       ["payment_received", "Payment Received"],
       ["appointment_confirmed", "Session Confirmed"],
       ["completed", "Completed"],
@@ -1359,6 +1351,7 @@ function statusTimeline(status, service = "") {
     mobile: [
       ["under_review", "Request Received"],
       ["awaiting_approval", "Quote Prepared"],
+      ["awaiting_payment", "Payment Due"],
       ["payment_received", "Reservation Payment Received"],
       ["appointment_confirmed", "Appointment Confirmed"],
       ["final_balance_due", "Final Balance Due"],
@@ -1368,6 +1361,7 @@ function statusTimeline(status, service = "") {
     document: [
       ["under_review", "Request Received"],
       ["awaiting_approval", "Quote Prepared"],
+      ["awaiting_payment", "Payment Due"],
       ["payment_received", "Production Payment Received"],
       ["appointment_confirmed", "Fulfillment Scheduled"],
       ["final_balance_due", "Final Balance Due"],
@@ -1378,8 +1372,7 @@ function statusTimeline(status, service = "") {
   const aliases = {
     quote_ready: "awaiting_approval",
     quote_sent: "awaiting_approval",
-    awaiting_payment: "awaiting_approval",
-    payment_pending: "awaiting_approval",
+    payment_pending: "awaiting_payment",
     payment_submitted: "payment_received",
     paid_confirmed: "payment_received",
     scheduling: "payment_received",
@@ -2073,8 +2066,9 @@ async function initSuccessPage() {
           "We could not approve the quote online. Please contact customer support with your reference number.";
     }
   });
+  const initialInvoice = findInitialInvoice(invoices);
   qs("#startPaymentBtn")?.addEventListener("click", () =>
-    startEmbeddedPayment(request.id || requestId),
+    startEmbeddedPayment(request.id || requestId, initialInvoice?.id),
   );
   qsa(".payAdditionalInvoice").forEach((btn) =>
     btn.addEventListener("click", () =>

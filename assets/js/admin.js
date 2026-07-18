@@ -480,17 +480,32 @@ async function getDetailRows(table, requestId) {
   if (error) return null;
   return data;
 }
-async function getInvoiceItems(requestId) {
+async function getInvoiceItems(requestId, invoices = []) {
   const { data, error } = await adminClient
     .from("invoice_items")
     .select("*")
     .eq("service_request_id", requestId)
-    .is("invoice_id", null)
     .order("created_at", {
       ascending: true,
     });
-  if (error) return [];
-  return data || [];
+
+  if (error) {
+    return [];
+  }
+
+  const initialInvoice = invoices.find((invoice) => {
+    return (
+      String(invoice.invoice_type || "").includes("initial") ||
+      String(invoice.invoice_number || "").endsWith("-01")
+    );
+  });
+
+  return (data || []).filter((item) => {
+    return (
+      item.invoice_id === null ||
+      String(item.invoice_id || "") === String(initialInvoice?.id || "")
+    );
+  });
 }
 
 function detailMap(rows) {
@@ -574,8 +589,6 @@ function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
     "paid",
     "payment_received",
     "final_payment_received",
-    "payment_submitted",
-    "final_balance_payment_submitted",
   ]);
   const closedStatuses = new Set(["void", "cancelled"]);
   const initialStatus = String(initial?.status || "").toLowerCase();
@@ -686,6 +699,7 @@ function internalWorkflowGuide(request) {
     ron: [
       ["under_review", "Request Submitted"],
       ["awaiting_approval", "Quote Prepared"],
+      ["awaiting_payment", "Payment Due"],
       ["payment_received", "Payment Received"],
       ["appointment_confirmed", "Appointment Confirmed"],
       ["identity_verification", "Identity Verification"],
@@ -696,6 +710,7 @@ function internalWorkflowGuide(request) {
     mobile: [
       ["under_review", "Request Submitted"],
       ["awaiting_approval", "Quote Prepared"],
+      ["awaiting_payment", "Payment Due"],
       ["payment_received", "Payment Received"],
       ["appointment_confirmed", "Appointment Confirmed"],
       ["mobile_visit", "Mobile Visit Completed"],
@@ -706,7 +721,7 @@ function internalWorkflowGuide(request) {
     document: [
       ["under_review", "Request Submitted"],
       ["awaiting_approval", "Quote Prepared"],
-      ["approved", "Quote Approved"],
+      ["awaiting_payment", "Payment Due"],
       ["payment_received", "Production Payment Received"],
       ["appointment_confirmed", "Fulfillment Scheduled"],
       ["final_balance_due", "Final Balance Due"],
@@ -717,15 +732,15 @@ function internalWorkflowGuide(request) {
   const aliases = {
     quote_ready: "awaiting_approval",
     quote_sent: "awaiting_approval",
-    awaiting_payment: "approved",
-    payment_pending: "approved",
+    payment_pending: "awaiting_payment",
     payment_submitted: "payment_received",
     paid_confirmed: "payment_received",
     scheduled: "appointment_confirmed",
     scheduling: "payment_received",
     final_balance_payment_submitted: "final_payment_received",
   };
-  const current = aliases[request?.status] || request?.status || "under_review";
+  const rawStatus = request?.workflow_status || request?.status || "under_review";
+  const current = aliases[rawStatus] || rawStatus;
   let index = steps.findIndex((s) => s[0] === current);
   if (
     index < 0 &&
@@ -933,12 +948,12 @@ async function selectRequest(id) {
       : selectedRequest.service_type === "mobile"
         ? "mobile_notary_requests"
         : "print_scan_requests";
-  const [files, serviceDetails, invoiceItems, invoices] = await Promise.all([
+  const [files, serviceDetails, invoices] = await Promise.all([
     getFiles(id),
     getDetailRows(table, id),
-    getInvoiceItems(id),
     getInvoices(id),
   ]);
+  const invoiceItems = await getInvoiceItems(id, invoices);
   const fileItems = await Promise.all(
     files.map(async (f) => {
       const url = await signedUrl(f.file_path);
@@ -1703,7 +1718,7 @@ async function loadRequests() {
   const { data, error } = await adminClient
     .from("service_requests")
     .select(
-      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(first_name,last_name,email,phone,preferred_contact)",
+      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(first_name,last_name,email,phone,preferred_contact)",
     )
     .order("created_at", {
       ascending: false,
