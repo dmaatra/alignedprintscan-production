@@ -91,17 +91,39 @@ Deno.serve(async (req) => {
     }
     request.customers = customer ? [customer] : [];
 
-    const itemsRes = await supabaseFetch(`invoice_items?select=*&service_request_id=eq.${requestId}&invoice_id=is.null&order=created_at.asc`);
-    const items = (await readJsonOrEmpty(itemsRes)) || [];
-
-    const invoicesRes = await supabaseFetch(`invoices?select=*&service_request_id=eq.${requestId}&order=created_at.asc`);
+    const invoicesRes = await supabaseFetch(
+      `invoices?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
+    );
     const invoices = (await readJsonOrEmpty(invoicesRes)) || [];
 
-    let additionalItems: any[] = [];
-    if (invoices.length) {
-      const allItemsRes = await supabaseFetch(`invoice_items?select=*&service_request_id=eq.${requestId}&invoice_id=not.is.null&order=created_at.asc`);
-      additionalItems = (await readJsonOrEmpty(allItemsRes)) || [];
-    }
+    const allItemsRes = await supabaseFetch(
+      `invoice_items?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
+    );
+    const allItems = (await readJsonOrEmpty(allItemsRes)) || [];
+
+    const initialInvoice = invoices.find((invoice: any) => {
+      return (
+        String(invoice.invoice_type || "").includes("initial") ||
+        String(invoice.invoice_number || "").endsWith("-01")
+      );
+    });
+
+    // Before approval, editable quote rows have invoice_id = null. After
+    // approval, those same rows are attached to Invoice #1. Return either form
+    // as the public quote so the customer portal remains consistent.
+    const items = allItems.filter((item: any) => {
+      return (
+        item.invoice_id === null ||
+        String(item.invoice_id || "") === String(initialInvoice?.id || "")
+      );
+    });
+
+    const additionalItems = allItems.filter((item: any) => {
+      return (
+        item.invoice_id !== null &&
+        String(item.invoice_id || "") !== String(initialInvoice?.id || "")
+      );
+    });
 
     const detailTable = request.service_type === "ron"
       ? "ron_requests"
