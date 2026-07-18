@@ -24,6 +24,25 @@
   const detailRoot = $("#requestDetail");
   const workspace = $(".admin-v3-workspace");
 
+
+  /**
+   * Return the request workspace to its accessible starting position.
+   *
+   * The workspace is its own scroll container. Without an explicit reset,
+   * selecting a different request or tab can preserve the previous request's
+   * scroll position and leave the request header above the visible viewport.
+   */
+  function resetWorkspaceScroll({ smooth = false } = {}) {
+    if (!workspace) return;
+
+    window.requestAnimationFrame(() => {
+      workspace.scrollTo({
+        top: 0,
+        behavior: smooth ? "smooth" : "auto",
+      });
+    });
+  }
+
   /** Convert a database status into customer-readable title case. */
   function labelFromStatus(status = "") {
     return String(status || "under_review")
@@ -71,6 +90,7 @@
     $("#workspacePrimaryAction").disabled = false;
     $("#workspaceEmailAction").disabled = false;
     workspace?.classList.add("has-selection");
+    resetWorkspaceScroll();
 
     window.setTimeout(organizeRequestDetail, 0);
   }
@@ -186,6 +206,8 @@
         panel.dataset.v3TabPanel === tabName,
       );
     });
+
+    resetWorkspaceScroll();
   }
 
   /** Filter the rendered request queue without another database request. */
