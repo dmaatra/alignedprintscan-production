@@ -20,6 +20,7 @@
   --aps-danger: #b33a3a;
   --aps-sidebar-width: 200px;
   --aps-topbar-height: 64px;
+  --aps-workspace-header-height: 92px;
   --aps-request-rail-width: 325px;
   --aps-radius: 14px;
   --aps-shadow: 0 16px 42px rgba(13, 19, 60, 0.08);
@@ -480,8 +481,11 @@ button {
 }
 
 .admin-v3-workspace-header {
+  position: sticky;
+  top: 0;
+  z-index: 12;
   display: flex;
-  min-height: 100px;
+  min-height: var(--aps-workspace-header-height);
   align-items: center;
   justify-content: space-between;
   gap: 20px;
@@ -536,8 +540,8 @@ button {
 
 .admin-v3-workspace-tabs {
   position: sticky;
-  top: 0;
-  z-index: 10;
+  top: var(--aps-workspace-header-height);
+  z-index: 11;
   display: flex;
   gap: 25px;
   overflow-x: auto;
@@ -932,10 +936,12 @@ button {
   }
 
   .admin-v3-workspace-header {
+    min-height: auto;
     padding: 14px 16px;
   }
 
   .admin-v3-workspace-tabs {
+    top: 0;
     padding-inline: 16px;
   }
 
