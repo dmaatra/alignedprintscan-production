@@ -2867,3 +2867,53 @@ button.btn.secondary:hover {
     border-radius: 14px;
   }
 }
+
+/* ========================================================================== 
+   Official Pass 3.2 — Payment visibility and embedded checkout alignment
+   ========================================================================== */
+
+/* Keep the Stripe surface visually centered inside the customer portal card. */
+.payment-panel .embedded-payment-box,
+#embeddedPaymentBox {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  width: min(100%, 820px);
+  margin: 24px auto 0;
+  padding: 28px 36px 64px;
+}
+
+#embeddedCheckoutMount,
+.embedded-checkout-mount {
+  box-sizing: border-box;
+  width: min(100%, 720px);
+  margin-inline: auto;
+}
+
+#embeddedCheckoutMount > div,
+.embedded-checkout-mount > div,
+#embeddedCheckoutMount iframe,
+.embedded-checkout-mount iframe {
+  display: block;
+  width: 100% !important;
+  max-width: 720px !important;
+  margin-inline: auto !important;
+}
+
+/* The RON form now uses one notarial-act count field. */
+.form-grid--single-control {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 640px) {
+  .payment-panel .embedded-payment-box,
+  #embeddedPaymentBox {
+    width: 100%;
+    padding: 16px 12px 42px;
+  }
+
+  #embeddedCheckoutMount,
+  .embedded-checkout-mount {
+    width: 100%;
+  }
+}
