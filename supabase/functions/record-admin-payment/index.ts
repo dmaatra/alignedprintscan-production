@@ -1,10 +1,9 @@
 /**
  * Aligned Print & Scan — Admin payment recorder.
  *
- * Records offline or simulated test payments without charging Stripe. A payment
- * is linked to the correct invoice so Invoice #1 and Invoice #2 remain separate
- * sources of truth. Request-level financial totals are then recalculated from
- * invoice and payment records.
+ * Records cash, check, Zelle, external, or simulated test payments without
+ * charging Stripe. Every payment is linked to the applicable invoice, and the
+ * invoice/request financial state is recalculated from stored records.
  */
 
 const corsHeaders = {
@@ -74,7 +73,11 @@ function findTargetInvoice(
 ) {
   const candidates = invoices.filter((invoice) => {
     const status = String(invoice.status || "").toLowerCase();
-    return !paidInvoiceStatuses.has(status) && invoiceRemainingBalance(invoice) > 0;
+
+    return (
+      !paidInvoiceStatuses.has(status) &&
+      invoiceRemainingBalance(invoice) > 0
+    );
   });
 
   if (paymentStage === "final") {
@@ -82,6 +85,118 @@ function findTargetInvoice(
   }
 
   return candidates.find((invoice) => !isFinalInvoice(invoice)) || null;
+}
+
+function invoiceNumberFromId(requestId: string) {
+  return `INV-${requestId.slice(0, 8).toUpperCase()}-01`;
+}
+
+async function createMissingInitialInvoice(requestId: string) {
+  const requestResponse = await supabaseFetch(
+    `service_requests?select=id,status,quote_amount,initial_payment_amount,estimated_total,invoice_number&id=eq.${requestId}&limit=1`,
+  );
+  const requestRows = await readJson(requestResponse);
+  const request = requestRows?.[0];
+
+  if (!request) {
+    throw new Error("Request not found.");
+  }
+
+  const allowedStatuses = new Set([
+    "awaiting_payment",
+    "payment_pending",
+    "payment_submitted",
+  ]);
+
+  if (!allowedStatuses.has(String(request.status || "").toLowerCase())) {
+    throw new Error(
+      "The quote must be approved before an initial payment can be recorded.",
+    );
+  }
+
+  const amountDue = Number(
+    request.initial_payment_amount ||
+      request.quote_amount ||
+      request.estimated_total ||
+      0,
+  );
+
+  if (!Number.isFinite(amountDue) || amountDue <= 0) {
+    throw new Error("The request does not have a payable initial amount.");
+  }
+
+  const invoiceNumber =
+    String(request.invoice_number || "").endsWith("-01")
+      ? String(request.invoice_number)
+      : invoiceNumberFromId(requestId);
+
+  const insertResponse = await supabaseFetch("invoices", {
+    method: "POST",
+    body: JSON.stringify({
+      service_request_id: requestId,
+      invoice_number: invoiceNumber,
+      invoice_type: "initial",
+      status: "awaiting_payment",
+      payment_status: "unpaid",
+      amount_due: amountDue,
+      balance_due: amountDue,
+      amount_paid: 0,
+      paid_amount: 0,
+      note: "Initial invoice materialized for administrative payment entry.",
+    }),
+  });
+  const insertedRows = await readJson(insertResponse);
+  const invoice = insertedRows?.[0];
+
+  if (!invoice?.id) {
+    throw new Error("The initial invoice could not be created.");
+  }
+
+  await supabaseFetch(
+    `invoice_items?service_request_id=eq.${requestId}&invoice_id=is.null`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ invoice_id: invoice.id }),
+    },
+  );
+
+  return invoice;
+}
+
+async function recalculateRequestFinancials(requestId: string) {
+  const invoicesResponse = await supabaseFetch(
+    `invoices?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
+  );
+  const invoices = (await readJson(invoicesResponse)) as Array<
+    Record<string, unknown>
+  >;
+
+  const paymentsResponse = await supabaseFetch(
+    `request_payments?select=amount,is_test&service_request_id=eq.${requestId}`,
+  );
+  const payments = (await readJson(paymentsResponse)) as Array<{
+    amount?: number;
+    is_test?: boolean;
+  }>;
+
+  const totalInvoiced = invoices.reduce(
+    (sum, invoice) => sum + Number(invoice.amount_due || 0),
+    0,
+  );
+  const totalPaid = payments.reduce(
+    (sum, payment) => sum + Number(payment.amount || 0),
+    0,
+  );
+  const balanceDue = Math.max(0, totalInvoiced - totalPaid);
+  const paidInFull = totalInvoiced > 0 && balanceDue <= 0;
+
+  return {
+    invoices,
+    totalInvoiced,
+    totalPaid,
+    balanceDue,
+    paidInFull,
+  };
 }
 
 Deno.serve(async (request) => {
@@ -109,10 +224,17 @@ Deno.serve(async (request) => {
     const invoiceResponse = await supabaseFetch(
       `invoices?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
     );
-    const invoices = (await readJson(invoiceResponse)) as Array<
+    let invoices = (await readJson(invoiceResponse)) as Array<
       Record<string, unknown>
     >;
-    const targetInvoice = findTargetInvoice(invoices, paymentStage);
+    let targetInvoice = findTargetInvoice(invoices, paymentStage);
+
+    // Existing requests created before Pass 3.2 may show a quote but have no
+    // physical Invoice #1 row. Materialize it once, then continue normally.
+    if (!targetInvoice && paymentStage !== "final") {
+      targetInvoice = await createMissingInitialInvoice(requestId);
+      invoices = [...invoices, targetInvoice];
+    }
 
     if (!targetInvoice) {
       throw new Error(
@@ -123,10 +245,18 @@ Deno.serve(async (request) => {
     }
 
     const invoiceBalance = invoiceRemainingBalance(targetInvoice);
-    const paymentAmount = Math.min(requestedAmount, invoiceBalance);
-    const newInvoicePaidAmount =
-      Number(targetInvoice.amount_paid || targetInvoice.paid_amount || 0) +
-      paymentAmount;
+
+    if (requestedAmount > invoiceBalance + 0.009) {
+      throw new Error(
+        `The payment exceeds the invoice balance of $${invoiceBalance.toFixed(2)}.`,
+      );
+    }
+
+    const paymentAmount = requestedAmount;
+    const currentPaidAmount = Number(
+      targetInvoice.amount_paid || targetInvoice.paid_amount || 0,
+    );
+    const newInvoicePaidAmount = currentPaidAmount + paymentAmount;
     const newInvoiceBalance = Math.max(
       0,
       Number(targetInvoice.amount_due || 0) - newInvoicePaidAmount,
@@ -147,6 +277,7 @@ Deno.serve(async (request) => {
         payment_stage: paymentStage,
         amount: paymentAmount,
         payment_method: paymentMethod,
+        external_reference: body.reference || null,
         note,
         is_test: isTest,
       }),
@@ -169,41 +300,14 @@ Deno.serve(async (request) => {
     );
     await readJson(invoiceUpdateResponse);
 
-    const allPaymentsResponse = await supabaseFetch(
-      `request_payments?select=amount&service_request_id=eq.${requestId}`,
-    );
-    const paymentRows = (await readJson(allPaymentsResponse)) as Array<{
-      amount?: number;
-    }>;
-    const totalPaid = paymentRows.reduce(
-      (sum, row) => sum + Number(row.amount || 0),
-      0,
-    );
-
-    const updatedInvoices = invoices.map((invoice) =>
-      invoice.id === targetInvoice.id
-        ? {
-            ...invoice,
-            status: invoiceStatus,
-            amount_paid: newInvoicePaidAmount,
-            paid_amount: newInvoicePaidAmount,
-            balance_due: newInvoiceBalance,
-          }
-        : invoice,
-    );
-    const totalInvoiced = updatedInvoices.reduce(
-      (sum, invoice) => sum + Number(invoice.amount_due || 0),
-      0,
-    );
-    const requestBalance = Math.max(0, totalInvoiced - totalPaid);
-    const requestPaidInFull = requestBalance <= 0 && totalInvoiced > 0;
-    const paymentState = requestPaidInFull
+    const financials = await recalculateRequestFinancials(requestId);
+    const paymentState = financials.paidInFull
       ? "paid_in_full"
-      : totalPaid > 0
+      : financials.totalPaid > 0
         ? "partially_paid"
         : "unpaid";
     const workflowStatus =
-      paymentStage === "final" && requestPaidInFull
+      paymentStage === "final" && financials.paidInFull
         ? "final_payment_received"
         : paymentStage === "initial" && invoicePaidInFull
           ? "payment_received"
@@ -218,10 +322,10 @@ Deno.serve(async (request) => {
           workflow_status: workflowStatus,
           payment_status: paymentState,
           payment_state: paymentState,
-          paid_amount: totalPaid,
-          balance_due: requestBalance,
-          balance_due_at_appointment: requestBalance,
-          paid_at: requestPaidInFull ? paidAt : null,
+          paid_amount: financials.totalPaid,
+          balance_due: financials.balanceDue,
+          balance_due_at_appointment: financials.balanceDue,
+          paid_at: financials.paidInFull ? paidAt : null,
         }),
       },
     );
@@ -248,8 +352,8 @@ Deno.serve(async (request) => {
       invoice_status: invoiceStatus,
       invoice_paid_amount: newInvoicePaidAmount,
       invoice_balance_due: newInvoiceBalance,
-      paid_amount: totalPaid,
-      balance_due: requestBalance,
+      paid_amount: financials.totalPaid,
+      balance_due: financials.balanceDue,
       payment_state: paymentState,
       workflow_status: workflowStatus,
     });
