@@ -140,8 +140,17 @@ Deno.serve(async (req) => {
       serviceDetail = detailRows?.[0] || null;
     }
 
-    const filesRes = await supabaseFetch(`request_files?select=id&service_request_id=eq.${requestId}`);
+    const filesRes = await supabaseFetch(`request_files?select=id,file_name,file_type,file_size,document_category,uploaded_by,created_at,is_active&service_request_id=eq.${requestId}&order=created_at.desc`);
     const files = (await readJsonOrEmpty(filesRes)) || [];
+
+    const actionsRes = await supabaseFetch(`customer_action_requests?select=*&service_request_id=eq.${requestId}&order=created_at.desc`);
+    const customerActions = (await readJsonOrEmpty(actionsRes)) || [];
+
+    const timelineRes = await supabaseFetch(`request_timeline_events?select=*&service_request_id=eq.${requestId}&order=created_at.desc&limit=100`);
+    const timelineEvents = (await readJsonOrEmpty(timelineRes)) || [];
+
+    const communicationsRes = await supabaseFetch(`request_communications?select=id,direction,channel,subject,delivery_status,created_at&service_request_id=eq.${requestId}&order=created_at.desc&limit=100`);
+    const communications = (await readJsonOrEmpty(communicationsRes)) || [];
 
     return json({
       ok: true,
@@ -150,7 +159,11 @@ Deno.serve(async (req) => {
       invoices,
       additional_invoice_items: additionalItems,
       service_detail: serviceDetail,
-      file_count: Array.isArray(files) ? files.length : 0,
+      file_count: Array.isArray(files) ? files.filter((f: any) => f.is_active !== false).length : 0,
+      files,
+      customer_actions: customerActions,
+      timeline_events: timelineEvents,
+      communications,
       reference_number: refFromId(requestId),
     });
   } catch (err) {
