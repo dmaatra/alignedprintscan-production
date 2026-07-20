@@ -970,3 +970,12 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+/* ========================================================================== 
+   Patch 3.2 — Customer action review and operational records
+   ========================================================================== */
+.admin-action-request { border: 1px solid rgba(22,28,77,.14); border-radius: 14px; padding: 1rem; margin: .85rem 0; background: #fff; }
+.admin-action-request label { display: grid; gap: .35rem; margin-top: .75rem; }
+.admin-action-request input,
+.admin-action-request textarea { width: 100%; border: 1px solid rgba(22,28,77,.18); border-radius: 10px; padding: .75rem; font: inherit; }
+.admin-action-request textarea { min-height: 90px; resize: vertical; }
