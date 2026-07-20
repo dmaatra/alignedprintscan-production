@@ -123,7 +123,26 @@ Deno.serve(async (request) => {
     }
 
     if (status === "completed") {
+      // Financial safeguard: a request may not be completed while any active
+      // invoice still has an unpaid balance.
+      const invoiceResponse = await supabaseFetch(
+        `invoices?select=id,invoice_number,status,amount_due,amount_paid,paid_amount,balance_due&service_request_id=eq.${requestId}`,
+      );
+      if (!invoiceResponse.ok) throw new Error(await invoiceResponse.text());
+      const invoiceRows = await invoiceResponse.json();
+      const outstanding = (invoiceRows || []).filter((invoice: any) => {
+        const invoiceStatus = String(invoice.status || "").toLowerCase();
+        if (["void", "cancelled"].includes(invoiceStatus)) return false;
+        const due = Number(invoice.balance_due ?? (Number(invoice.amount_due || 0) - Number(invoice.amount_paid || invoice.paid_amount || 0)));
+        return due > 0.009;
+      });
+      if (outstanding.length) {
+        throw new Error(`Cannot complete this request while ${outstanding.length} invoice(s) have an outstanding balance.`);
+      }
       update.appointment_state = "completed";
+      update.balance_due = 0;
+      update.payment_state = "paid_in_full";
+      update.payment_status = "paid_in_full";
     }
 
     const updateResponse = await supabaseFetch(
@@ -146,6 +165,18 @@ Deno.serve(async (request) => {
         message: note || `Status updated to ${status}.`,
         sent_email: false,
         sent_sms: false,
+      }),
+    });
+
+    await supabaseFetch("request_timeline_events", {
+      method: "POST",
+      body: JSON.stringify({
+        service_request_id: requestId,
+        event_type: "status_changed",
+        title: `Status changed to ${status.replaceAll("_", " ")}`,
+        detail: note || null,
+        actor_type: "admin",
+        metadata: { status },
       }),
     });
 
