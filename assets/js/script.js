@@ -1197,8 +1197,8 @@ function findInitialInvoice(invoices = []) {
   return (
     (invoices || []).find(
       (inv) =>
-        String(inv.invoice_type || "").includes("initial") ||
-        String(inv.invoice_number || "").endsWith("-01"),
+        ["initial", "deposit", "invoice_1"].some((type) => String(inv.invoice_type || "").toLowerCase().includes(type)) ||
+        /-01$/.test(String(inv.invoice_number || "")),
     ) || null
   );
 }
@@ -1278,11 +1278,13 @@ function paymentSchedulePanel({
     0,
     Number(initial?.balance_due ?? initialAmount) || 0,
   );
+  const initialInvoiceStatus = String(initial?.status || "").toLowerCase();
   const showInitialPay =
-    ["awaiting_payment", "payment_pending"].includes(statusNow) &&
     Boolean(initial?.id) &&
     initialBalance > 0 &&
-    !initialPaid;
+    !initialPaid &&
+    !closedStatuses.includes(initialInvoiceStatus) &&
+    !["payment_submitted"].includes(initialInvoiceStatus);
 
   const initialNumber =
     initial?.invoice_number ||
@@ -1317,10 +1319,11 @@ function paymentSchedulePanel({
         (item) => String(item.invoice_id || "") === String(inv.id || ""),
       );
       const total = Number(inv.amount_due || invoiceTotal(invItems) || 0);
+      const invoiceBalance = Math.max(0, Number(inv.balance_due ?? total) || 0);
       const receiptUrl = inv.receipt_url || inv.receipt_pdf_url || "";
       const statusText = invoiceStatusLabel(inv.status);
       const payable =
-        String(activeFinal?.id || "") === String(inv.id || "") && total > 0;
+        String(activeFinal?.id || "") === String(inv.id || "") && invoiceBalance > 0;
       invoiceRows.push(`<div class="payment-schedule-row final-balance-row premium-receipt-row">
         <span class="small-label">Final Balance</span>
         <div class="payment-row-main"><strong>${escapePublic(inv.invoice_number || "Final Balance Invoice")}</strong><span>${escapePublic(statusText)} · ${money(total)}</span></div>
@@ -1328,7 +1331,7 @@ function paymentSchedulePanel({
         ${invItems.length && !compact ? invoiceList(invItems) : ""}
         <div class="cta-row compact-cta-row">
           ${receiptUrl ? `<a class="btn dark" href="${escapePublic(receiptUrl)}" target="_blank" rel="noopener">View Receipt</a>` : ""}
-          ${payable ? `<button class="btn primary payAdditionalInvoice" data-invoice-id="${escapePublic(inv.id)}" type="button">Pay Final Balance</button>` : ""}
+          ${payable ? `<button class="btn primary payAdditionalInvoice" data-invoice-id="${escapePublic(inv.id)}" type="button">Pay Final Balance (${money(invoiceBalance)})</button>` : ""}
         </div>
       </div>`);
     });
@@ -1945,6 +1948,69 @@ function renderSuccessFallback(params, saved) {
   };
 }
 
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || "").split(",")[1] || "");
+    reader.onerror = () => reject(reader.error || new Error("File could not be read."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function customerActionPanel(request, reference, customerActions = []) {
+  const pending = customerActions.find((a) => String(a.status || "") === "pending");
+  return `<div class="next-panel reveal customer-action-panel">
+    <h3>Manage This Request</h3>
+    <p>Upload additional documents or request a cancellation/reschedule. Paid services are reviewed before cancellation or refund decisions are made.</p>
+    ${pending ? `<div class="email-notice"><strong>Request under review:</strong> ${escapePublic(String(pending.action_type || "request"))}</div>` : ""}
+    <label>Email used on this request<input id="customerActionEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>
+    <label>Reason / details<textarea id="customerActionReason" placeholder="Tell us what changed or what you need."></textarea></label>
+    <label>Proposed new date and time<input id="proposedAppointmentAt" type="datetime-local"></label>
+    <div class="cta-row"><button id="requestCancellationBtn" class="btn secondary visible-secondary" type="button">Request Cancellation</button><button id="requestRescheduleBtn" class="btn secondary visible-secondary" type="button">Request Reschedule</button></div>
+    <hr>
+    <label>Additional documents<input id="additionalCustomerFiles" type="file" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"></label>
+    <button id="uploadAdditionalFilesBtn" class="btn dark" type="button">Upload Additional Documents</button>
+    <div id="customerActionStatus" class="form-submit-status" role="status" aria-live="polite"></div>
+  </div>`;
+}
+
+async function submitCustomerAction(requestId, actionType) {
+  const statusBox = qs("#customerActionStatus");
+  const email = String(qs("#customerActionEmail")?.value || "").trim();
+  const reason = String(qs("#customerActionReason")?.value || "").trim();
+  const proposed = qs("#proposedAppointmentAt")?.value || "";
+  if (!email) throw new Error("Enter the email address used for this request.");
+  if (actionType === "reschedule" && !proposed) throw new Error("Choose a proposed new date and time.");
+  if (statusBox) statusBox.textContent = "Submitting your request…";
+  const { data, error } = await supabaseClient.functions.invoke("customer-request-action", { body: { request_id: requestId, email, action_type: actionType, reason, proposed_appointment_at: proposed || null } });
+  if (error || data?.ok === false) throw new Error(data?.error || error?.message || "Request could not be submitted.");
+  if (statusBox) statusBox.textContent = "Your request was received. Check your email for confirmation.";
+}
+
+async function uploadAdditionalCustomerFiles(requestId) {
+  const statusBox = qs("#customerActionStatus");
+  const input = qs("#additionalCustomerFiles");
+  const email = String(qs("#customerActionEmail")?.value || "").trim();
+  const files = Array.from(input?.files || []);
+  if (!email) throw new Error("Enter the email address used for this request.");
+  if (!files.length) throw new Error("Choose at least one document.");
+  if (files.some((f) => f.size > 10 * 1024 * 1024)) throw new Error("Each file must be 10 MB or smaller.");
+  if (statusBox) statusBox.textContent = `Preparing ${files.length} document(s)…`;
+  const payloadFiles = await Promise.all(files.map(async (file) => ({ name: file.name, type: file.type, base64: await fileToBase64(file) })));
+  const { data, error } = await supabaseClient.functions.invoke("customer-upload-document", { body: { request_id: requestId, email, category: "additional", files: payloadFiles } });
+  if (error || data?.ok === false) throw new Error(data?.error || error?.message || "Documents could not be uploaded.");
+  if (statusBox) statusBox.textContent = `${files.length} document(s) uploaded successfully.`;
+  input.value = "";
+}
+
+function bindCustomerActionControls(requestId) {
+  const handle = (fn) => async () => { try { await fn(); } catch (error) { const box = qs("#customerActionStatus"); if (box) box.textContent = error.message || "Something went wrong."; } };
+  qs("#requestCancellationBtn")?.addEventListener("click", handle(() => submitCustomerAction(requestId, "cancel")));
+  qs("#requestRescheduleBtn")?.addEventListener("click", handle(() => submitCustomerAction(requestId, "reschedule")));
+  qs("#uploadAdditionalFilesBtn")?.addEventListener("click", handle(() => uploadAdditionalCustomerFiles(requestId)));
+}
+
 async function initSuccessPage() {
   const successBox = qs("#successDetails");
   if (!successBox) return;
@@ -1965,6 +2031,7 @@ async function initSuccessPage() {
   const items = result.items || [];
   const invoices = result.invoices || [];
   const additionalItems = result.additional_invoice_items || [];
+  const customerActions = result.customer_actions || [];
   const reference =
     result.reference_number ||
     ref ||
@@ -2106,6 +2173,7 @@ async function initSuccessPage() {
       ${serviceDetailSummary(request.service_type, detail)}
     </div>
     <div class="email-notice status-${statusClass} reveal"><h3>${escapePublic(copy.title)}</h3><p>${escapePublic(copy.body)}</p></div>
+    ${customerActionPanel(request, reference, customerActions)}
     ${hasQuote ? `<div class="next-panel invoice-panel reveal"><h3>Prepared Service Quote</h3><p class="premium-intro">This is the full estimated service quote for your request. Payments are handled below based on the approved schedule.</p>${invoiceList(items)}<p class="admin-muted">Quote Reference: <strong>QUOTE-${escapePublic(reference.replace(/^APS-/, ""))}</strong></p>${quoteNote ? `<div class="email-notice slim-note"><h3>Client Note</h3><p>${escapePublic(quoteNote)}</p></div>` : ""}</div>` : ""}
     ${hasQuote ? paymentSchedulePanel({ request, invoices, quoteItems: items, additionalItems, quoteAmount }) : ""}
     ${canApprove ? `<div class="next-panel reveal"><h3>Review Quote</h3><p>Please review the itemized quote and service details. Approving the quote moves your request to the secure payment step. If anything needs to change, request an edit before paying.</p><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" class="form-submit-status" role="status" aria-live="polite"></div></div>` : ""}
@@ -2134,6 +2202,7 @@ async function initSuccessPage() {
           "We could not approve the quote online. Please contact customer support with your reference number.";
     }
   });
+  bindCustomerActionControls(request.id || requestId);
   const initialInvoice = findInitialInvoice(invoices);
   qs("#startPaymentBtn")?.addEventListener("click", () =>
     startEmbeddedPayment(request.id || requestId, initialInvoice?.id),

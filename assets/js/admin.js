@@ -456,7 +456,7 @@ function renderRequestList() {
 async function getFiles(requestId) {
   const { data, error } = await adminClient
     .from("request_files")
-    .select("id,file_name,file_path,file_type,file_size,created_at")
+    .select("id,file_name,file_path,file_type,file_size,created_at,uploaded_by,document_category,is_active")
     .eq("service_request_id", requestId)
     .order("created_at", {
       ascending: false,
@@ -936,6 +936,51 @@ function defaultInvoiceRows(request = {}) {
   ];
 }
 
+
+async function getPatch32Records(requestId) {
+  const [actions, timeline, communications] = await Promise.all([
+    adminClient.from("customer_action_requests").select("*").eq("service_request_id", requestId).order("created_at", { ascending: false }),
+    adminClient.from("request_timeline_events").select("*").eq("service_request_id", requestId).order("created_at", { ascending: false }),
+    adminClient.from("request_communications").select("*").eq("service_request_id", requestId).order("created_at", { ascending: false }),
+  ]);
+  return { actions: actions.data || [], timeline: timeline.data || [], communications: communications.data || [] };
+}
+
+function patch32AdminPanels(records = {}) {
+  const actions = records.actions || [];
+  const pending = actions.filter((a) => String(a.status || "") === "pending");
+  const actionRows = pending.length ? pending.map((a) => `<div class="admin-action-request" data-action-id="${escapeHtml(a.id)}"><strong>${escapeHtml(String(a.action_type || "request").toUpperCase())}</strong><p>${escapeHtml(a.reason || "No reason provided")}</p>${a.proposed_appointment_at ? `<p><strong>Proposed:</strong> ${new Date(a.proposed_appointment_at).toLocaleString()}</p>` : ""}<label>Resolution message<textarea class="action-resolution-message" placeholder="Message to customer"></textarea></label><label>Approved refund amount<input class="action-refund-amount" type="number" min="0" step="0.01" value="0"></label><div class="status-actions"><button class="btn primary resolve-customer-action" data-decision="approved" type="button">Approve</button><button class="btn dark resolve-customer-action" data-decision="denied" type="button">Deny</button></div></div>`).join("") : '<p class="admin-muted">No pending cancellation or reschedule requests.</p>';
+  const commRows = (records.communications || []).slice(0, 25).map((c) => `<li><strong>${escapeHtml(c.subject || c.channel || "Communication")}</strong><small>${escapeHtml(c.direction || "")} · ${escapeHtml(c.delivery_status || "")} · ${c.created_at ? new Date(c.created_at).toLocaleString() : ""}</small></li>`).join("") || '<li class="admin-muted">No communications logged.</li>';
+  const timelineRows = (records.timeline || []).slice(0, 30).map((e) => `<li><strong>${escapeHtml(e.title || e.event_type || "Event")}</strong><p>${escapeHtml(e.detail || "")}</p><small>${escapeHtml(e.actor_type || "system")} · ${e.created_at ? new Date(e.created_at).toLocaleString() : ""}</small></li>`).join("") || '<li class="admin-muted">No timeline events logged.</li>';
+  return `<div class="admin-detail-section"><h3>Cancellation & Reschedule Review</h3>${actionRows}</div>
+  <div class="admin-detail-section"><h3>Communication Log</h3><ul class="admin-file-list">${commRows}</ul></div>
+  <div class="admin-detail-section"><h3>Automatic Timeline</h3><ul class="admin-file-list">${timelineRows}</ul></div>`;
+}
+
+async function resolveCustomerAction(button) {
+  const card = button.closest(".admin-action-request");
+  const { data, error } = await adminClient.functions.invoke("admin-resolve-customer-action", { body: { action_id: card?.dataset.actionId, decision: button.dataset.decision, admin_message: card?.querySelector(".action-resolution-message")?.value || "", approved_refund_amount: Number(card?.querySelector(".action-refund-amount")?.value || 0) } });
+  if (error || data?.ok === false) throw new Error(data?.error || error?.message || "Action could not be resolved.");
+  await loadRequests();
+  await selectRequest(selectedRequest.id);
+}
+
+async function uploadAdminDocuments(requestId) {
+  const input = document.querySelector("#adminAdditionalFiles");
+  const files = Array.from(input?.files || []);
+  if (!files.length) throw new Error("Choose at least one document.");
+  for (const file of files) {
+    const safe = String(file.name || "document").replace(/[^a-z0-9._-]+/gi, "-");
+    const path = `${requestId}/admin/${crypto.randomUUID()}-${safe}`;
+    const { error: uploadError } = await adminClient.storage.from("service-request-files").upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
+    if (uploadError) throw uploadError;
+    const { error: recordError } = await adminClient.from("request_files").insert({ service_request_id: requestId, file_name: file.name, file_path: path, file_type: file.type, file_size: file.size, uploaded_by: "admin", document_category: "admin-additional", is_active: true });
+    if (recordError) throw recordError;
+  }
+  await adminClient.from("request_timeline_events").insert({ service_request_id: requestId, event_type: "documents_uploaded", title: "Administrator documents uploaded", detail: `${files.length} document(s) uploaded by administrator.`, actor_type: "admin", metadata: { file_count: files.length } });
+  await selectRequest(requestId);
+}
+
 async function selectRequest(id) {
   selectedRequest = requests.find((r) => r.id === id);
   renderStats();
@@ -958,10 +1003,11 @@ async function selectRequest(id) {
       : selectedRequest.service_type === "mobile"
         ? "mobile_notary_requests"
         : "print_scan_requests";
-  const [files, serviceDetails, invoices] = await Promise.all([
+  const [files, serviceDetails, invoices, patch32Records] = await Promise.all([
     getFiles(id),
     getDetailRows(table, id),
     getInvoices(id),
+    getPatch32Records(id),
   ]);
   const invoiceItems = await getInvoiceItems(id, invoices);
   const fileItems = await Promise.all(
@@ -1013,6 +1059,8 @@ async function selectRequest(id) {
       ${invoiceSummaryHtml(invoices, selectedRequest, invoiceItems)}
     </div>
 
+    ${patch32AdminPanels(patch32Records)}
+
     <div class="admin-detail-section appointment-editor-card">
       <h3>Appointment / Fulfillment Details</h3>
       <p class="admin-muted">Update these before marking the appointment confirmed. These details appear on the customer's status page and in the appointment confirmation email.</p>
@@ -1043,6 +1091,7 @@ async function selectRequest(id) {
     <div class="admin-detail-section">
       <h3>Uploaded Files</h3>
       ${fileItems.length ? `<ul class="admin-file-list">${fileItems.join("")}</ul>` : '<p class="admin-muted">No files uploaded with this request.</p>'}
+      <label>Upload additional administrator documents<input id="adminAdditionalFiles" type="file" multiple></label><button id="uploadAdminFilesBtn" class="btn dark" type="button">Upload Documents</button>
     </div>
 
     <div class="admin-detail-section">
@@ -1073,6 +1122,9 @@ async function selectRequest(id) {
     ),
   );
   populateInvoicePresetSelect();
+
+  $$(".resolve-customer-action", detail).forEach((button) => button.addEventListener("click", async () => { try { await resolveCustomerAction(button); } catch (error) { alert(error.message || "Action could not be resolved."); } }));
+  $("#uploadAdminFilesBtn", detail)?.addEventListener("click", async () => { try { await uploadAdminDocuments(id); } catch (error) { alert(error.message || "Documents could not be uploaded."); } });
   $("#addInvoiceRow")?.addEventListener("click", () => {
     const current = invoiceRowsFromDom();
     current.push({
