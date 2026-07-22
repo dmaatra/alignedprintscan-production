@@ -105,6 +105,50 @@ function emailShell(body: string, preheader: string) {
 </html>`;
 }
 
+async function logTimeline(
+  requestId: string,
+  eventType: string,
+  title: string,
+  detail: string,
+  actorType = "system",
+  metadata: Record<string, unknown> = {},
+) {
+  const response = await supabaseFetch("request_timeline_events", {
+    method: "POST",
+    body: JSON.stringify({
+      service_request_id: requestId,
+      event_type: eventType,
+      title,
+      detail,
+      actor_type: actorType,
+      metadata,
+    }),
+  });
+
+  if (!response.ok) console.warn("Timeline logging failed:", await response.text());
+}
+
+async function logCommunication(
+  requestId: string,
+  subject: string,
+  message: string,
+  deliveryStatus: string,
+) {
+  const response = await supabaseFetch("request_communications", {
+    method: "POST",
+    body: JSON.stringify({
+      service_request_id: requestId,
+      direction: "outbound",
+      channel: "email",
+      subject,
+      message,
+      delivery_status: deliveryStatus,
+    }),
+  });
+
+  if (!response.ok) console.warn("Communication logging failed:", await response.text());
+}
+
 async function sendAdminEmail(subject: string, html: string) {
   if (!RESEND_API_KEY) {
     return;
@@ -286,8 +330,9 @@ Deno.serve(async (request) => {
         }),
       });
 
+      const adminSubject = `Quote approved / awaiting payment: ${reference}`;
       await sendAdminEmail(
-        `Quote approved / awaiting payment: ${reference}`,
+        adminSubject,
         emailShell(
           `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Admin Alert</p>
            <h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Quote Approved</h1>
@@ -295,6 +340,21 @@ Deno.serve(async (request) => {
            <p>Invoice <strong>${escapeHtml(invoice.invoice_number)}</strong> is now awaiting payment.</p>`,
           `Quote approved: ${reference}`,
         ),
+      );
+
+      await logTimeline(
+        requestId,
+        "quote_approved",
+        "Quote approved",
+        `Invoice ${invoice.invoice_number} was created and is awaiting payment.`,
+        "customer",
+        { invoice_id: invoice.id, invoice_number: invoice.invoice_number },
+      );
+      await logCommunication(
+        requestId,
+        adminSubject,
+        `The customer approved the quote and ${invoice.invoice_number} is awaiting payment.`,
+        RESEND_API_KEY ? "sent" : "skipped",
       );
 
       return json({
@@ -329,6 +389,14 @@ Deno.serve(async (request) => {
           sent_sms: false,
         }),
       });
+
+      await logTimeline(
+        requestId,
+        "quote_changes_requested",
+        "Quote changes requested",
+        note,
+        "customer",
+      );
 
       return json({
         ok: true,
