@@ -50,6 +50,27 @@
       .replace(/\b\w/g, (character) => character.toUpperCase());
   }
 
+
+  /** Return the recommended workspace action for the request's real state. */
+  function primaryActionFor(request = {}) {
+    const status = String(request.workflow_status || request.status || "under_review").toLowerCase();
+    const actions = {
+      under_review: { label: "Build Quote", tab: "payments" },
+      quote_ready: { label: "Review & Send Quote", tab: "payments" },
+      awaiting_approval: { label: "Review Quote", tab: "payments" },
+      changes_requested: { label: "Revise Quote", tab: "payments" },
+      awaiting_payment: { label: "Open Invoice #1", tab: "payments" },
+      payment_pending: { label: "Review Payment", tab: "payments" },
+      payment_received: { label: "Schedule Appointment", tab: "appointment" },
+      appointment_confirmed: { label: "Open Appointment", tab: "appointment" },
+      final_balance_due: { label: "Open Invoice #2", tab: "payments" },
+      final_payment_received: { label: "Complete Request", tab: "overview" },
+      completed: { label: "View Completed Request", tab: "overview" },
+      cancelled: { label: "View Cancellation", tab: "overview" },
+    };
+    return actions[status] || { label: "Open Next Action", tab: "overview" };
+  }
+
   /** Update the persistent workspace header when a request is selected. */
   function syncSelectedRequest(request) {
     if (!request) return;
@@ -87,7 +108,11 @@
       .filter(Boolean)
       .join(" · ");
 
-    $("#workspacePrimaryAction").disabled = false;
+    const primaryAction = primaryActionFor(request);
+    const primaryButton = $("#workspacePrimaryAction");
+    primaryButton.disabled = false;
+    primaryButton.textContent = primaryAction.label;
+    primaryButton.dataset.targetTab = primaryAction.tab;
     $("#workspaceEmailAction").disabled = false;
     workspace?.classList.add("has-selection");
     resetWorkspaceScroll();
@@ -114,6 +139,9 @@
     if (heading.includes("appointment")) return "appointment";
     if (heading.includes("service details")) return "customer";
     if (heading.includes("uploaded files")) return "documents";
+    if (heading.includes("communication log")) return "communication";
+    if (heading.includes("automatic timeline")) return "timeline";
+    if (heading.includes("cancellation") || heading.includes("reschedule")) return "overview";
     if (heading.includes("status update")) return "notes";
 
     return "overview";
@@ -258,9 +286,8 @@
       event.currentTarget.setAttribute("aria-expanded", String(isOpen));
     });
 
-    $("#workspacePrimaryAction")?.addEventListener("click", () => {
-      const status = $("#workspaceStatus")?.textContent?.toLowerCase() || "";
-      activateTab(status.includes("payment") ? "payments" : "overview");
+    $("#workspacePrimaryAction")?.addEventListener("click", (event) => {
+      activateTab(event.currentTarget.dataset.targetTab || "overview");
     });
 
     $("#workspaceEmailAction")?.addEventListener("click", () => {
