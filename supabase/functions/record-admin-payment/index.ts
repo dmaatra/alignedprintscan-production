@@ -15,6 +15,13 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
+const ADMIN_EMAILS = new Set(
+  String(Deno.env.get("ADMIN_EMAILS") || Deno.env.get("ADMIN_EMAIL") || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean),
+);
 
 const paidInvoiceStatuses = new Set([
   "paid",
@@ -51,6 +58,41 @@ async function readJson(response: Response) {
   }
 
   return response.json();
+}
+
+async function requireAdmin(request: Request) {
+  const authorization = request.headers.get("Authorization") || "";
+  const token = authorization.replace(/^Bearer\s+/i, "").trim();
+
+  if (!token || !ANON_KEY) {
+    throw new Response(JSON.stringify({ ok: false, error: "Administrator authentication is required." }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}` },
+  });
+  const user = response.ok ? await response.json() : null;
+  const email = String(user?.email || "").toLowerCase();
+
+  if (!email || (ADMIN_EMAILS.size && !ADMIN_EMAILS.has(email))) {
+    throw new Response(JSON.stringify({ ok: false, error: "You are not authorized to record payments." }), {
+      status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  return { id: user.id, email };
+}
+
+async function logTimeline(requestId: string, eventType: string, title: string, detail: string, metadata: Record<string, unknown> = {}) {
+  const response = await supabaseFetch("request_timeline_events", {
+    method: "POST",
+    body: JSON.stringify({ service_request_id: requestId, event_type: eventType, title, detail, actor_type: "admin", metadata }),
+  });
+  if (!response.ok) console.warn("Timeline logging failed:", await response.text());
 }
 
 function isFinalInvoice(invoice: Record<string, unknown>) {
@@ -205,6 +247,7 @@ Deno.serve(async (request) => {
   }
 
   try {
+    const admin = await requireAdmin(request);
     const body = await request.json();
     const requestId = String(body.request_id || "").trim();
     const requestedAmount = Number(body.amount || 0);
@@ -344,6 +387,14 @@ Deno.serve(async (request) => {
       }),
     });
 
+    await logTimeline(
+      requestId,
+      isTest ? "test_payment_recorded" : "payment_recorded",
+      isTest ? "Test payment recorded" : "Payment recorded",
+      `${paymentStage === "final" ? "Final" : "Initial"} payment of $${paymentAmount.toFixed(2)} was recorded on ${targetInvoice.invoice_number}.`,
+      { invoice_id: targetInvoice.id, invoice_number: targetInvoice.invoice_number, payment_stage: paymentStage, amount: paymentAmount, method: paymentMethod, admin_email: admin.email },
+    );
+
     return json({
       ok: true,
       is_test: isTest,
@@ -358,6 +409,7 @@ Deno.serve(async (request) => {
       workflow_status: workflowStatus,
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     return json(
       {
         ok: false,
