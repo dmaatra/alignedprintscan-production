@@ -47,6 +47,21 @@ async function readJsonOrEmpty(response: Response) {
   try { return await response.json(); } catch (_) { return null; }
 }
 
+async function logTimeline(requestId: string, invoice: any, total: number) {
+  const response = await supabaseFetch("request_timeline_events", {
+    method: "POST",
+    body: JSON.stringify({
+      service_request_id: requestId,
+      event_type: "final_invoice_created",
+      title: "Final balance invoice created",
+      detail: `${invoice.invoice_number} was issued for $${total.toFixed(2)}.`,
+      actor_type: "admin",
+      metadata: { invoice_id: invoice.id, invoice_number: invoice.invoice_number, amount: total },
+    }),
+  });
+  if (!response.ok) console.warn("Timeline logging failed:", await response.text());
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -160,6 +175,8 @@ Deno.serve(async (req) => {
         sent_sms: false,
       }),
     });
+
+    await logTimeline(requestId, invoice, total);
 
     // Send the customer a branded Final Balance Due email.
     await fetch(`${SUPABASE_URL}/functions/v1/send-order-email`, {
