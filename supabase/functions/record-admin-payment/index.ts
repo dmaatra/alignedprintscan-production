@@ -251,6 +251,7 @@ Deno.serve(async (request) => {
     const body = await request.json();
     const requestId = String(body.request_id || "").trim();
     const requestedAmount = Number(body.amount || 0);
+    const requestedInvoiceId = String(body.invoice_id || "").trim();
     const paymentStage = String(body.payment_stage || "initial").trim();
     const paymentMethod = String(body.method || "other").trim();
     const note = String(body.note || "").trim();
@@ -270,7 +271,20 @@ Deno.serve(async (request) => {
     let invoices = (await readJson(invoiceResponse)) as Array<
       Record<string, unknown>
     >;
-    let targetInvoice = findTargetInvoice(invoices, paymentStage);
+    let targetInvoice = requestedInvoiceId
+      ? invoices.find((invoice) => String(invoice.id || "") === requestedInvoiceId) || null
+      : findTargetInvoice(invoices, paymentStage);
+
+    if (targetInvoice) {
+      const targetIsFinal = isFinalInvoice(targetInvoice);
+      if ((paymentStage === "final") !== targetIsFinal) {
+        throw new Error("The selected invoice does not match the requested payment stage.");
+      }
+      const targetStatus = String(targetInvoice.status || "").toLowerCase();
+      if (paidInvoiceStatuses.has(targetStatus) || invoiceRemainingBalance(targetInvoice) <= 0) {
+        throw new Error("The selected invoice is already paid or has no remaining balance.");
+      }
+    }
 
     // Existing requests created before Pass 3.2 may show a quote but have no
     // physical Invoice #1 row. Materialize it once, then continue normally.
