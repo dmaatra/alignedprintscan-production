@@ -1245,9 +1245,11 @@ function paymentSchedulePanel({
       !paidStatuses.includes(String(inv.status || "").toLowerCase()) &&
       !closedStatuses.includes(String(inv.status || "").toLowerCase()),
   );
-  const initialPaid = paidStatuses.includes(
-    String(initial?.status || "").toLowerCase(),
-  );
+  const initialStatus = String(initial?.status || "").toLowerCase();
+  const initialPaymentStatus = String(initial?.payment_status || "").toLowerCase();
+  const initialPaid =
+    paidStatuses.includes(initialStatus) ||
+    ["paid", "payment_received"].includes(initialPaymentStatus);
 
   const rawInitialAmount =
     Number(
@@ -1274,17 +1276,27 @@ function paymentSchedulePanel({
     ? paidInitial + paidFinalAmount
     : Number(request.paid_amount || 0) || 0;
   const balanceDue = Math.max(0, totalServiceValue - paidToDate);
-  const initialBalance = Math.max(
+  const recordedInitialPaid = Number(
+    initial?.amount_paid ?? initial?.paid_amount ?? 0,
+  ) || 0;
+  const calculatedInitialBalance = Math.max(
     0,
-    Number(initial?.balance_due ?? initialAmount) || 0,
+    Number(initial?.amount_due ?? initialAmount) - recordedInitialPaid,
   );
+  const storedInitialBalance = Number(initial?.balance_due);
+  const initialBalance = Number.isFinite(storedInitialBalance)
+    ? Math.max(0, storedInitialBalance)
+    : calculatedInitialBalance;
   const initialInvoiceStatus = String(initial?.status || "").toLowerCase();
+  const initialInvoicePaymentStatus = String(
+    initial?.payment_status || "",
+  ).toLowerCase();
   const showInitialPay =
     Boolean(initial?.id) &&
     initialBalance > 0 &&
     !initialPaid &&
     !closedStatuses.includes(initialInvoiceStatus) &&
-    !["payment_submitted"].includes(initialInvoiceStatus);
+    !["void", "cancelled", "paid"].includes(initialInvoicePaymentStatus);
 
   const initialNumber =
     initial?.invoice_number ||
@@ -1308,7 +1320,7 @@ function paymentSchedulePanel({
       <div class="payment-row-main"><strong>${escapePublic(initialNumber)}</strong><span>${initialPaid ? "Paid" : "Due"} · ${money(initialAmount)}</span></div>
       <div class="cta-row compact-cta-row">
         ${initialReceipt ? `<a class="btn dark" href="${escapePublic(initialReceipt)}" target="_blank" rel="noopener">View Receipt</a>` : ""}
-        ${showInitialPay ? `<button id="startPaymentBtn" class="btn primary" type="button">Continue to Secure Payment</button>` : ""}
+        ${showInitialPay ? `<button id="startPaymentBtn" class="btn primary" data-invoice-id="${escapePublic(initial.id)}" type="button">Pay Initial Invoice (${money(initialBalance)})</button>` : ""}
       </div>
     </div>`);
   }
@@ -2204,9 +2216,11 @@ async function initSuccessPage() {
   });
   bindCustomerActionControls(request.id || requestId);
   const initialInvoice = findInitialInvoice(invoices);
-  qs("#startPaymentBtn")?.addEventListener("click", () =>
-    startEmbeddedPayment(request.id || requestId, initialInvoice?.id),
-  );
+  qs("#startPaymentBtn")?.addEventListener("click", (event) => {
+    const invoiceId =
+      event.currentTarget?.dataset?.invoiceId || initialInvoice?.id || null;
+    startEmbeddedPayment(request.id || requestId, invoiceId);
+  });
   qsa(".payAdditionalInvoice").forEach((btn) =>
     btn.addEventListener("click", () =>
       startEmbeddedPayment(request.id || requestId, btn.dataset.invoiceId),
