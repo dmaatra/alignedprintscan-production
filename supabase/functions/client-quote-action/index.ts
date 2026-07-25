@@ -350,6 +350,18 @@ Deno.serve(async (request) => {
         "customer",
         { invoice_id: invoice.id, invoice_number: invoice.invoice_number },
       );
+      await logTimeline(
+        requestId,
+        "initial_invoice_created",
+        "Invoice #1 created",
+        `${invoice.invoice_number} was created for $${Number(invoice.amount_due || 0).toFixed(2)}.`,
+        "system",
+        {
+          invoice_id: invoice.id,
+          invoice_number: invoice.invoice_number,
+          amount_due: Number(invoice.amount_due || 0),
+        },
+      );
       await logCommunication(
         requestId,
         adminSubject,
