@@ -242,14 +242,14 @@
   function filterVisibleRequestCards(searchTerm) {
     const normalized = String(searchTerm || "").trim().toLowerCase();
 
-    $$("#requestList .request-card").forEach((card) => {
+    $$("#requestList .request-row").forEach((card) => {
       card.hidden = normalized && !card.textContent.toLowerCase().includes(normalized);
     });
   }
 
   /** Keep request counters in the new shell synchronized with rendered cards. */
   function syncRequestCount() {
-    const count = $$("#requestList .request-card").length;
+    const count = $$("#requestList .request-row").length;
     $("#requestCountBadge").textContent = String(count);
     $("#navRequestCount").textContent = String(count);
   }
@@ -321,10 +321,102 @@
 
   bindShellEvents();
 
-  /** Public bridge used by admin.js after it resolves a selected request. */
-  window.AdminV3 = {
-    syncSelectedRequest,
-    organizeRequestDetail,
-    activateTab,
+  /* Phase 4.1 Milestone 1 — functional operations modules. */
+  const moduleState = { requests: [], supportTickets: [], activeView: "requests" };
+  const appView = $("#requests");
+  const moduleView = $("#adminModuleView");
+  const moduleContent = $("#adminModuleContent");
+  const moduleTitles = {
+    dashboard: ["Overview", "Operations Dashboard", "Live request, schedule, and revenue indicators."],
+    calendar: ["Operations", "Calendar", "Upcoming requested and confirmed appointment dates."],
+    invoices: ["Financial", "Invoices", "Request-level invoice status and outstanding balances."],
+    payments: ["Financial", "Payments", "Paid-to-date and remaining balance visibility."],
+    customers: ["Clients", "Customers", "Customer directory built from active service requests."],
+    documents: ["Documents", "Document Manager", "Open a request to review or upload its documents."],
+    templates: ["Documents", "Templates", "Reusable operational templates and quick-start resources."],
+    support: ["Support", "Support Tickets", "Current customer support workload."],
+    settings: ["System", "Settings", "Portal configuration and integration status."],
+    new: ["Operations", "New Request", "Create a request received by phone, email, or in person."],
   };
+  const getCustomer = (request) => Array.isArray(request.customers) ? request.customers[0] : request.customers;
+  const displayMoney = (value) => `$${Number(value || 0).toFixed(2)}`;
+  const safe = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+  function requestStatus(request) { return request.workflow_status || request.status || "under_review"; }
+  function activeRequests() { return moduleState.requests.filter((request) => !request.archived_at); }
+  function openRequestFromModule(id, tab = "overview") {
+    showAdminView("requests");
+    const button = $(`#requestList .request-row[data-id="${CSS.escape(id)}"]`);
+    button?.click();
+    window.setTimeout(() => activateTab(tab), 120);
+  }
+  function table(rows, columns) {
+    if (!rows.length) return '<div class="admin-v3-module-card admin-v3-empty-module"><h3>No records yet</h3><p>This module will populate automatically from service requests.</p></div>';
+    return `<div class="admin-v3-module-card admin-v3-table-wrap"><table class="admin-v3-table"><thead><tr>${columns.map((column)=>`<th>${safe(column.label)}</th>`).join("")}<th></th></tr></thead><tbody>${rows.map((row)=>`<tr>${columns.map((column)=>`<td>${column.render ? column.render(row) : safe(row[column.key])}</td>`).join("")}<td><button class="admin-v3-button admin-v3-button--outline module-open-request" data-request-id="${safe(row.id)}" type="button">Open</button></td></tr>`).join("")}</tbody></table></div>`;
+  }
+  function renderDashboard() {
+    const rows = activeRequests();
+    const today = new Date(); today.setHours(0,0,0,0);
+    const upcoming = rows.filter((r)=>{const d=r.appointment_date||r.preferred_date;if(!d)return false;return new Date(`${d}T12:00:00`)>=today;}).length;
+    const outstanding = rows.reduce((sum,r)=>sum+Number(r.balance_due||0),0);
+    const paid = rows.reduce((sum,r)=>sum+Number(r.paid_amount||0),0);
+    const newCount = rows.filter((r)=>["under_review","new"].includes(requestStatus(r))).length;
+    return `<div class="admin-v3-module-grid"><article class="admin-v3-module-card admin-v3-kpi"><span>Active requests</span><strong>${rows.length}</strong></article><article class="admin-v3-module-card admin-v3-kpi"><span>Needs review</span><strong>${newCount}</strong></article><article class="admin-v3-module-card admin-v3-kpi"><span>Upcoming dates</span><strong>${upcoming}</strong></article><article class="admin-v3-module-card admin-v3-kpi"><span>Outstanding</span><strong>${displayMoney(outstanding)}</strong></article></div><div class="admin-v3-module-card"><h2>Financial snapshot</h2><p><strong>${displayMoney(paid)}</strong> paid to date across loaded requests · <strong>${displayMoney(outstanding)}</strong> remaining.</p></div>${table(rows.slice(0,10),[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Customer",render:r=>{const c=getCustomer(r)||{};return safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client");}},{label:"Service",render:r=>safe(labelFromStatus(r.service_type))},{label:"Status",render:r=>safe(labelFromStatus(requestStatus(r)))}])}`;
+  }
+  function renderCalendar() {
+    const rows=activeRequests().filter(r=>r.appointment_date||r.preferred_date).sort((a,b)=>String(a.appointment_date||a.preferred_date).localeCompare(String(b.appointment_date||b.preferred_date)));
+    if(!rows.length)return '<div class="admin-v3-module-card admin-v3-empty-module"><h3>No scheduled dates</h3><p>Requested and confirmed appointment dates will appear here.</p></div>';
+    return `<div class="admin-v3-calendar-list">${rows.map(r=>{const c=getCustomer(r)||{};const date=r.appointment_date||r.preferred_date;const time=r.appointment_time||r.preferred_time_window||"Time not set";return `<article class="admin-v3-calendar-item"><strong>${safe(new Date(`${date}T12:00:00`).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}</strong><div><h3>${safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client")}</h3><p>${safe(time)} · ${safe(labelFromStatus(r.service_type))}</p></div><button class="admin-v3-button admin-v3-button--outline module-open-request" data-request-id="${safe(r.id)}" data-tab="appointment" type="button">Open</button></article>`}).join("")}</div>`;
+  }
+  function renderNewRequest() {
+    return `<form id="adminCreateRequestForm" class="admin-v3-module-card"><div class="admin-v3-form-grid"><label>First name<input name="first_name" required autocomplete="given-name"></label><label>Last name<input name="last_name" required autocomplete="family-name"></label><label>Email<input name="email" type="email" required autocomplete="email"></label><label>Phone<input name="phone" type="tel" autocomplete="tel"></label><label>Service<select name="service_type" required><option value="ron">Remote Online Notary</option><option value="mobile">Mobile Notary</option><option value="print">Print & Scan</option></select></label><label>Preferred contact<select name="preferred_contact"><option value="email">Email</option><option value="phone">Phone</option><option value="text">Text</option></select></label><label>Requested date<input name="preferred_date" type="date"></label><label>Time window<input name="preferred_time_window" placeholder="Example: 3–4 PM"></label><label class="wide">Internal/request notes<textarea name="notes" rows="5" placeholder="How the request was received, document type, special instructions, and follow-up needed."></textarea></label></div><div class="admin-v3-form-actions"><button class="admin-v3-button admin-v3-button--outline" data-cancel-new type="button">Cancel</button><button class="admin-v3-button admin-v3-button--gold" type="submit">Create Request</button></div><p id="adminCreateRequestStatus" aria-live="polite"></p></form>`;
+  }
+  function renderModule(view) {
+    const rows=activeRequests();
+    if(view==="dashboard") return renderDashboard();
+    if(view==="calendar") return renderCalendar();
+    if(view==="new") return renderNewRequest();
+    if(view==="invoices") return table(rows,[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Invoice status",render:r=>safe(labelFromStatus(r.invoice_status||r.payment_status||"not_created"))},{label:"Quoted",render:r=>displayMoney(r.quote_amount||r.estimated_total)},{label:"Balance",render:r=>displayMoney(r.balance_due)}]);
+    if(view==="payments") return table(rows,[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Paid",render:r=>displayMoney(r.paid_amount)},{label:"Balance",render:r=>displayMoney(r.balance_due)},{label:"State",render:r=>safe(labelFromStatus(r.payment_state||r.payment_status||"not_started"))}]);
+    if(view==="customers") return table(rows,[{label:"Customer",render:r=>{const c=getCustomer(r)||{};return safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client");}},{label:"Email",render:r=>safe((getCustomer(r)||{}).email||"")},{label:"Phone",render:r=>safe((getCustomer(r)||{}).phone||"")},{label:"Service",render:r=>safe(labelFromStatus(r.service_type))}]);
+    if(view==="documents") return `<div class="admin-v3-module-card"><h2>Request document workspace</h2><p>Document access remains securely scoped to each request. Open a request directly in its Documents tab.</p></div>${table(rows,[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Customer",render:r=>{const c=getCustomer(r)||{};return safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client");}},{label:"Service",render:r=>safe(labelFromStatus(r.service_type))},{label:"Pages detected",render:r=>safe(r.detected_pdf_page_count||"—")}])}`;
+    if(view==="templates") return '<div class="admin-v3-module-grid"><article class="admin-v3-module-card"><h3>Quote & invoice items</h3><p>Use the request Payments tab to build a quote from centralized APS pricing.</p></article><article class="admin-v3-module-card"><h3>Customer status emails</h3><p>Approved status messages remain connected to the existing Resend functions.</p></article><article class="admin-v3-module-card"><h3>Appointment instructions</h3><p>Store appointment links, location, platform, and preparation notes in each request.</p></article><article class="admin-v3-module-card"><h3>Support responses</h3><p>Use the Support module to track customer follow-up and internal notes.</p></article></div>';
+    if(view==="support") {const tickets=moduleState.supportTickets;return `<div class="admin-v3-module-grid"><article class="admin-v3-module-card admin-v3-kpi"><span>Open tickets</span><strong>${tickets.length}</strong></article></div><div class="admin-v3-module-card"><h2>Support workspace</h2><p>Open the request workspace to use the full support controls already connected to Supabase.</p><button class="admin-v3-button admin-v3-button--navy" id="openLegacySupport" type="button">Open support controls</button></div>`;}
+    if(view==="settings") return '<div class="admin-v3-module-grid"><article class="admin-v3-module-card"><h3>Supabase</h3><p>Request storage, authentication, files, and realtime updates are connected through the existing configuration.</p></article><article class="admin-v3-module-card"><h3>Stripe</h3><p>Invoice checkout and webhook logic remain unchanged by this milestone.</p></article><article class="admin-v3-module-card"><h3>Resend</h3><p>Transactional email functions remain unchanged by this milestone.</p></article><article class="admin-v3-module-card"><h3>Proof</h3><p>Live RON session integration remains deferred to a later milestone.</p></article></div>';
+    return renderDashboard();
+  }
+  function bindModuleActions() {
+    $$(".module-open-request", moduleContent).forEach(button=>button.addEventListener("click",()=>openRequestFromModule(button.dataset.requestId,button.dataset.tab||"overview")));
+    $("[data-cancel-new]", moduleContent)?.addEventListener("click",()=>showAdminView("requests"));
+    $("#adminCreateRequestForm", moduleContent)?.addEventListener("submit", createAdminRequest);
+    $("#openLegacySupport", moduleContent)?.addEventListener("click",()=>showAdminView("requests"));
+  }
+  async function createAdminRequest(event) {
+    event.preventDefault(); const form=event.currentTarget; const status=$("#adminCreateRequestStatus"); const submit=form.querySelector('[type="submit"]');
+    submit.disabled=true; status.textContent="Creating request…";
+    try { const values=Object.fromEntries(new FormData(form).entries());
+      const {data:customer,error:customerError}=await adminClient.from("customers").insert({first_name:values.first_name.trim(),last_name:values.last_name.trim(),email:values.email.trim(),phone:values.phone.trim()||null,preferred_contact:values.preferred_contact||"email"}).select("id").single();
+      if(customerError) throw customerError;
+      const {data:request,error:requestError}=await adminClient.from("service_requests").insert({customer_id:customer.id,service_type:values.service_type,status:"under_review",workflow_status:"under_review",preferred_date:values.preferred_date||null,preferred_time_window:values.preferred_time_window.trim()||null,notes:values.notes.trim()||"Created by administrator."}).select("id").single();
+      if(requestError) throw requestError;
+      status.textContent="Request created successfully."; await loadRequests(); openRequestFromModule(request.id);
+    } catch(error) {status.textContent=`Could not create request: ${error.message||error}`;} finally {submit.disabled=false;}
+  }
+  function showAdminView(view) {
+    moduleState.activeView=view;
+    const isRequests=view==="requests";
+    appView.hidden=!isRequests; moduleView.hidden=isRequests;
+    if(!isRequests){const labels=moduleTitles[view]||moduleTitles.dashboard;$("#moduleEyebrow").textContent=labels[0];$("#moduleTitle").textContent=labels[1];$("#moduleSubtitle").textContent=labels[2];moduleContent.innerHTML=renderModule(view);bindModuleActions();}
+    $$('[data-admin-view]').forEach(link=>link.classList.toggle("is-active",(view==="dashboard"&&link.textContent.includes("Dashboard"))||link.dataset.adminView===view));
+    window.scrollTo({top:0,behavior:"auto"});
+  }
+  window.addEventListener("aps:requests-loaded",event=>{moduleState.requests=event.detail.requests||[];if(moduleState.activeView!=="requests")showAdminView(moduleState.activeView);});
+  window.addEventListener("aps:support-loaded",event=>{moduleState.supportTickets=event.detail.supportTickets||[];if(moduleState.activeView==="support")showAdminView("support");});
+  $("#returnToRequests")?.addEventListener("click",()=>showAdminView("requests"));
+  $("#newRequestButton")?.replaceWith($("#newRequestButton").cloneNode(true));
+  $("#newRequestButton")?.addEventListener("click",()=>showAdminView("new"));
+  $$('[data-admin-view]').forEach(link=>{const clone=link.cloneNode(true);link.replaceWith(clone);clone.addEventListener("click",event=>{event.preventDefault();const view=clone.dataset.adminView;showAdminView(view==="requests"&&clone.textContent.includes("Dashboard")?"dashboard":view);});});
+
+  /** Public bridge used by admin.js after it resolves a selected request. */
+  window.AdminV3 = { syncSelectedRequest, organizeRequestDetail, activateTab, showAdminView };
 })();

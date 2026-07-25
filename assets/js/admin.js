@@ -1799,6 +1799,7 @@ async function loadRequests() {
   renderStats();
   renderRequestList();
   setText("adminLiveStatus", "Live and listening for new requests.");
+  window.dispatchEvent(new CustomEvent("aps:requests-loaded", { detail: { requests: [...requests] } }));
 }
 
 function renderSupportTickets() {
@@ -1898,6 +1899,7 @@ async function loadSupportTickets() {
   }
   supportTickets = data || [];
   renderSupportTickets();
+  window.dispatchEvent(new CustomEvent("aps:support-loaded", { detail: { supportTickets: [...supportTickets] } }));
 }
 
 function subscribeRealtime() {
