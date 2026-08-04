@@ -438,8 +438,25 @@ function renderRequestList() {
       const archivedBadge = isArchived(r)
         ? '<span class="status-pill archived-pill">Archived</span>'
         : "";
+      const searchIndex = [
+        refFromId(r.id),
+        r.id,
+        name,
+        customer?.email,
+        customer?.phone,
+        r.service_type,
+        serviceLabel(r.service_type),
+        r.status,
+        r.workflow_status,
+        statusLabel(r.workflow_status || r.status),
+        r.invoice_number,
+        ...(r.search_invoice_numbers || []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
       return `
-      <button class="request-row ${selected}" data-id="${r.id}" type="button">
+      <button class="request-row ${selected}" data-id="${r.id}" data-search-index="${escapeHtml(searchIndex)}" type="button">
         <span class="request-ref">${refFromId(r.id)}</span>
         <strong>${escapeHtml(name)}</strong>
         <small>${created}</small>
@@ -452,6 +469,9 @@ function renderRequestList() {
   $$(".request-row", list).forEach((btn) =>
     btn.addEventListener("click", () => selectRequest(btn.dataset.id)),
   );
+  const activeSearchTerm =
+    $("#requestSearch")?.value || $("#globalAdminSearch")?.value || "";
+  window.AdminV3?.filterVisibleRequestCards(activeSearchTerm);
 }
 async function getFiles(requestId) {
   const { data, error } = await adminClient
@@ -1793,6 +1813,34 @@ async function loadRequests() {
     return;
   }
   requests = data || [];
+  const requestIds = requests.map((request) => request.id).filter(Boolean);
+  if (requestIds.length) {
+    const { data: invoiceSearchRows, error: invoiceSearchError } =
+      await adminClient
+        .from("invoices")
+        .select("service_request_id,invoice_number")
+        .in("service_request_id", requestIds);
+
+    if (invoiceSearchError) {
+      console.warn(
+        "Invoice numbers could not be added to request search:",
+        invoiceSearchError,
+      );
+    } else {
+      const invoiceNumbersByRequest = new Map();
+      (invoiceSearchRows || []).forEach((invoice) => {
+        if (!invoice.service_request_id || !invoice.invoice_number) return;
+        const numbers =
+          invoiceNumbersByRequest.get(invoice.service_request_id) || [];
+        numbers.push(invoice.invoice_number);
+        invoiceNumbersByRequest.set(invoice.service_request_id, numbers);
+      });
+      requests.forEach((request) => {
+        request.search_invoice_numbers =
+          invoiceNumbersByRequest.get(request.id) || [];
+      });
+    }
+  }
   if (selectedRequest)
     selectedRequest =
       requests.find((r) => r.id === selectedRequest.id) || selectedRequest;

@@ -242,7 +242,10 @@
     const normalized = String(searchTerm || "").trim().toLowerCase();
 
     $$("#requestList .request-row").forEach((card) => {
-      card.hidden = normalized && !card.textContent.toLowerCase().includes(normalized);
+      const searchIndex = card.dataset.searchIndex || card.textContent;
+      card.hidden = Boolean(
+        normalized && !searchIndex.toLowerCase().includes(normalized),
+      );
     });
   }
 
@@ -262,7 +265,10 @@
     });
 
     $("#requestSearch")?.addEventListener("input", (event) => {
-      filterVisibleRequestCards(event.target.value);
+      const term = event.target.value;
+      const globalSearch = $("#globalAdminSearch");
+      if (globalSearch) globalSearch.value = term;
+      filterVisibleRequestCards(term);
     });
 
     $("#globalAdminSearch")?.addEventListener("input", (event) => {
@@ -364,7 +370,7 @@
     templates: ["Documents", "Templates", "Reusable operational templates and quick-start resources."],
     support: ["Support", "Support Tickets", "Current customer support workload."],
     settings: ["System", "Settings", "Portal configuration and integration status."],
-    new: ["Operations", "New Request", "Create a request received by phone, email, or in person."],
+    new: ["Operations", "New Order", "Create an order received by phone, email, or in person."],
   };
   const getCustomer = (request) => Array.isArray(request.customers) ? request.customers[0] : request.customers;
   const displayMoney = (value) => `$${Number(value || 0).toFixed(2)}`;
@@ -397,7 +403,7 @@
     return `<div class="admin-v3-calendar-list">${rows.map(r=>{const c=getCustomer(r)||{};const date=r.appointment_date||r.preferred_date;const time=r.appointment_time||r.preferred_time_window||"Time not set";return `<article class="admin-v3-calendar-item"><strong>${safe(new Date(`${date}T12:00:00`).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}</strong><div><h3>${safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client")}</h3><p>${safe(time)} · ${safe(labelFromStatus(r.service_type))}</p></div><button class="admin-v3-button admin-v3-button--outline module-open-request" data-request-id="${safe(r.id)}" data-tab="appointment" type="button">Open</button></article>`}).join("")}</div>`;
   }
   function renderNewRequest() {
-    return `<form id="adminCreateRequestForm" class="admin-v3-module-card"><div class="admin-v3-form-grid"><label>First name<input name="first_name" required autocomplete="given-name"></label><label>Last name<input name="last_name" required autocomplete="family-name"></label><label>Email<input name="email" type="email" required autocomplete="email"></label><label>Phone<input name="phone" type="tel" autocomplete="tel"></label><label>Service<select name="service_type" required><option value="ron">Remote Online Notary</option><option value="mobile">Mobile Notary</option><option value="print">Print & Scan</option></select></label><label>Preferred contact<select name="preferred_contact"><option value="email">Email</option><option value="phone">Phone</option><option value="text">Text</option></select></label><label>Requested date<input name="preferred_date" type="date"></label><label>Time window<input name="preferred_time_window" placeholder="Example: 3–4 PM"></label><label class="wide">Internal/request notes<textarea name="notes" rows="5" placeholder="How the request was received, document type, special instructions, and follow-up needed."></textarea></label></div><div class="admin-v3-form-actions"><button class="admin-v3-button admin-v3-button--outline" data-cancel-new type="button">Cancel</button><button class="admin-v3-button admin-v3-button--gold" type="submit">Create Request</button></div><p id="adminCreateRequestStatus" aria-live="polite"></p></form>`;
+    return `<form id="adminCreateRequestForm" class="admin-v3-module-card"><div class="admin-v3-form-grid"><label>First name<input name="first_name" required autocomplete="given-name"></label><label>Last name<input name="last_name" required autocomplete="family-name"></label><label>Email<input name="email" type="email" required autocomplete="email"></label><label>Phone<input name="phone" type="tel" autocomplete="tel"></label><label>Service<select name="service_type" required><option value="ron">Remote Online Notary</option><option value="mobile">Mobile Notary</option><option value="print">Print & Scan</option></select></label><label>Preferred contact<select name="preferred_contact"><option value="email">Email</option><option value="phone">Phone</option><option value="text">Text</option></select></label><label>Requested date<input name="preferred_date" type="date"></label><label>Time window<input name="preferred_time_window" placeholder="Example: 3–4 PM"></label><label class="wide">Internal/order notes<textarea name="notes" rows="5" placeholder="How the order was received, document type, special instructions, and follow-up needed."></textarea></label></div><div class="admin-v3-form-actions"><button class="admin-v3-button admin-v3-button--outline" data-cancel-new type="button">Cancel</button><button class="admin-v3-button admin-v3-button--gold" type="submit">Create Order</button></div><p id="adminCreateRequestStatus" aria-live="polite"></p></form>`;
   }
   function renderModule(view) {
     const rows=activeRequests();
@@ -446,5 +452,11 @@
   $$('[data-admin-view]').forEach(link=>{const clone=link.cloneNode(true);link.replaceWith(clone);clone.addEventListener("click",event=>{event.preventDefault();const view=clone.dataset.adminView;showAdminView(view==="requests"&&clone.textContent.includes("Dashboard")?"dashboard":view);});});
 
   /** Public bridge used by admin.js after it resolves a selected request. */
-  window.AdminV3 = { syncSelectedRequest, organizeRequestDetail, activateTab, showAdminView };
+  window.AdminV3 = {
+    syncSelectedRequest,
+    organizeRequestDetail,
+    activateTab,
+    filterVisibleRequestCards,
+    showAdminView,
+  };
 })();

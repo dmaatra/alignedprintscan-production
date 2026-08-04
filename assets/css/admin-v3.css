@@ -138,7 +138,7 @@ button {
 .admin-v3-nav a {
   display: grid;
   min-height: 38px;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   margin: 2px 0;
@@ -159,11 +159,6 @@ button {
 
 .admin-v3-nav a.is-active {
   box-shadow: inset 3px 0 0 var(--aps-gold);
-}
-
-.admin-v3-nav a > span:first-child {
-  text-align: center;
-  color: var(--aps-gold-light);
 }
 
 .admin-v3-nav a strong,
@@ -1059,8 +1054,6 @@ body.admin-v3-body {
   line-height: 1.35;
 }
 
-/* The approved admin navigation is label-led and icon-free. */
-.admin-v3-nav a > span:first-child { display: none; }
 .admin-v3-nav a strong,
 .admin-v3-nav a em {
   position: static;
