@@ -123,7 +123,7 @@
         ☰
       </button>
 
-      <label class="admin-v3-global-search">
+      <label class="admin-v3-global-search" aria-label="Search requests, customers, and invoices">
         <span aria-hidden="true">⌕</span>
         <input
           id="globalAdminSearch"
@@ -158,13 +158,13 @@
         </div>
 
         <div class="admin-v3-request-tabs" role="tablist" aria-label="Request filters">
-          <button type="button" data-quick-filter="all" class="is-active">All</button>
+          <button type="button" data-quick-filter="all" class="is-active" aria-selected="true">All</button>
           <button type="button" data-quick-filter="active">Active</button>
           <button type="button" data-quick-filter="pending">Pending</button>
           <button type="button" data-quick-filter="completed">Completed</button>
         </div>
 
-        <label class="admin-v3-list-search">
+        <label class="admin-v3-list-search" aria-label="Search request queue">
           <span aria-hidden="true">⌕</span>
           <input id="requestSearch" type="search" placeholder="Search requests…" autocomplete="off" />
         </label>
@@ -222,8 +222,8 @@
           </div>
         </header>
 
-        <nav class="admin-v3-workspace-tabs" id="workspaceTabs" aria-label="Request workspace tabs">
-          <button type="button" data-workspace-tab="overview" class="is-active">Overview</button>
+        <nav class="admin-v3-workspace-tabs" id="workspaceTabs" aria-label="Request workspace tabs" role="tablist">
+          <button type="button" data-workspace-tab="overview" class="is-active" aria-selected="true">Overview</button>
           <button type="button" data-workspace-tab="customer">Customer</button>
           <button type="button" data-workspace-tab="documents">Documents</button>
           <button type="button" data-workspace-tab="payments">Payments</button>
@@ -249,7 +249,7 @@
 
 
     <!-- Phase 4.1 Milestone 1: operational module workspace -->
-    <main class="admin-v3-module-view" id="adminModuleView" hidden>
+    <main class="admin-v3-module-view" id="adminModuleView" aria-live="polite" hidden>
       <header class="admin-v3-module-header">
         <div><p id="moduleEyebrow">Operations</p><h1 id="moduleTitle">Dashboard</h1><small id="moduleSubtitle">Aligned Print & Scan operations overview.</small></div>
         <button class="admin-v3-button admin-v3-button--outline" id="returnToRequests" type="button">Return to Requests</button>

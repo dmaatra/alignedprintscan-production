@@ -5,10 +5,39 @@ const supabaseClient = window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
-const menuBtn = document.querySelector(".menu-btn");
-const navLinks = document.querySelector(".nav-links");
-if (menuBtn) {
-  menuBtn.addEventListener("click", () => navLinks.classList.toggle("open"));
+const menuBtn = document.querySelector(
+  ".pass-2-public .menu-btn, .pass-3-public .menu-btn",
+);
+const navLinks = document.querySelector(
+  ".pass-2-public .nav-links, .pass-3-public .nav-links",
+);
+if (menuBtn && navLinks) {
+  const closeMenu = () => {
+    navLinks.classList.remove("open");
+    menuBtn.setAttribute("aria-expanded", "false");
+    menuBtn.setAttribute("aria-label", "Open menu");
+  };
+
+  menuBtn.addEventListener("click", () => {
+    const isOpen = navLinks.classList.toggle("open");
+    menuBtn.setAttribute("aria-expanded", String(isOpen));
+    menuBtn.setAttribute("aria-label", isOpen ? "Close menu" : "Open menu");
+  });
+
+  navLinks.addEventListener("click", (event) => {
+    if (event.target.closest("a")) closeMenu();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && navLinks.classList.contains("open")) {
+      closeMenu();
+      menuBtn.focus();
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 1100) closeMenu();
+  });
 }
 // Premium scroll reveal animation with safe fallbacks.
 // Functional content is still forced visible if the observer ever misses it.
@@ -53,13 +82,28 @@ setTimeout(
       .forEach((el) => el.classList.add("visible")),
   1400,
 );
-document
-  .querySelectorAll(".faq-q")
-  .forEach((btn) =>
-    btn.addEventListener("click", () =>
-      btn.parentElement.classList.toggle("open"),
-    ),
-  );
+document.querySelectorAll(".pass-3-public .faq-q").forEach((btn, index) => {
+  const item = btn.closest(".faq-item");
+  const answer = item?.querySelector(".faq-a");
+  const buttonId = `faq-question-${index + 1}`;
+  const answerId = `faq-answer-${index + 1}`;
+
+  btn.id = buttonId;
+  btn.setAttribute("aria-controls", answerId);
+  btn.setAttribute("aria-expanded", "false");
+  if (answer) {
+    answer.id = answerId;
+    answer.setAttribute("role", "region");
+    answer.setAttribute("aria-labelledby", buttonId);
+  }
+
+  btn.addEventListener("click", () => {
+    const isOpen = item.classList.toggle("open");
+    btn.setAttribute("aria-expanded", String(isOpen));
+    const indicator = btn.querySelector("span[aria-hidden='true']");
+    if (indicator) indicator.textContent = isOpen ? "−" : "+";
+  });
+});
 
 function money(n) {
   return "$" + Number(n || 0).toFixed(2);
@@ -226,9 +270,13 @@ function calculateEstimate() {
 function applyService(service) {
   activeService = service;
   currentStep = 0;
-  tabs.forEach((t) =>
-    t.classList.toggle("active", t.dataset.service === service),
-  );
+  tabs.forEach((t) => {
+    const isActive = t.dataset.service === service;
+    t.classList.toggle("active", isActive);
+    t.setAttribute("role", "tab");
+    t.setAttribute("aria-selected", String(isActive));
+    t.setAttribute("aria-controls", "smartRequestForm");
+  });
   document.body.dataset.service = service;
   const names = {
     ron: "Remote Online Notary",
@@ -374,12 +422,18 @@ function updateConditional() {
 function showStep(n) {
   currentStep = Math.max(0, Math.min(4, n));
   clearErrors();
-  qsa(".wizard-step").forEach((el, i) =>
-    el.classList.toggle("active", i === currentStep),
-  );
+  qsa(".wizard-step").forEach((el, i) => {
+    const isActive = i === currentStep;
+    el.classList.toggle("active", isActive);
+    el.setAttribute("aria-hidden", String(!isActive));
+  });
   qs("#stepLabel").textContent = `Step ${currentStep + 1} of 5`;
   qs("#stepName").textContent = stepNames[currentStep];
   qs("#progressBar").style.width = `${((currentStep + 1) / 5) * 100}%`;
+  qs(".progress-track")?.setAttribute(
+    "aria-valuenow",
+    String(currentStep + 1),
+  );
   qs("#prevStep").style.visibility = currentStep === 0 ? "hidden" : "visible";
   qs("#nextStep").style.display = currentStep === 4 ? "none" : "inline-flex";
   updateContinueState();
@@ -400,6 +454,7 @@ function markInvalid(name, msg) {
   box.classList.add("field-error");
   let hint = document.createElement("div");
   hint.className = "error-text";
+  hint.id = `error-${name}`;
   hint.textContent = msg || "Required";
   if (
     box.parentNode &&
@@ -408,12 +463,18 @@ function markInvalid(name, msg) {
     hint.dataset.for = name;
     box.insertAdjacentElement("afterend", hint);
   }
+  el.setAttribute("aria-invalid", "true");
+  el.setAttribute("aria-describedby", hint.id);
   return false;
 }
 
 function clearErrors() {
   qsa(".field-error").forEach((e) => e.classList.remove("field-error"));
   qsa(".error-text").forEach((e) => e.remove());
+  qsa("[aria-invalid='true']", wizard).forEach((e) => {
+    e.removeAttribute("aria-invalid");
+    e.removeAttribute("aria-describedby");
+  });
 }
 
 function requireFilled(names) {
@@ -936,6 +997,22 @@ async function submitRequestToSupabase(e) {
 
 function initWizard() {
   if (!wizard) return;
+  qsa("label", wizard).forEach((label, index) => {
+    if (label.htmlFor || label.querySelector("input, select, textarea")) return;
+    const sibling = label.nextElementSibling;
+    const control = sibling?.matches?.("input, select, textarea")
+      ? sibling
+      : sibling?.querySelector?.("input, select, textarea");
+    if (!control) return;
+    if (!control.id) {
+      const safeName = String(control.name || index + 1).replace(
+        /[^a-zA-Z0-9_-]/g,
+        "-",
+      );
+      control.id = `request-field-${safeName}`;
+    }
+    label.htmlFor = control.id;
+  });
   tabs.forEach((t) =>
     t.addEventListener("click", () => applyService(t.dataset.service)),
   );
@@ -968,11 +1045,16 @@ async function submitSupportTicket(event) {
   event.preventDefault();
   const form = event.currentTarget;
   const status = qs("#supportStatus");
-  if (status) status.textContent = "Submitting your support request…";
+  if (status) {
+    status.dataset.state = "loading";
+    status.textContent = "Submitting your support request…";
+  }
   if (!supabaseClient) {
-    if (status)
+    if (status) {
+      status.dataset.state = "error";
       status.textContent =
         "Support system is not connected yet. Please email hello@alignedprintscan.com.";
+    }
     return;
   }
   const payload = {
@@ -995,15 +1077,19 @@ async function submitSupportTicket(event) {
     .insert(payload);
   if (error) {
     console.error(error);
-    if (status)
+    if (status) {
+      status.dataset.state = "error";
       status.textContent =
         "We could not submit your support request. Please email hello@alignedprintscan.com.";
+    }
     return;
   }
   form.reset();
-  if (status)
+  if (status) {
+    status.dataset.state = "success";
     status.textContent =
       "Thank you. Your support request has been received. We will follow up within two business days.";
+  }
 }
 const supportForm = qs("#supportForm");
 if (supportForm) {
