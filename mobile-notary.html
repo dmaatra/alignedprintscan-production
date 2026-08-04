@@ -28,7 +28,7 @@
     <link href="assets/images/logo-symbol.webp" rel="icon" type="image/webp" />
     <link href="assets/images/logo-symbol.webp" rel="apple-touch-icon" />
   </head>
-  <body>
+  <body class="pass-2-public service-page">
     <header class="site-header">
       <div class="container nav">
         <a class="brand" href="index.html"
@@ -36,11 +36,17 @@
             alt="Aligned Print & Scan symbol logo"
             src="assets/images/logo-symbol.webp"
           /><span>Aligned Print & Scan</span></a
-        ><button aria-label="Open menu" class="menu-btn">☰</button>
-        <nav class="nav-links">
+        ><button
+          aria-label="Open menu"
+          aria-controls="primary-navigation"
+          aria-expanded="false"
+          class="menu-btn"
+          type="button"
+        ><span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span></button>
+        <nav class="nav-links" id="primary-navigation" aria-label="Primary navigation">
           <a href="index.html">Home</a><a href="index.html#services">Services</a
           ><a href="remote-online-notary.html">Remote Online Notary</a
-          ><a href="mobile-notary.html">Mobile Notary</a
+          ><a href="mobile-notary.html" aria-current="page">Mobile Notary</a
           ><a href="print-scan.html">Print &amp; Scan</a
           ><a href="pricing.html">Pricing</a><a href="faq.html">FAQs</a
           ><a class="nav-cta" href="pricing.html?service=mobile#request"
@@ -173,6 +179,6 @@
         </div>
       </div>
     </footer>
-    <script src="assets/js/script.js"></script>
+    <script src="assets/js/script.js?v=20260804-pass2"></script>
   </body>
 </html>

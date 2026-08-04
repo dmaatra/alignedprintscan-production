@@ -222,17 +222,16 @@
     state.activeTab = tabName;
 
     $$("[data-workspace-tab]").forEach((button) => {
-      button.classList.toggle(
-        "is-active",
-        button.dataset.workspaceTab === tabName,
-      );
+      const isActive = button.dataset.workspaceTab === tabName;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-selected", String(isActive));
+      button.tabIndex = isActive ? 0 : -1;
     });
 
     $$('[data-v3-tab-panel]', detailRoot).forEach((panel) => {
-      panel.classList.toggle(
-        "is-active",
-        panel.dataset.v3TabPanel === tabName,
-      );
+      const isActive = panel.dataset.v3TabPanel === tabName;
+      panel.classList.toggle("is-active", isActive);
+      panel.hidden = !isActive;
     });
 
     resetWorkspaceScroll();
@@ -286,6 +285,16 @@
       event.currentTarget.setAttribute("aria-expanded", String(isOpen));
     });
 
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      const sidebar = $("#adminSidebar");
+      const menuButton = $("#adminMenuButton");
+      if (!sidebar?.classList.contains("is-open")) return;
+      sidebar.classList.remove("is-open");
+      menuButton?.setAttribute("aria-expanded", "false");
+      menuButton?.focus();
+    });
+
     $("#workspacePrimaryAction")?.addEventListener("click", (event) => {
       activateTab(event.currentTarget.dataset.targetTab || "overview");
     });
@@ -304,6 +313,25 @@
           item.classList.remove("is-active");
         });
         link.classList.add("is-active");
+        $("#adminSidebar")?.classList.remove("is-open");
+        $("#adminMenuButton")?.setAttribute("aria-expanded", "false");
+      });
+    });
+
+    $$("[data-quick-filter]").forEach((button) => {
+      button.setAttribute(
+        "aria-selected",
+        String(button.classList.contains("is-active")),
+      );
+      button.addEventListener("click", () => {
+        window.queueMicrotask(() => {
+          $$("[data-quick-filter]").forEach((item) => {
+            item.setAttribute(
+              "aria-selected",
+              String(item.classList.contains("is-active")),
+            );
+          });
+        });
       });
     });
   }

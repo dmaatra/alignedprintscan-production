@@ -28,7 +28,7 @@
     <link href="assets/images/logo-symbol.webp" rel="icon" type="image/webp" />
     <link href="assets/images/logo-symbol.webp" rel="apple-touch-icon" />
   </head>
-  <body>
+  <body class="pass-3-public pricing-page">
     <header class="site-header">
       <div class="container nav">
         <a class="brand" href="index.html">
@@ -38,14 +38,20 @@
           />
           <span> Aligned Print & Scan </span>
         </a>
-        <button aria-label="Open menu" class="menu-btn">☰</button>
-        <nav class="nav-links">
+        <button
+          aria-label="Open menu"
+          aria-controls="primary-navigation"
+          aria-expanded="false"
+          class="menu-btn"
+          type="button"
+        ><span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span></button>
+        <nav class="nav-links" id="primary-navigation" aria-label="Primary navigation">
           <a href="index.html"> Home </a>
           <a href="index.html#services"> Services </a>
           <a href="remote-online-notary.html"> Remote Online Notary </a>
           <a href="mobile-notary.html"> Mobile Notary </a>
           <a href="print-scan.html"> Print & Scan </a>
-          <a href="pricing.html"> Pricing </a>
+          <a href="pricing.html" aria-current="page"> Pricing </a>
           <a href="faq.html"> FAQs </a>
           <a class="nav-cta" href="pricing.html#request"> Request Service </a>
         </nav>
@@ -289,7 +295,14 @@
                   <span id="stepLabel"> Step 1 of 5 </span>
                   <span id="stepName"> Contact </span>
                 </div>
-                <div class="progress-track">
+                <div
+                  class="progress-track"
+                  role="progressbar"
+                  aria-label="Request progress"
+                  aria-valuemin="1"
+                  aria-valuemax="5"
+                  aria-valuenow="1"
+                >
                   <div id="progressBar"></div>
                 </div>
               </div>
@@ -939,6 +952,6 @@
     </footer>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="assets/js/pricing-config.js"></script>
-    <script src="assets/js/script.js"></script>
+    <script src="assets/js/script.js?v=20260804-pass3"></script>
   </body>
 </html>
