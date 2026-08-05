@@ -17,6 +17,25 @@ export interface ProofProviderTransaction {
   detailedStatus: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  signers?: ProofProviderSigner[];
+}
+
+export interface ProofProviderSigner {
+  id: string | null;
+  externalId: string | null;
+  status: string | null;
+  accessLinkPresent: boolean;
+}
+
+export interface ConfigureSignerInput {
+  email: string;
+  firstName?: string | null;
+  middleName?: string | null;
+  lastName?: string | null;
+  externalId: string;
+  order: number;
+  entity?: string | null;
+  capacity?: string | null;
 }
 
 export interface CreateDraftInput {
@@ -105,6 +124,51 @@ export class ProofService {
       { method: "DELETE", retry: false },
     );
     return { deleted: true };
+  }
+
+  async configureTransactionSigners(
+    transactionId: string,
+    signers: ConfigureSignerInput[],
+  ): Promise<ProofProviderTransaction> {
+    assertProviderId(transactionId);
+    const data = await this.client.request<unknown>(
+      `/v1/transactions/${encodeURIComponent(transactionId)}`,
+      {
+        method: "PUT",
+        retry: false,
+        json: {
+          draft: true,
+          signers: signers.map((signer) => ({
+            email: signer.email,
+            first_name: signer.firstName || undefined,
+            middle_name: signer.middleName || undefined,
+            last_name: signer.lastName || undefined,
+            external_id: signer.externalId,
+            order: signer.order,
+            entity: signer.entity || undefined,
+            capacity: signer.capacity || undefined,
+          })),
+        },
+      },
+    );
+    return sanitizeTransaction(data, true);
+  }
+
+  async activateDraftTransaction(
+    transactionId: string,
+  ): Promise<ProofProviderTransaction> {
+    assertProviderId(transactionId);
+    const data = await this.client.request<unknown>(
+      `/v1/transactions/${
+        encodeURIComponent(transactionId)
+      }/notarization_ready`,
+      {
+        method: "POST",
+        retry: false,
+        json: { suppress_email: false },
+      },
+    );
+    return sanitizeTransaction(data, true);
   }
 
   async addDocument(input: AddDocumentInput): Promise<ProofProviderDocument> {
@@ -213,6 +277,21 @@ export function sanitizeTransaction(
     detailedStatus: safeString(object.detailed_status),
     createdAt: safeTimestamp(object.date_created),
     updatedAt: safeTimestamp(object.date_updated),
+    signers: Array.isArray(object.signers)
+      ? object.signers.map(sanitizeSigner)
+      : [],
+  };
+}
+
+function sanitizeSigner(value: unknown): ProofProviderSigner {
+  const signer = asObject(value);
+  return {
+    id: safeString(signer.id ?? signer.signer_id),
+    externalId: safeString(signer.external_id),
+    status: safeString(signer.status),
+    accessLinkPresent: Boolean(
+      signer.transaction_access_link ?? signer.access_link,
+    ),
   };
 }
 

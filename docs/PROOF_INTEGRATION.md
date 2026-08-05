@@ -101,3 +101,11 @@ Increment 1 does not use Supabase JWT or service-role authentication for the pro
 5. Implement signed webhook ingestion, replay protection, out-of-order handling, and reprocessing operations.
 6. Implement completed-document/audit retrieval, private storage, retention controls, and administrator access.
 7. Add APS communications and customer-safe portal/admin presentation only after backend lifecycle acceptance.
+
+## Increment 4 signer and activation lifecycle
+
+**CONFIRMED IN CODE:** Signer and activation commands route from `proof-admin-transaction` through `ProofActivationLifecycle`, `ProofService`, and the sole Proof transport. Draft signer updates and activation disable retries. Proof owns Version 1 invitation email; `suppress_email` is always false. Phone numbers and access links are not accepted or exposed.
+
+The readiness evaluator fails closed on ownership, draft state, ambiguity/manual review, signer count/configuration, processed documents, witness mapping, outstanding non-void/non-cancelled invoice balances, confirmed appointment fields, IANA timezone, prior activation, and administrator confirmation. It never modifies APS financial, scheduling, or workflow state.
+
+**UNKNOWN / OWNER CONFIRMATION REQUIRED:** APS has signer count but no structured request-scoped signer identity table. Signer identities therefore require explicit administrator approval and the customer is never inferred as signer. Witness-bearing requests return `WITNESS_MAPPING_REQUIRED`. Alternative non-payment resolution states remain undefined.

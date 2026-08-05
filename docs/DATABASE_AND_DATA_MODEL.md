@@ -105,3 +105,4 @@ The ledger is **CONFIRMED IN CODE**. Several migrations overlap intentionally th
 - **CONFIRMED IN CODE:** The note-history policy allows every authenticated user full access.
 - **CONFIRMED IN DOCUMENTATION:** `PATCH_3_2_DEPLOYMENT_AND_ACCEPTANCE.md` references a `20260719150000...` migration that is absent; equivalent later tables appear in the `20260722130000...` migration.
 - **PRODUCTION VERIFICATION REQUIRED:** Remote migration ledger and drift from local files.
+- **CONFIRMED IN CODE:** The unapplied Increment 4 migration adds signer order/external identity, configuration/invitation state, access-link presence only, activation claims/ambiguity/timestamps, Proof email ownership, audit support, and uniqueness constraints for signer position, email, external ID, and successful activation.

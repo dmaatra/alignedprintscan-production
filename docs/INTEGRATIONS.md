@@ -115,3 +115,4 @@ The existing APS function set is supplemented by exactly three Phase 4.2 Proof f
 - **HISTORICAL OR POSSIBLY OUTDATED:** Twilio/Clerk SMS was recommended, but current code only records `sent_sms=false` and contains no SMS provider call.
 - **HISTORICAL OR POSSIBLY OUTDATED:** Google Maps Address Autocomplete was planned but is not present.
 - **CONFIRMED IN DOCUMENTATION:** SMS notifications, calendar synchronization, CRM, accounting, and analytics are long-term evaluation items only. No implementation or provider is approved.
+- **CONFIRMED IN CODE:** Local Increment 4 Proof activation is administrator-only, explicitly confirmed, and gated by APS readiness. Proof sends invitations; APS does not send access links or phone numbers, mutate payment state, or activate automatically. It is not deployed and the migration is unapplied.
