@@ -24,6 +24,34 @@ export interface CreateDraftInput {
   signerEmail: string;
 }
 
+export interface AddDocumentInput {
+  transactionId: string;
+  filename: string;
+  bytes: Uint8Array;
+  trackingId: string;
+  requirement:
+    | "notarization"
+    | "esign"
+    | "identity_confirmation"
+    | "readonly"
+    | "non_essential";
+  notarizationRequired: boolean;
+  esignRequired: boolean;
+  identityConfirmationRequired: boolean;
+  witnessRequired: false;
+  signingRequiresMeeting: boolean;
+  customerCanAnnotate: boolean;
+  bundlePosition: number | null;
+}
+
+export interface ProofProviderDocument {
+  id: string;
+  trackingId: string | null;
+  processingState: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
 export class ProofService {
   constructor(private readonly client: ProofTransport = new ProofClient()) {}
 
@@ -78,6 +106,86 @@ export class ProofService {
     );
     return { deleted: true };
   }
+
+  async addDocument(input: AddDocumentInput): Promise<ProofProviderDocument> {
+    assertProviderId(input.transactionId);
+    const form = new FormData();
+    form.set(
+      "resource",
+      new Blob([input.bytes.slice().buffer], { type: "application/pdf" }),
+      input.filename,
+    );
+    form.set("filename", input.filename);
+    form.set("tracking_id", input.trackingId);
+    form.set("requirement", input.requirement);
+    form.set("notarization_required", String(input.notarizationRequired));
+    form.set("esign_required", String(input.esignRequired));
+    form.set(
+      "identity_confirmation_required",
+      String(input.identityConfirmationRequired),
+    );
+    form.set("witness_required", "false");
+    form.set("signing_requires_meeting", String(input.signingRequiresMeeting));
+    form.set("customer_can_annotate", String(input.customerCanAnnotate));
+    if (input.bundlePosition !== null) {
+      form.set("bundle_position", String(input.bundlePosition));
+    }
+    const data = await this.client.request<unknown>(
+      `/v1/transactions/${encodeURIComponent(input.transactionId)}/documents`,
+      { method: "POST", formData: form, retry: false },
+    );
+    return sanitizeDocument(data, true);
+  }
+
+  async getTransactionDocumentMetadata(
+    transactionId: string,
+  ): Promise<ProofProviderDocument[]> {
+    const transaction = await this.getTransactionWithDocuments(transactionId);
+    return transaction.documents;
+  }
+
+  private async getTransactionWithDocuments(
+    transactionId: string,
+  ): Promise<{ documents: ProofProviderDocument[] }> {
+    assertProviderId(transactionId);
+    const data = await this.client.request<unknown>(
+      `/v1/transactions/${encodeURIComponent(transactionId)}`,
+      { method: "GET", retry: true },
+    );
+    const object = asObject(data);
+    const documents = Array.isArray(object.documents) ? object.documents : [];
+    return {
+      documents: documents.map((document) => sanitizeDocument(document, false)),
+    };
+  }
+}
+
+export function sanitizeDocument(
+  data: unknown,
+  uploadResponse: boolean,
+): ProofProviderDocument {
+  const object = asObject(data);
+  const id = safeString(object.id ?? object.document_id);
+  if (!id) {
+    throw new ProofError(
+      "PROOF_MALFORMED_RESPONSE",
+      "Proof returned a document without an identifier.",
+      502,
+      false,
+      undefined,
+      undefined,
+      uploadResponse,
+    );
+  }
+  assertProviderId(id);
+  return {
+    id,
+    trackingId: safeString(object.tracking_id),
+    processingState: safeString(object.processing_state ?? object.status) ??
+      "unknown",
+    createdAt: safeTimestamp(object.date_created ?? object.created_at),
+    updatedAt: safeTimestamp(object.date_updated ?? object.updated_at),
+  };
 }
 
 export function sanitizeTransaction(

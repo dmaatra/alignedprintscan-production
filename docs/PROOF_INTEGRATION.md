@@ -2,7 +2,7 @@
 
 ## Scope
 
-**CONFIRMED IN CODE:** Phase 4.2 Increment 2 adds the administrator-only draft transaction lifecycle on top of the unapplied Increment 1 foundation. It supports organization metadata retrieval, local atomic create claims, draft creation, stored-ID retrieval/refresh, incomplete-draft deletion, safe local cancellation, and manual-review state. It does not upload documents, activate or invite signers, retrieve completed files, process webhooks, or alter APS payment/workflow state.
+**CONFIRMED IN CODE:** Phase 4.2 Increment 3 adds an administrator-only source-document lifecycle on top of the unapplied Increment 1 and 2 foundations. It selects and validates APS PDFs, retrieves private source bytes server-side, computes SHA-256, atomically claims uploads, uploads through the shared Proof transport, stores the APS-to-Proof mapping, refreshes processing metadata, and preserves ambiguous/manual-review states. It does not activate or invite signers, retrieve completed files, process webhooks, or alter APS payment/workflow state.
 
 **CONFIRMED IN DOCUMENTATION:** APS remains the system of record for customers, orders, invoices/payments, scheduling, workflow, communications, the customer portal, and the admin dashboard. Proof is the RON integration engine and signer experience.
 
@@ -15,7 +15,7 @@ The Proof configuration names are `PROOF_API_KEY`, `PROOF_API_BASE_URL`, and `PR
 The only Proof Edge Function directories are:
 
 - `proof-admin-transaction`: approved draft lifecycle commands; all provider calls remain owner-gated until controlled testing is separately approved.
-- `proof-admin-document`: upload and retrieve-completed-document placeholders.
+- `proof-admin-document`: approved source-document preparation, upload, processing refresh, and manual-review commands. Completed-document retrieval remains unavailable.
 - `proof-webhook`: future provider HMAC entrypoint.
 
 ## Shared service layer
@@ -46,7 +46,21 @@ All four tables have RLS enabled, no anon/authenticated policies, explicit privi
 6. Webhook and retrieval reconciliation update raw Proof data and mapped APS state.
 7. APS retrieves completed documents/audit artifacts, stores controlled asset metadata, and drives APS communications and completion rules.
 
-Increment 2 implements only the draft portion of steps 2–3. Document, activation, webhook, artifact, communication, and portal work remain future increments.
+Increment 2 implements only the draft portion of steps 2–3. Increment 3 implements approved source-document handling in step 4, without activation. Activation, webhook, completed artifact, communication, and portal work remain future increments.
+
+## Increment 3 document lifecycle
+
+**CONFIRMED IN CODE:** `proof-admin-document` accepts only `list_eligible_source_documents`, `prepare_upload`, `upload_source_document`, `refresh_document`, `refresh_all_documents`, and `mark_document_manual_review`. The same Supabase JWT plus `public.is_admin()` authorization boundary used by transaction commands applies. The response is an APS-owned projection without storage paths, signed URLs, document bytes, provider credentials, or unrestricted provider URLs.
+
+Source files must belong to the integration's Remote Online Notary request, remain active in the private `service-request-files` bucket, be recorded as `application/pdf`, have a `.pdf` name, pass a PDF magic-byte check, and remain within the existing APS 10 MB limit and Proof's documented 30 MB per-PDF limit. Identity/completed categories and unverified paths are blocked. The server re-downloads and re-hashes exact bytes immediately before upload.
+
+The upload uses Proof's documented `POST /v1/transactions/{id}/documents` endpoint with multipart/direct PDF bytes. This avoids exposing a Supabase signed URL and avoids base64's approximately 33% expansion. The Edge Function temporarily holds the source byte array, the digest input, and multipart encoding; the stricter APS 10 MB limit bounds that memory cost. Larger documents require a separately reviewed streaming or ephemeral-storage design.
+
+Each upload requires an explicit documented requirement: `notarization`, `esign`, `identity_confirmation`, `readonly`, or `non_essential`. The corresponding boolean flags must agree with that requirement. `witness_required` is always false and any true request is blocked because Proof defines it as a person physically located with the signer, which is not an approved automatic mapping from APS's witness model. Bundle position must be an explicit non-negative integer when supplied.
+
+APS claims `(proof_transaction_record_id, source_request_file_id)` before dispatch and stores the exact checksum, byte count, stable tracking ID, transaction ID, and approved flags. Mutating uploads set `retry: false`. Confirmed provider rejection may be deliberately reconsidered; timeout/network/ambiguous results retain the claim, prohibit blind re-upload, and reconcile only through transaction document metadata by stored Proof document ID or stable tracking ID. Local asset rows are never deleted on provider failure.
+
+Processing refresh reads `GET /v1/transactions/{id}`, extracts only document ID, tracking ID, processing state, and safe timestamps, and updates only Proof-owned synchronization fields. It never overwrites APS source metadata, request/payment/workflow/scheduling data, customer updates, or notes.
 
 ## Increment 2 idempotency and ambiguity
 

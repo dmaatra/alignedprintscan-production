@@ -1,7 +1,7 @@
 type LogLevel = "info" | "warn" | "error";
 
 const sensitiveKeys =
-  /authorization|api[-_]?key|secret|token|password|document|payload/i;
+  /authorization|api[-_]?key|secret|token|password|document|payload|signed[-_]?url|storage[-_]?path|base64|bytes|resource/i;
 
 export function sanitizeProofLogValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sanitizeProofLogValue);

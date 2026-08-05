@@ -51,6 +51,8 @@ All are **CONFIRMED IN CODE**.
 - **CONFIRMED IN CODE:** Bucket name is `service-request-files`.
 - **CONFIRMED IN CODE:** Initial uploads use request-scoped paths; later customer uploads use `{requestId}/additional/{uuid}-{safeName}`; admin uploads use request-scoped admin paths.
 - **CONFIRMED IN CODE:** `request_files` stores file name/path/type/size plus uploader/category metadata where newer columns exist.
+- **CONFIRMED IN CODE:** The unapplied Increment 3 migration extends `proof_transaction_assets` with a restricted `request_files` foreign key, stable tracking ID, exact SHA-256/byte count, approved document flags, upload/dispatch/processing states, ambiguity and retry controls, safe errors, audit identities, and provider synchronization timestamps. Partial unique indexes prevent a source file or tracking ID from being mapped twice to one Proof transaction.
+- **CONFIRMED IN CODE:** `proof_document_command_attempts` is a service-role-only sanitized command ledger. It stores identifiers, command/outcome, administrator identity, provider status/error code, and timestamps—not document bytes, signed URLs, storage paths, credentials, or raw provider responses.
 - **CONFIRMED IN DOCUMENTATION:** The bucket is intended to be private, with signed admin links.
 - **PRODUCTION VERIFICATION REQUIRED:** Live bucket creation, size/type restrictions, and current Storage RLS are not fully defined in migrations.
 - **CONFIRMED IN DOCUMENTATION:** APS will comply with Texas notary requirements and applicable legal/business record-retention obligations. Specific retention periods remain an intentionally deferred future policy decision.

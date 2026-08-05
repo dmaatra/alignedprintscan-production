@@ -16,6 +16,8 @@
 
 **CONFIRMED IN CODE:** Request documents are uploaded to the `service-request-files` bucket. Browser intake uploads directly under public/RLS permissions; later customer upload uses a service-role Edge Function after email matching; admin upload uses the authenticated client. Admin downloads use signed URLs.
 
+**CONFIRMED IN CODE:** The local Proof document integration retrieves approved source PDFs server-side from `service-request-files`; signed URLs and storage paths are never returned by the Proof admin function. It enforces the existing APS 10 MB ceiling even though Proof documents may be up to 30 MB, computes SHA-256, and sends multipart bytes only through `ProofService` and `ProofClient`. The feature is not deployed and the supporting migrations are unapplied.
+
 ### Realtime
 
 **CONFIRMED IN CODE:** Admin subscribes to `service_requests` and `support_tickets`, then reloads affected lists. Production publication state is **PRODUCTION VERIFICATION REQUIRED**.
