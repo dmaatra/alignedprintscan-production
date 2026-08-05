@@ -125,9 +125,11 @@
    * This preserves tested business logic while replacing the long page.
    */
   function tabForNode(node, index) {
+    const explicitTarget = node.dataset.v3TabTarget;
     const heading = $("h3", node)?.textContent?.trim().toLowerCase() || "";
     const text = node.textContent?.trim().toLowerCase() || "";
 
+    if (explicitTarget) return explicitTarget;
     if (index === 0 && node.classList.contains("admin-detail-grid")) {
       return "overview";
     }
@@ -187,11 +189,11 @@
       "customer",
       "documents",
       "payments",
+      "notes",
       "appointment",
       "ron",
       "communication",
       "timeline",
-      "notes",
     ];
 
     tabNames.forEach((tabName) => {

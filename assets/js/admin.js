@@ -528,10 +528,8 @@ async function getInvoiceItems(requestId, invoices = []) {
   });
 }
 
-function detailMap(rows) {
+function detailEntries(rows) {
   const list = Array.isArray(rows) ? rows : rows ? [rows] : [];
-  if (!list.length)
-    return '<p class="admin-muted">No service-specific details found for this request.</p>';
   const hidden = new Set([
     "id",
     "service_request_id",
@@ -552,7 +550,7 @@ function detailMap(rows) {
     String(key || "")
       .replace(/_/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
-  const cells = [];
+  const entries = [];
   list.forEach((row) => {
     Object.entries(row || {}).forEach(([key, value]) => {
       if (
@@ -562,14 +560,66 @@ function detailMap(rows) {
         value === ""
       )
         return;
-      cells.push(
-        `<div><span class="small-label">${escapeHtml(labels(key))}</span><strong>${escapeHtml(String(value))}</strong></div>`,
-      );
+      entries.push({ key, label: labels(key), value });
     });
   });
+  return entries;
+}
+
+function detailMap(entries) {
+  const cells = (entries || []).map(
+    ({ label, value }) =>
+      `<div><span class="small-label">${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`,
+  );
   return cells.length
     ? `<div class="admin-detail-grid service-detail-map">${cells.join("")}</div>`
     : '<p class="admin-muted">No service-specific details found for this request.</p>';
+}
+
+function groupedServiceDetails(rows, serviceType) {
+  const groups = { service: [], appointment: [], witness: [], printing: [] };
+  const appointmentPattern =
+    /date|time|appointment|location|address|platform|fulfillment|delivery|pickup|courier/;
+  const witnessPattern = /witness/;
+  const printingPattern = /print|scan|paper|page|copy|color|binding/;
+
+  detailEntries(rows).forEach((entry) => {
+    const key = String(entry.key || "").toLowerCase();
+    if (witnessPattern.test(key)) groups.witness.push(entry);
+    else if (printingPattern.test(key)) groups.printing.push(entry);
+    else if (appointmentPattern.test(key)) groups.appointment.push(entry);
+    else groups.service.push(entry);
+  });
+
+  const service = String(serviceType || "").toLowerCase();
+  const isMeaningfulRequirement = ({ value }) => {
+    if (value === true) return true;
+    if (typeof value === "number") return value > 0;
+    const normalized = String(value || "").trim().toLowerCase();
+    return !["", "0", "false", "no", "none", "not required"].includes(
+      normalized,
+    );
+  };
+  const showWitness = groups.witness.some(isMeaningfulRequirement);
+  const showPrinting =
+    service === "print" ||
+    service.includes("print") ||
+    groups.printing.some(isMeaningfulRequirement);
+
+  if (!showWitness) {
+    groups.service.push(...groups.witness);
+    groups.witness = [];
+  }
+  if (!showPrinting) {
+    groups.service.push(...groups.printing);
+    groups.printing = [];
+  }
+
+  return {
+    ...groups,
+    showWitness,
+    showPrinting,
+  };
 }
 
 async function getInvoices(requestId) {
@@ -662,7 +712,8 @@ function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
     finals.reduce((sum, inv) => sum + Number(inv.amount_due || 0), 0);
   const balanceDue = Math.max(0, totalServiceValue - paidToDate);
 
-  const rows = [];
+  const initialRows = [];
+  const finalRows = [];
   if (initial || originalQuote) {
     const initialNumber =
       initial?.invoice_number ||
@@ -670,7 +721,7 @@ function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
         (request?.invoice_number ||
           refFromId(request?.id || "").replace("APS-", "INV-")) + "-01"
       ).replace("-01-01", "-01");
-    rows.push(`<div class="invoice-summary-item clean-summary-item">
+    initialRows.push(`<div class="invoice-summary-item clean-summary-item">
       <div><span class="small-label">Initial Payment</span><strong>${escapeHtml(initialNumber)}</strong></div>
       <div><span>${initialPaid ? "Paid" : "Due / Pending"}</span><strong>${money(initialAmount)}</strong></div>
       ${initial?.receipt_url || initial?.receipt_pdf_url || request?.receipt_url || request?.receipt_pdf_url ? `<a href="${escapeHtml(initial?.receipt_url || initial?.receipt_pdf_url || request?.receipt_url || request?.receipt_pdf_url)}" target="_blank" rel="noopener">View Receipt</a>` : ""}
@@ -689,14 +740,14 @@ function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
         ? Number(inv.amount_paid || inv.paid_amount || inv.amount_due || 0)
         : Number(inv.amount_due || 0);
       const receipt = inv.receipt_url || inv.receipt_pdf_url;
-      rows.push(`<div class="invoice-summary-item clean-summary-item">
+      finalRows.push(`<div class="invoice-summary-item clean-summary-item">
         <div><span class="small-label">Final Balance</span><strong>${escapeHtml(inv.invoice_number || "Final Balance")}</strong></div>
         <div><span>${escapeHtml(status)}</span><strong>${money(displayAmount)}</strong></div>
         ${receipt ? `<a href="${escapeHtml(receipt)}" target="_blank" rel="noopener">View Receipt</a>` : ""}
       </div>`);
     });
   } else {
-    rows.push(
+    finalRows.push(
       '<div class="invoice-summary-item clean-summary-item muted-summary-item"><div><span class="small-label">Final Balance</span><strong>Not issued</strong></div><div><span>Only appears when a final balance invoice is issued.</span></div></div>',
     );
   }
@@ -707,7 +758,9 @@ function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
     <div><span class="small-label">Paid to Date</span><strong>${money(paidToDate)}</strong></div>
     <div><span class="small-label">Balance Due</span><strong>${money(balanceDue)}</strong></div>
   </div>
-  <div class="invoice-summary-list clean-invoice-summary">${rows.join("")}</div>`;
+  <div class="admin-v3-payment-group"><span class="small-label">Invoice #1</span><div class="invoice-summary-list clean-invoice-summary">${initialRows.join("") || '<div class="invoice-summary-item clean-summary-item muted-summary-item"><div><strong>Not issued</strong></div></div>'}</div></div>
+  <div class="admin-v3-payment-group"><span class="small-label">Additional / Final Invoice</span><div class="invoice-summary-list clean-invoice-summary">${finalRows.join("")}</div></div>
+  <div class="admin-v3-payment-group"><span class="small-label">Payment History</span><div class="invoice-summary-list clean-invoice-summary">${invoices.length ? invoices.map((invoice) => `<div class="invoice-summary-item clean-summary-item"><div><strong>${escapeHtml(invoice.invoice_number || "Invoice")}</strong></div><div><span>${escapeHtml(statusLabel(invoice.status || "pending"))}</span><strong>${money(invoice.amount_paid || invoice.paid_amount || invoice.amount_due || 0)}</strong></div></div>`).join("") : '<div class="invoice-summary-item clean-summary-item muted-summary-item"><div><strong>No invoice history</strong></div></div>'}</div></div>`;
 }
 
 function workflowKind(service) {
@@ -784,7 +837,7 @@ function internalWorkflowGuide(request) {
     steps[Math.min(index + 1, steps.length - 1)]?.[1] ||
     steps[index]?.[1] ||
     "Review request";
-  return `<div class="admin-detail-section internal-workflow-card premium-workflow-card">
+  return `<div class="admin-detail-section internal-workflow-card premium-workflow-card" data-v3-tab-target="overview">
     <div class="section-title-row"><div><h3>Internal Workflow Guide</h3><p class="admin-muted">${label} · Current step highlighted for internal review.</p></div></div>
     <div class="internal-workflow-steps clean-workflow-steps compact-workflow-steps">
       ${steps.map((step, i) => `<div class="internal-workflow-step ${i < index ? "done" : ""} ${i === index ? "current" : ""}"><span>${String(i + 1).padStart(2, "0")}</span><strong>${escapeHtml(step[1])}</strong></div>`).join("")}
@@ -1048,19 +1101,42 @@ async function selectRequest(id) {
     : invoiceItems.length
       ? invoiceItems
       : defaultInvoiceRows(selectedRequest);
+  const groupedDetails = groupedServiceDetails(
+    serviceDetails,
+    selectedRequest.service_type,
+  );
+  const customerName =
+    [customer?.first_name, customer?.last_name].filter(Boolean).join(" ") ||
+    "Customer not provided";
+  const activeClientNote =
+    selectedRequest.quote_notes || selectedRequest.customer_message || "";
+  const paidInvoiceCount = invoices.filter((invoice) =>
+    ["paid", "payment_received", "final_payment_received"].includes(
+      String(invoice.status || "").toLowerCase(),
+    ),
+  ).length;
+  const requestSchedule =
+    selectedRequest.appointment_date ||
+    selectedRequest.preferred_date ||
+    "Not scheduled";
 
   detail.innerHTML = `
-    <div class="admin-detail-grid">
-      <div><span class="small-label">Client</span><h3>${escapeHtml(customer?.first_name || "")} ${escapeHtml(customer?.last_name || "")}</h3><p>${escapeHtml(customer?.email || "")}<br>${escapeHtml(customer?.phone || "")}<br><strong>Prefers:</strong> ${escapeHtml(customer?.preferred_contact || "Not provided")}</p></div>
-      <div><span class="small-label">Service</span><h3>${serviceLabel(selectedRequest.service_type)}</h3><p>${selectedRequest.preferred_date || "No preferred date"} · ${selectedRequest.preferred_time_window || "No time selected"}</p></div>
-      <div><span class="small-label">Current Status</span><h3>${statusLabel(selectedRequest.status)}</h3><p>${isArchived(selectedRequest) ? "Archived" : "Active request"}</p></div>
-      <div><span class="small-label">Page Count</span><h3>${selectedRequest.detected_pdf_page_count || "—"}</h3><p>Detected PDF pages when available</p></div>
-    </div>
+    <section class="admin-v3-overview" data-v3-tab-target="overview">
+      <div class="admin-v3-overview-identity">
+        <div><span class="small-label">Order</span><h3>${escapeHtml(ref)}</h3><p>${escapeHtml(customerName)} · ${serviceLabel(selectedRequest.service_type)}</p></div>
+        <div class="admin-v3-overview-status"><span class="small-label">Current workflow</span><strong>${statusLabel(selectedRequest.workflow_status || selectedRequest.status)}</strong><span>${isArchived(selectedRequest) ? "Archived order" : "Active order"}</span></div>
+      </div>
+      <div class="admin-v3-overview-grid">
+        <div class="admin-v3-overview-card is-financial"><span class="small-label">Financial position</span><strong>${money(selectedRequest.quote_amount || selectedRequest.estimated_total || 0)}</strong><p>${paidInvoiceCount} of ${invoices.length} invoice${invoices.length === 1 ? "" : "s"} paid</p></div>
+        <div class="admin-v3-overview-card"><span class="small-label">Schedule</span><strong>${escapeHtml(requestSchedule)}</strong><p>${escapeHtml(selectedRequest.appointment_time || selectedRequest.preferred_time_window || "Time not confirmed")}</p></div>
+        <div class="admin-v3-overview-card is-supporting"><span class="small-label">Operational detail</span><strong>${selectedRequest.detected_pdf_page_count || "—"} pages</strong><p>Detected PDF pages when available</p></div>
+      </div>
+    </section>
 
     ${internalWorkflowGuide(selectedRequest)}
 
-    <div class="admin-detail-section invoice-builder-card">
-      <h3>Full Service Quote Builder</h3>
+    <div class="admin-detail-section invoice-builder-card" data-v3-tab-target="payments" data-payment-group="quote">
+      <div class="admin-v3-section-heading"><span class="small-label">Quote</span><h3>Full Service Quote Builder</h3></div>
       <p class="admin-muted">Build the full estimated service quote here. Saving the quote updates the customer-facing quote; status buttons control when emails are sent.</p>
       <div class="invoice-preset-row"><select id="invoicePresetSelect"><option value="">Add common line item…</option></select><button id="addPresetInvoiceRow" class="btn dark" type="button">Add Selected</button></div><div id="invoiceRows" class="invoice-rows"></div>
       <div class="invoice-total-line"><strong>Invoice Total</strong><span id="invoiceTotalPreview">$0.00</span></div>
@@ -1073,15 +1149,20 @@ async function selectRequest(id) {
       <p class="admin-muted small-admin-note">Save the quote first. Then use Status Update to send Quote Ready or move the request forward.</p>
     </div>
 
-    <div class="admin-detail-section invoice-summary-card">
-      <h3>Invoice Payment Summary</h3>
+    <div class="admin-detail-section invoice-summary-card" data-v3-tab-target="payments">
+      <div class="admin-v3-section-heading"><span class="small-label">Invoice #1 · Additional / Final Invoice · Payment History</span><h3>Invoice Payment Summary</h3></div>
       <p class="admin-muted">Track the full quote value, paid-to-date amount, initial payment, and final balance here.</p>
       ${invoiceSummaryHtml(invoices, selectedRequest, invoiceItems)}
     </div>
 
+    <div class="admin-detail-section admin-v3-financial-actions" data-v3-tab-target="payments">
+      <div><span class="small-label">Balance Summary</span><h3>${money(selectedRequest.balance_due_at_appointment || 0)} due at appointment</h3><p class="admin-muted">Use the quote and invoice records above as the authoritative financial history.</p></div>
+      <div><span class="small-label">Financial Actions</span><p class="admin-muted">Quote, invoice, receipt, and final-balance actions remain in their existing sections.</p></div>
+    </div>
+
     ${patch32AdminPanels(patch32Records)}
 
-    <div class="admin-detail-section appointment-editor-card">
+    <div class="admin-detail-section appointment-editor-card" data-v3-tab-target="appointment">
       <h3>Appointment / Fulfillment Details</h3>
       <p class="admin-muted">Update these before marking the appointment confirmed. These details appear on the customer's status page and in the appointment confirmation email.</p>
       <div class="admin-detail-grid appointment-fields">
@@ -1104,36 +1185,97 @@ async function selectRequest(id) {
       </div>
     </div>
 
-    <div class="admin-detail-section">
-      <h3>Service Details</h3>${detailMap(serviceDetails)}
-    </div>
+    <section class="admin-detail-section customer-identity-card" data-v3-tab-target="customer">
+      <div class="admin-v3-section-heading"><span class="small-label">Customer Identity</span><h3>${escapeHtml(customerName)}</h3></div>
+      <div class="admin-detail-grid">
+        <div><span class="small-label">APS Reference</span><strong>${escapeHtml(ref)}</strong></div>
+        <div><span class="small-label">Order Relationship</span><strong>Primary customer</strong></div>
+      </div>
+    </section>
 
-    <div class="admin-detail-section">
+    <section class="admin-detail-section" data-v3-tab-target="customer">
+      <div class="admin-v3-section-heading"><span class="small-label">Contact Information</span><h3>Customer Contact</h3></div>
+      <div class="admin-detail-grid">
+        <div><span class="small-label">Email</span><strong>${escapeHtml(customer?.email || "Not provided")}</strong></div>
+        <div><span class="small-label">Phone</span><strong>${escapeHtml(customer?.phone || "Not provided")}</strong></div>
+        <div><span class="small-label">Preferred Contact</span><strong>${escapeHtml(customer?.preferred_contact || "Not provided")}</strong></div>
+      </div>
+    </section>
+
+    <section class="admin-detail-section" data-v3-tab-target="customer">
+      <div class="admin-v3-section-heading"><span class="small-label">Service Details</span><h3>${serviceLabel(selectedRequest.service_type)}</h3></div>
+      ${detailMap(groupedDetails.service)}
+    </section>
+
+    <section class="admin-detail-section" data-v3-tab-target="customer">
+      <div class="admin-v3-section-heading"><span class="small-label">Appointment Information</span><h3>Requested & Confirmed Schedule</h3></div>
+      <div class="admin-detail-grid">
+        <div><span class="small-label">Requested Date</span><strong>${escapeHtml(selectedRequest.preferred_date || "Not provided")}</strong></div>
+        <div><span class="small-label">Requested Time</span><strong>${escapeHtml(selectedRequest.preferred_time_window || "Not provided")}</strong></div>
+        <div><span class="small-label">Confirmed Date</span><strong>${escapeHtml(selectedRequest.appointment_date || "Not confirmed")}</strong></div>
+        <div><span class="small-label">Confirmed Time</span><strong>${escapeHtml(selectedRequest.appointment_time || "Not confirmed")}</strong></div>
+        <div><span class="small-label">Location</span><strong>${escapeHtml(selectedRequest.appointment_location || "Not provided")}</strong></div>
+        <div><span class="small-label">Platform / Fulfillment</span><strong>${escapeHtml(selectedRequest.appointment_platform || "Not provided")}</strong></div>
+      </div>
+      ${groupedDetails.appointment.length ? detailMap(groupedDetails.appointment) : ""}
+    </section>
+
+    ${groupedDetails.showWitness ? `<section class="admin-detail-section" data-v3-tab-target="customer"><div class="admin-v3-section-heading"><span class="small-label">Witness Information</span><h3>Witness Requirements</h3></div>${detailMap(groupedDetails.witness)}</section>` : ""}
+
+    ${groupedDetails.showPrinting ? `<section class="admin-detail-section" data-v3-tab-target="customer"><div class="admin-v3-section-heading"><span class="small-label">Printing / Scanning</span><h3>Document Production</h3></div>${detailMap(groupedDetails.printing)}</section>` : ""}
+
+    <section class="admin-detail-section customer-financial-card" data-v3-tab-target="customer">
+      <div><span class="small-label">Financial Summary</span><h3>${money(selectedRequest.quote_amount || selectedRequest.estimated_total || 0)}</h3><p class="admin-muted">${invoices.length} invoice${invoices.length === 1 ? "" : "s"} · ${paidInvoiceCount} paid</p></div>
+      <button class="btn dark" type="button" data-open-workspace-tab="payments">Open Payments</button>
+    </section>
+
+    <div class="admin-detail-section" data-v3-tab-target="documents">
       <h3>Uploaded Files</h3>
       ${fileItems.length ? `<ul class="admin-file-list">${fileItems.join("")}</ul>` : '<p class="admin-muted">No files uploaded with this request.</p>'}
       <label>Upload additional administrator documents<input id="adminAdditionalFiles" type="file" multiple></label><button id="uploadAdminFilesBtn" class="btn dark" type="button">Upload Documents</button>
     </div>
 
-    <div class="admin-detail-section">
-      <h3>Status Update</h3>
-      <div class="status-actions">
-        <button data-status="under_review" class="btn dark" type="button">Under Review</button>
-        <button data-status="quote_ready" class="btn dark" type="button">Quote Ready</button>
-        <button data-status="awaiting_approval" class="btn dark" type="button">Awaiting Approval</button>
-        <button data-status="awaiting_payment" class="btn dark" type="button">Awaiting Payment</button>
-        <button data-status="payment_received" class="btn dark" type="button">Payment Received</button>
-        <button data-status="final_payment_received" class="btn dark" type="button">Final Payment Received</button>
-        <button data-status="appointment_confirmed" class="btn dark" type="button">Appointment Confirmed</button>
-        <button data-status="appointment_needs_rescheduling" class="btn dark" type="button">Needs Rescheduling</button>
-        <button data-status="quote_expired" class="btn dark" type="button">Quote Expired</button>
-        <button data-status="completed" class="btn dark" type="button">Completed</button>
+    <section class="admin-detail-section notes-active-card" data-v3-tab-target="notes">
+      <div class="admin-v3-section-heading"><span class="small-label">Customer Update</span><h3>Current Customer Update</h3></div>
+      <p class="admin-v3-note-display">${activeClientNote ? escapeHtml(activeClientNote) : "No current customer-facing update."}</p>
+      <button class="btn dark" type="button" data-open-workspace-tab="payments">Open Customer Update Editor</button>
+    </section>
+
+    <section class="admin-detail-section" data-v3-tab-target="notes">
+      <div class="admin-v3-notes-subsection">
+        <div class="admin-v3-section-heading"><span class="small-label">Workflow Status</span><h3>Update Order Status</h3></div>
+        <div class="status-actions">
+          <button data-status="under_review" class="btn dark" type="button">Under Review</button>
+          <button data-status="quote_ready" class="btn dark" type="button">Quote Ready</button>
+          <button data-status="awaiting_approval" class="btn dark" type="button">Awaiting Approval</button>
+          <button data-status="awaiting_payment" class="btn dark" type="button">Awaiting Payment</button>
+          <button data-status="payment_received" class="btn dark" type="button">Payment Received</button>
+          <button data-status="final_payment_received" class="btn dark" type="button">Final Payment Received</button>
+          <button data-status="appointment_confirmed" class="btn dark" type="button">Appointment Confirmed</button>
+          <button data-status="appointment_needs_rescheduling" class="btn dark" type="button">Needs Rescheduling</button>
+          <button data-status="quote_expired" class="btn dark" type="button">Quote Expired</button>
+          <button data-status="completed" class="btn dark" type="button">Completed</button>
+        </div>
       </div>
-      <textarea id="adminStatusNote" placeholder="Internal note or client-facing update draft…"></textarea>
+      <div class="admin-v3-notes-subsection admin-v3-internal-notes">
+        <div class="admin-v3-section-heading"><span class="small-label">Internal Notes</span><h3>APS Staff Note</h3></div>
+        <p class="admin-muted">Internal notes are visible only to APS staff and are not visible to the customer.</p>
+        <textarea id="adminStatusNote" placeholder="Add an internal note visible only to APS staff..."></textarea>
+      </div>
+    </section>
+
+    <section class="admin-detail-section notes-history-card" data-v3-tab-target="notes">
+      <div class="admin-v3-section-heading"><span class="small-label">Archived Customer Updates</span><h3>Customer Update History</h3></div>
+      <p class="admin-muted">Archived customer updates will appear here after the approved archive lifecycle is implemented in a later increment.</p>
+    </section>
+
+    <section class="admin-detail-section" data-v3-tab-target="notes">
+      <div class="admin-v3-section-heading"><span class="small-label">Request Administration</span><h3>Request Visibility</h3></div>
       <div class="status-actions archive-actions">
         <button id="archiveRequestBtn" class="btn dark" type="button">${isArchived(selectedRequest) ? "Restore Request" : "Archive Request"}</button>
       </div>
       <p class="admin-muted small-admin-note">Archiving hides the request from the active dashboard. It does not delete client files, invoice items, or history.</p>
-    </div>
+    </section>
   `;
   renderInvoiceRows(rows);
   $$(".status-actions button[data-status]", detail).forEach((btn) =>
@@ -1172,6 +1314,11 @@ async function selectRequest(id) {
     ),
   );
   $("#archiveRequestBtn")?.addEventListener("click", toggleArchiveRequest);
+  $$('[data-open-workspace-tab]', detail).forEach((button) => {
+    button.addEventListener("click", () =>
+      window.AdminV3?.activateTab(button.dataset.openWorkspaceTab),
+    );
+  });
 
   // Convert the newly rendered long detail view into the v3 tab workspace.
   window.AdminV3?.organizeRequestDetail();

@@ -647,6 +647,124 @@ button {
   gap: 14px;
 }
 
+.admin-v3-overview {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-v3-overview-identity,
+.admin-v3-financial-actions,
+.customer-financial-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px;
+  background: var(--aps-white);
+  border: 1px solid var(--aps-line);
+  border-radius: 12px;
+  box-shadow: var(--aps-shadow-soft);
+}
+
+.admin-v3-overview-identity h3,
+.admin-v3-section-heading h3,
+.customer-financial-card h3,
+.admin-v3-financial-actions h3 {
+  margin: 3px 0 4px;
+}
+
+.admin-v3-overview-status {
+  display: grid;
+  min-width: 190px;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--aps-cream);
+  border: 1px solid var(--aps-line);
+  border-radius: 10px;
+}
+
+.admin-v3-overview-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 0.8fr;
+  gap: 12px;
+}
+
+.admin-v3-overview-card {
+  padding: 17px;
+  background: var(--aps-white);
+  border: 1px solid var(--aps-line);
+  border-radius: 12px;
+}
+
+.admin-v3-overview-card strong {
+  display: block;
+  margin: 7px 0 4px;
+  color: var(--aps-navy);
+  font-family: "Playfair Display", serif;
+  font-size: 1rem;
+}
+
+.admin-v3-overview-card.is-financial {
+  border-color: rgba(201, 162, 39, 0.45);
+  box-shadow: inset 3px 0 0 var(--aps-gold);
+}
+
+.admin-v3-overview-card.is-supporting {
+  color: var(--aps-muted);
+  background: #fbfaf7;
+}
+
+.admin-v3-section-heading {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--aps-line);
+}
+
+.customer-identity-card {
+  border-left: 3px solid var(--aps-gold) !important;
+}
+
+.customer-financial-card .btn {
+  flex: 0 0 auto;
+}
+
+.admin-v3-note-display {
+  margin: 0 0 14px;
+  padding: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--aps-cream);
+  border-left: 3px solid var(--aps-gold);
+  border-radius: 8px;
+}
+
+[data-v3-tab-panel="customer"] .admin-detail-grid strong {
+  overflow-wrap: anywhere;
+}
+
+.notes-history-card {
+  background: #fbfaf7 !important;
+}
+
+.admin-v3-notes-subsection + .admin-v3-notes-subsection {
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid var(--aps-line);
+}
+
+.admin-v3-internal-notes textarea {
+  margin-top: 8px;
+}
+
+.admin-v3-payment-group {
+  margin-top: 18px;
+}
+
+.admin-v3-payment-group > .small-label {
+  display: block;
+  margin-bottom: 6px;
+}
+
 .admin-v3-placeholder-card {
   min-height: 220px;
   padding: 28px;
@@ -1327,6 +1445,15 @@ body.admin-v3-body {
   .admin-v3-module-view { padding: 22px 18px 40px; }
   .admin-v3-module-header { gap: 14px; }
   .admin-v3-table { min-width: 620px; }
+  .admin-v3-overview-grid { grid-template-columns: 1fr; }
+  .admin-v3-overview-identity,
+  .admin-v3-financial-actions,
+  .customer-financial-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .admin-v3-overview-status { min-width: 0; }
+  .customer-financial-card .btn { width: 100%; }
 }
 
 @media (max-width: 680px) {
@@ -1344,6 +1471,9 @@ body.admin-v3-body {
   }
   .admin-v3-workspace-tabs { padding-inline: 12px; }
   .admin-v3-workspace-content { padding: 16px 14px 40px; }
+  [data-v3-tab-panel="customer"] .admin-detail-grid {
+    grid-template-columns: 1fr;
+  }
   .admin-v3-workspace-content .admin-detail-section,
   .admin-v3-workspace-content .admin-detail-grid > div,
   .admin-v3-placeholder-card,
