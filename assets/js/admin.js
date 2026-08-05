@@ -637,6 +637,102 @@ async function getInvoices(requestId) {
   return data || [];
 }
 
+async function getArchivedCustomerUpdates(requestId) {
+  const historyQuery = await adminClient
+    .from("request_customer_note_history")
+    .select(
+      "id,note_text,original_author,original_created_at,archived_at,archived_by,source_note_field",
+    )
+    .eq("service_request_id", requestId)
+    .order("archived_at", { ascending: false });
+
+  if (!historyQuery.error) {
+    return { updates: historyQuery.data || [], error: null };
+  }
+
+  // Keep the admin history readable during the deployment window before the
+  // forward metadata migration is applied. Other errors remain visible.
+  const missingMetadataColumns =
+    historyQuery.error.code === "42703" ||
+    /column .* does not exist/i.test(historyQuery.error.message || "");
+  if (!missingMetadataColumns) {
+    return { updates: [], error: historyQuery.error };
+  }
+
+  const fallbackQuery = await adminClient
+    .from("request_customer_note_history")
+    .select("id,note_text,archived_at")
+    .eq("service_request_id", requestId)
+    .order("archived_at", { ascending: false });
+
+  return {
+    updates: fallbackQuery.data || [],
+    error: fallbackQuery.error,
+  };
+}
+
+function archivedCustomerUpdatesHtml({ updates = [], error = null } = {}) {
+  if (error) {
+    console.error("Archived customer updates could not be loaded:", error);
+    return `<div class="admin-v3-history-state is-error" role="alert" data-history-state="error">
+      <strong>Archived updates are temporarily unavailable.</strong>
+      <p>Refresh the request or confirm the customer-update archive migration has been applied.</p>
+    </div>`;
+  }
+
+  if (!updates.length) {
+    return `<div class="admin-v3-history-state" data-history-state="empty">
+      <strong>No archived customer updates.</strong>
+      <p>Completed customer updates will appear here after the order becomes financially complete.</p>
+    </div>`;
+  }
+
+  return `<ol class="admin-v3-customer-update-history" data-history-state="populated">
+    ${updates
+      .map((update) => {
+        const originalDetails = [
+          update.original_author
+            ? `Originally added by ${escapeHtml(update.original_author)}`
+            : null,
+          update.original_created_at
+            ? new Date(update.original_created_at).toLocaleString()
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        const archiveDetails = [
+          update.archived_at
+            ? `Archived ${new Date(update.archived_at).toLocaleString()}`
+            : "Archived date unavailable",
+          update.archived_by
+            ? `by ${escapeHtml(update.archived_by)}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        return `<li class="admin-v3-customer-update-entry">
+          <p>${escapeHtml(update.note_text || "")}</p>
+          ${originalDetails ? `<small>${originalDetails}</small>` : ""}
+          <small>${archiveDetails}</small>
+        </li>`;
+      })
+      .join("")}
+  </ol>`;
+}
+
+async function renderArchivedCustomerUpdates(requestId) {
+  const historyRoot = $("#archivedCustomerUpdatesHistory");
+  if (!historyRoot) return;
+
+  const result = await getArchivedCustomerUpdates(requestId);
+  if (selectedRequest?.id !== requestId) return;
+
+  const currentRoot = $("#archivedCustomerUpdatesHistory");
+  if (!currentRoot) return;
+  currentRoot.innerHTML = archivedCustomerUpdatesHtml(result);
+}
+
 function invoiceSummaryHtml(invoices = [], request = null, quoteItems = []) {
   const quoteTotal = quoteItems.reduce(
     (sum, item) =>
@@ -1266,7 +1362,11 @@ async function selectRequest(id) {
 
     <section class="admin-detail-section notes-history-card" data-v3-tab-target="notes">
       <div class="admin-v3-section-heading"><span class="small-label">Archived Customer Updates</span><h3>Customer Update History</h3></div>
-      <p class="admin-muted">Archived customer updates will appear here after the approved archive lifecycle is implemented in a later increment.</p>
+      <div id="archivedCustomerUpdatesHistory" aria-live="polite">
+        <div class="admin-v3-history-state" data-history-state="loading">
+          <strong>Loading archived customer updates…</strong>
+        </div>
+      </div>
     </section>
 
     <section class="admin-detail-section" data-v3-tab-target="notes">
@@ -1322,6 +1422,7 @@ async function selectRequest(id) {
 
   // Convert the newly rendered long detail view into the v3 tab workspace.
   window.AdminV3?.organizeRequestDetail();
+  void renderArchivedCustomerUpdates(id);
 }
 
 async function saveAppointmentDetails() {

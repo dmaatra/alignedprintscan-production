@@ -756,6 +756,43 @@ button {
   margin-top: 8px;
 }
 
+.admin-v3-history-state,
+.admin-v3-customer-update-entry {
+  padding: 14px;
+  background: var(--aps-white);
+  border: 1px solid var(--aps-line);
+  border-radius: 10px;
+}
+
+.admin-v3-history-state p,
+.admin-v3-customer-update-entry p {
+  margin: 6px 0 0;
+}
+
+.admin-v3-history-state.is-error {
+  color: var(--aps-danger);
+  border-color: rgba(179, 58, 58, 0.35);
+}
+
+.admin-v3-customer-update-history {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-v3-customer-update-entry p {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.admin-v3-customer-update-entry small {
+  display: block;
+  color: var(--aps-muted);
+}
+
 .admin-v3-payment-group {
   margin-top: 18px;
 }
