@@ -15,7 +15,7 @@
     />
 
     <link rel="stylesheet" href="assets/css/styles.css" />
-    <link rel="stylesheet" href="assets/css/admin-v3.css" />
+    <link rel="stylesheet" href="assets/css/admin-v3.css?v=20260804-phase41-m1" />
 
     <link rel="icon" href="assets/images/logo-symbol.webp" type="image/webp" />
     <link rel="apple-touch-icon" href="assets/images/logo-symbol.webp" />
@@ -39,61 +39,50 @@
       <nav class="admin-v3-nav" aria-label="Operations navigation">
         <p class="admin-v3-nav-label">Overview</p>
         <a href="#requests" data-admin-view="requests" class="is-active">
-          <span aria-hidden="true">⌂</span>
           <span>Dashboard</span>
         </a>
 
         <p class="admin-v3-nav-label">Operations</p>
         <a href="#requests" data-admin-view="requests">
-          <span aria-hidden="true">▣</span>
           <span>Requests</span>
           <strong id="navRequestCount">0</strong>
         </a>
         <a href="#calendar" data-admin-view="calendar">
-          <span aria-hidden="true">□</span>
           <span>Calendar</span>
         </a>
         <a href="#sessions" data-admin-view="sessions">
-          <span aria-hidden="true">✣</span>
           <span>RON Sessions</span>
           <em>SOON</em>
         </a>
 
         <p class="admin-v3-nav-label">Financial</p>
         <a href="#invoices" data-admin-view="invoices">
-          <span aria-hidden="true">▤</span>
           <span>Invoices</span>
         </a>
         <a href="#payments" data-admin-view="payments">
-          <span aria-hidden="true">⇄</span>
           <span>Payments</span>
         </a>
 
         <p class="admin-v3-nav-label">Clients</p>
         <a href="#customers" data-admin-view="customers">
-          <span aria-hidden="true">♙</span>
           <span>Customers</span>
         </a>
 
         <p class="admin-v3-nav-label">Documents</p>
         <a href="#documents" data-admin-view="documents">
-          <span aria-hidden="true">▧</span>
           <span>Documents</span>
         </a>
         <a href="#templates" data-admin-view="templates">
-          <span aria-hidden="true">☷</span>
           <span>Templates</span>
         </a>
 
         <p class="admin-v3-nav-label">Support</p>
         <a href="#support" data-admin-view="support">
-          <span aria-hidden="true">◌</span>
           <span>Support Tickets</span>
         </a>
 
         <p class="admin-v3-nav-label">System</p>
         <a href="#settings" data-admin-view="settings">
-          <span aria-hidden="true">⚙</span>
           <span>Settings</span>
         </a>
       </nav>
@@ -137,10 +126,8 @@
       <div class="admin-v3-top-actions">
         <button class="admin-v3-button admin-v3-button--gold" id="newRequestButton" type="button">
           <span aria-hidden="true">＋</span>
-          New Request
+          New Order
         </button>
-        <button class="admin-v3-icon-button" type="button" aria-label="Notifications">♢</button>
-        <button class="admin-v3-icon-button" type="button" aria-label="Messages">□</button>
       </div>
     </header>
 
@@ -227,11 +214,11 @@
           <button type="button" data-workspace-tab="customer">Customer</button>
           <button type="button" data-workspace-tab="documents">Documents</button>
           <button type="button" data-workspace-tab="payments">Payments</button>
+          <button type="button" data-workspace-tab="notes">Notes</button>
           <button type="button" data-workspace-tab="appointment">Appointment</button>
           <button type="button" data-workspace-tab="ron">RON Session</button>
           <button type="button" data-workspace-tab="communication">Communication</button>
           <button type="button" data-workspace-tab="timeline">Timeline</button>
-          <button type="button" data-workspace-tab="notes">Notes</button>
         </nav>
 
         <div class="admin-v3-workspace-content" id="requestDetail">

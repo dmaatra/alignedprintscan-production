@@ -138,7 +138,7 @@ button {
 .admin-v3-nav a {
   display: grid;
   min-height: 38px;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   margin: 2px 0;
@@ -159,11 +159,6 @@ button {
 
 .admin-v3-nav a.is-active {
   box-shadow: inset 3px 0 0 var(--aps-gold);
-}
-
-.admin-v3-nav a > span:first-child {
-  text-align: center;
-  color: var(--aps-gold-light);
 }
 
 .admin-v3-nav a strong,
@@ -652,6 +647,161 @@ button {
   gap: 14px;
 }
 
+.admin-v3-overview {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-v3-overview-identity,
+.admin-v3-financial-actions,
+.customer-financial-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px;
+  background: var(--aps-white);
+  border: 1px solid var(--aps-line);
+  border-radius: 12px;
+  box-shadow: var(--aps-shadow-soft);
+}
+
+.admin-v3-overview-identity h3,
+.admin-v3-section-heading h3,
+.customer-financial-card h3,
+.admin-v3-financial-actions h3 {
+  margin: 3px 0 4px;
+}
+
+.admin-v3-overview-status {
+  display: grid;
+  min-width: 190px;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--aps-cream);
+  border: 1px solid var(--aps-line);
+  border-radius: 10px;
+}
+
+.admin-v3-overview-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 0.8fr;
+  gap: 12px;
+}
+
+.admin-v3-overview-card {
+  padding: 17px;
+  background: var(--aps-white);
+  border: 1px solid var(--aps-line);
+  border-radius: 12px;
+}
+
+.admin-v3-overview-card strong {
+  display: block;
+  margin: 7px 0 4px;
+  color: var(--aps-navy);
+  font-family: "Playfair Display", serif;
+  font-size: 1rem;
+}
+
+.admin-v3-overview-card.is-financial {
+  border-color: rgba(201, 162, 39, 0.45);
+  box-shadow: inset 3px 0 0 var(--aps-gold);
+}
+
+.admin-v3-overview-card.is-supporting {
+  color: var(--aps-muted);
+  background: #fbfaf7;
+}
+
+.admin-v3-section-heading {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--aps-line);
+}
+
+.customer-identity-card {
+  border-left: 3px solid var(--aps-gold) !important;
+}
+
+.customer-financial-card .btn {
+  flex: 0 0 auto;
+}
+
+.admin-v3-note-display {
+  margin: 0 0 14px;
+  padding: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--aps-cream);
+  border-left: 3px solid var(--aps-gold);
+  border-radius: 8px;
+}
+
+[data-v3-tab-panel="customer"] .admin-detail-grid strong {
+  overflow-wrap: anywhere;
+}
+
+.notes-history-card {
+  background: #fbfaf7 !important;
+}
+
+.admin-v3-notes-subsection + .admin-v3-notes-subsection {
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid var(--aps-line);
+}
+
+.admin-v3-internal-notes textarea {
+  margin-top: 8px;
+}
+
+.admin-v3-history-state,
+.admin-v3-customer-update-entry {
+  padding: 14px;
+  background: var(--aps-white);
+  border: 1px solid var(--aps-line);
+  border-radius: 10px;
+}
+
+.admin-v3-history-state p,
+.admin-v3-customer-update-entry p {
+  margin: 6px 0 0;
+}
+
+.admin-v3-history-state.is-error {
+  color: var(--aps-danger);
+  border-color: rgba(179, 58, 58, 0.35);
+}
+
+.admin-v3-customer-update-history {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-v3-customer-update-entry p {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.admin-v3-customer-update-entry small {
+  display: block;
+  color: var(--aps-muted);
+}
+
+.admin-v3-payment-group {
+  margin-top: 18px;
+}
+
+.admin-v3-payment-group > .small-label {
+  display: block;
+  margin-bottom: 6px;
+}
+
 .admin-v3-placeholder-card {
   min-height: 220px;
   padding: 28px;
@@ -1059,8 +1209,6 @@ body.admin-v3-body {
   line-height: 1.35;
 }
 
-/* The approved admin navigation is label-led and icon-free. */
-.admin-v3-nav a > span:first-child { display: none; }
 .admin-v3-nav a strong,
 .admin-v3-nav a em {
   position: static;
@@ -1294,6 +1442,412 @@ body.admin-v3-body {
   font-size: 0.875rem;
 }
 
+/* Phase 4.1 Milestone 1 — guided administrator order entry */
+.admin-v3-order-wizard {
+  display: grid;
+  gap: 18px;
+  width: min(100%, 1060px);
+}
+.admin-v3-order-wizard [hidden] { display: none !important; }
+.admin-v3-wizard-progress {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(118px, 1fr));
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 8px;
+  scrollbar-width: thin;
+}
+.admin-v3-wizard-progress-step {
+  position: relative;
+  display: grid;
+  min-width: 118px;
+  min-height: 64px;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #d8d4ca;
+  border-radius: 12px;
+  padding: 10px;
+  background: #fff;
+  color: #65708a;
+  font: inherit;
+  text-align: left;
+}
+.admin-v3-wizard-progress-step > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: #eef0f6;
+  color: #101744;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+.admin-v3-wizard-progress-step strong {
+  overflow-wrap: normal;
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+.admin-v3-wizard-progress-step.is-current {
+  border-color: #b99145;
+  box-shadow: 0 0 0 3px rgba(185,145,69,.14);
+  color: #101744;
+}
+.admin-v3-wizard-progress-step.is-current > span {
+  background: #101744;
+  color: #fff;
+}
+.admin-v3-wizard-progress-step.is-complete {
+  border-color: rgba(36,122,82,.35);
+  color: #101744;
+  cursor: pointer;
+}
+.admin-v3-wizard-progress-step.is-complete > span {
+  background: #247a52;
+  color: #fff;
+}
+.admin-v3-wizard-progress-step:disabled { opacity: .72; cursor: default; }
+.admin-v3-wizard-progress-step:focus-visible {
+  outline: 3px solid rgba(185,145,69,.45);
+  outline-offset: 2px;
+}
+.admin-v3-wizard-card { padding: clamp(20px, 3vw, 34px); }
+.admin-v3-wizard-step { min-height: 390px; }
+.admin-v3-wizard-heading {
+  max-width: 700px;
+  margin-bottom: 24px;
+}
+.admin-v3-wizard-heading > span {
+  display: block;
+  margin-bottom: 6px;
+  color: #9b7b3f;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.admin-v3-wizard-heading h2 {
+  margin-bottom: 6px;
+  font-size: clamp(1.4rem, 2.3vw, 1.85rem);
+}
+.admin-v3-wizard-heading p { margin: 0; }
+.admin-v3-order-wizard label > span:first-child {
+  color: #101744;
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+.admin-v3-order-wizard > .admin-v3-wizard-card > .admin-v3-wizard-step > label,
+.admin-v3-wizard-notes,
+.admin-v3-document-control label {
+  display: grid;
+  gap: 7px;
+}
+.admin-v3-order-wizard :where(input:not([type="radio"]):not([type="checkbox"]), select, textarea) {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #d8d4ca;
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: #fff;
+  color: #101744;
+  font: inherit;
+  font-size: 0.875rem;
+}
+.admin-v3-order-wizard :where(input, select, textarea):focus-visible {
+  outline: 3px solid rgba(185,145,69,.35);
+  outline-offset: 1px;
+  border-color: #9b7b3f;
+}
+.admin-v3-order-wizard .admin-v3-form-grid { margin-top: 18px; }
+.admin-v3-service-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.admin-v3-service-choices label { display: block; cursor: pointer; }
+.admin-v3-service-choices input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.admin-v3-service-choices label > span {
+  display: grid;
+  min-height: 128px;
+  align-content: center;
+  gap: 7px;
+  border: 1px solid #d8d4ca;
+  border-radius: 14px;
+  padding: 20px;
+  background: #fff;
+  color: #101744;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.admin-v3-service-choices small { color: #65708a; line-height: 1.45; }
+.admin-v3-service-choices input:checked + span {
+  border-color: #b99145;
+  box-shadow: 0 0 0 3px rgba(185,145,69,.14), var(--aps-shadow);
+}
+.admin-v3-service-choices input:focus-visible + span {
+  outline: 3px solid rgba(185,145,69,.4);
+  outline-offset: 2px;
+}
+.admin-v3-form-grid label:has(.admin-v3-check) {
+  display: flex;
+  min-height: 44px;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  align-self: end;
+  border: 1px solid #e5dfd3;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.admin-v3-check { width: 20px; height: 20px; accent-color: #101744; }
+.admin-v3-wizard-pricing-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, .8fr);
+  gap: 18px;
+}
+.admin-v3-quote-summary,
+.admin-v3-document-control {
+  min-width: 0;
+  border: 1px solid #e5dfd3;
+  border-radius: 14px;
+  padding: 20px;
+  background: #faf9f6;
+}
+.admin-v3-quote-summary > span {
+  display: block;
+  color: #65708a;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.admin-v3-quote-summary > strong {
+  display: block;
+  margin: 8px 0 14px;
+  color: #101744;
+  font-size: 2rem;
+}
+.admin-v3-quote-summary #adminWizardLineItems { display: grid; gap: 8px; }
+.admin-v3-quote-summary #adminWizardLineItems p {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e5dfd3;
+  color: #4f5972;
+  font-size: 0.8125rem;
+}
+.admin-v3-quote-summary small { display: block; margin-top: 16px; color: #65708a; line-height: 1.5; }
+.admin-v3-document-control p { margin: 10px 0 0; font-size: 0.8125rem; }
+.admin-v3-wizard-notes { margin-top: 18px; }
+.admin-v3-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.admin-v3-review-grid article {
+  min-width: 0;
+  border: 1px solid #e5dfd3;
+  border-radius: 12px;
+  padding: 17px;
+  background: #faf9f6;
+}
+.admin-v3-review-grid h3 { font-size: 1rem; }
+.admin-v3-review-grid dl { display: grid; gap: 10px; margin: 0; }
+.admin-v3-review-grid dl > div { display: grid; gap: 2px; }
+.admin-v3-review-grid dt { color: #65708a; font-size: 0.7rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.admin-v3-review-grid dd { margin: 0; color: #101744; font-size: 0.875rem; overflow-wrap: anywhere; }
+.admin-v3-review-grid article > p { margin: 0; color: #101744; white-space: pre-wrap; }
+.admin-v3-confirmation {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  border: 1px solid rgba(185,145,69,.45);
+  border-radius: 12px;
+  padding: 13px 15px;
+  background: rgba(185,145,69,.08);
+}
+.admin-v3-confirmation input { width: 20px; height: 20px; flex: 0 0 auto; accent-color: #101744; }
+.admin-v3-wizard-message { min-height: 22px; margin-top: 12px; color: #a33b2f; font-size: 0.8125rem; font-weight: 700; }
+.admin-v3-wizard-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-top: 8px;
+  padding-top: 18px;
+  border-top: 1px solid #e5dfd3;
+}
+.admin-v3-wizard-actions > div { display: flex; gap: 10px; }
+.admin-v3-order-wizard #adminCreateRequestStatus { margin: 10px 0 0; color: #4f5972; font-size: 0.8125rem; }
+
+/* Phase 4.1 Milestone 1 — APS Scheduling Center */
+.admin-v3-scheduling-center { display: grid; gap: 18px; min-width: 0; }
+.admin-v3-calendar-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid #e5dfd3;
+  border-radius: 14px;
+  padding: 16px;
+  background: #fff;
+  box-shadow: var(--aps-shadow);
+}
+.admin-v3-calendar-navigation,
+.admin-v3-calendar-filters { display: flex; flex-wrap: wrap; gap: 10px; }
+.admin-v3-calendar-filters label {
+  display: grid;
+  min-width: 190px;
+  gap: 5px;
+  color: #101744;
+  font-size: .75rem;
+  font-weight: 800;
+}
+.admin-v3-calendar-filters select {
+  min-height: 44px;
+  border: 1px solid #d8d4ca;
+  border-radius: 10px;
+  padding: 9px 34px 9px 11px;
+  background: #fff;
+  color: #101744;
+  font: inherit;
+}
+.admin-v3-scheduling-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(330px, .8fr);
+  gap: 18px;
+  align-items: start;
+}
+.admin-v3-month-calendar,
+.admin-v3-calendar-agenda {
+  min-width: 0;
+  border: 1px solid #e5dfd3;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: var(--aps-shadow);
+}
+.admin-v3-month-calendar > header,
+.admin-v3-calendar-agenda > header { padding: 20px 22px; border-bottom: 1px solid #e5dfd3; }
+.admin-v3-month-calendar > header > span,
+.admin-v3-calendar-agenda > header span:first-child {
+  color: #9b7b3f;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.admin-v3-month-calendar > header h2,
+.admin-v3-calendar-agenda > header h2 { margin: 4px 0 0; color: #101744; font-size: clamp(1.35rem,2vw,1.75rem); }
+.admin-v3-calendar-notice { margin: 7px 0 0; color: #65708a; font-size: .8125rem; }
+.admin-v3-calendar-weekdays,
+.admin-v3-calendar-grid { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); }
+.admin-v3-calendar-weekdays { border-bottom: 1px solid #e5dfd3; background: #faf9f6; }
+.admin-v3-calendar-weekdays span {
+  padding: 10px 5px;
+  color: #65708a;
+  font-size: .67rem;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.admin-v3-calendar-day {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 104px;
+  align-content: start;
+  gap: 6px;
+  border: 0;
+  border-right: 1px solid #eee9e0;
+  border-bottom: 1px solid #eee9e0;
+  padding: 9px;
+  background: #fff;
+  color: #101744;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.admin-v3-calendar-day:nth-child(7n) { border-right: 0; }
+.admin-v3-calendar-day.is-outside { background: #faf9f6; color: #8d94a5; }
+.admin-v3-calendar-day.is-selected { z-index: 1; box-shadow: inset 0 0 0 3px #b99145; background: #fffdf8; }
+.admin-v3-calendar-day.is-today .admin-v3-calendar-day-number { color: #9b6d18; }
+.admin-v3-calendar-day:focus-visible { z-index: 2; outline: 3px solid rgba(185,145,69,.45); outline-offset: -3px; }
+.admin-v3-calendar-day-number { display: flex; justify-content: space-between; gap: 4px; font-size: .8125rem; font-weight: 800; }
+.admin-v3-calendar-day-number small { color: #9b6d18; font-size: .55rem; letter-spacing: .04em; text-transform: uppercase; }
+.admin-v3-calendar-day > strong {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: #101744;
+  color: #fff;
+  font-size: .67rem;
+}
+.admin-v3-calendar-day-services { display: flex; min-width: 0; flex-wrap: wrap; gap: 3px; }
+.admin-v3-calendar-day-services span,
+.admin-v3-service-label,
+.admin-v3-appointment-kind {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: #eef0f6;
+  color: #101744;
+  font-size: .6rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.admin-v3-calendar-agenda > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.admin-v3-calendar-agenda > header p { margin: 5px 0 0; color: #65708a; font-size: .8125rem; }
+.admin-v3-agenda-list { display: grid; gap: 12px; padding: 16px; }
+.admin-v3-agenda-card {
+  min-width: 0;
+  border: 1px solid #e5dfd3;
+  border-radius: 13px;
+  padding: 16px;
+  background: #faf9f6;
+}
+.admin-v3-agenda-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.admin-v3-agenda-card-head > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.admin-v3-appointment-kind { background: rgba(185,145,69,.12); color: #765922; }
+.admin-v3-agenda-card h3 { margin: 14px 0 3px; color: #101744; font-size: 1.05rem; overflow-wrap: anywhere; }
+.admin-v3-agenda-reference { margin: 0; color: #65708a; font-size: .75rem; overflow-wrap: anywhere; }
+.admin-v3-agenda-card dl { display: grid; gap: 9px; margin: 14px 0 0; }
+.admin-v3-agenda-card dl > div { display: grid; gap: 2px; }
+.admin-v3-agenda-card dt { color: #65708a; font-size: .65rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.admin-v3-agenda-card dd { margin: 0; color: #101744; font-size: .8125rem; overflow-wrap: anywhere; }
+.admin-v3-agenda-actions { display: grid; gap: 8px; margin-top: 16px; }
+.admin-v3-agenda-actions :where(a,button) { width: 100%; justify-content: center; text-align: center; }
+.admin-v3-calendar-empty { padding: 28px 18px; text-align: center; }
+.admin-v3-calendar-empty h3 { margin: 0; color: #101744; }
+.admin-v3-calendar-empty p { margin: 8px 0 0; color: #65708a; line-height: 1.6; }
+.admin-v3-calendar-state { display: grid; min-height: 360px; place-content: center; justify-items: center; text-align: center; }
+.admin-v3-calendar-state h2 { margin: 14px 0 0; }
+.admin-v3-calendar-state p { max-width: 520px; margin: 7px 0 16px; }
+.admin-v3-calendar-loader { width: 34px; height: 34px; border: 3px solid #e5dfd3; border-top-color: #b99145; border-radius: 50%; animation: aps-calendar-spin .8s linear infinite; }
+@keyframes aps-calendar-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 1100px) {
+  .admin-v3-scheduling-layout { grid-template-columns: 1fr; }
+  .admin-v3-calendar-agenda { order: 2; }
+}
+
 @media (max-width: 1180px) {
   :root {
     --aps-sidebar-width: 190px;
@@ -1334,6 +1888,15 @@ body.admin-v3-body {
   .admin-v3-module-view { padding: 22px 18px 40px; }
   .admin-v3-module-header { gap: 14px; }
   .admin-v3-table { min-width: 620px; }
+  .admin-v3-overview-grid { grid-template-columns: 1fr; }
+  .admin-v3-overview-identity,
+  .admin-v3-financial-actions,
+  .customer-financial-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .admin-v3-overview-status { min-width: 0; }
+  .customer-financial-card .btn { width: 100%; }
 }
 
 @media (max-width: 680px) {
@@ -1351,6 +1914,9 @@ body.admin-v3-body {
   }
   .admin-v3-workspace-tabs { padding-inline: 12px; }
   .admin-v3-workspace-content { padding: 16px 14px 40px; }
+  [data-v3-tab-panel="customer"] .admin-detail-grid {
+    grid-template-columns: 1fr;
+  }
   .admin-v3-workspace-content .admin-detail-section,
   .admin-v3-workspace-content .admin-detail-grid > div,
   .admin-v3-placeholder-card,
@@ -1367,6 +1933,33 @@ body.admin-v3-body {
     flex-direction: column-reverse;
   }
   .admin-v3-form-actions .admin-v3-button { width: 100%; }
+  .admin-v3-wizard-card { padding: 18px 14px; }
+  .admin-v3-wizard-step { min-height: 0; }
+  .admin-v3-service-choices,
+  .admin-v3-wizard-pricing-grid,
+  .admin-v3-review-grid { grid-template-columns: 1fr; }
+  .admin-v3-service-choices label > span { min-height: 92px; padding: 16px; }
+  .admin-v3-wizard-actions { align-items: stretch; flex-direction: column-reverse; }
+  .admin-v3-wizard-actions > button,
+  .admin-v3-wizard-actions > div,
+  .admin-v3-wizard-actions > div > button { width: 100%; }
+  .admin-v3-wizard-actions > div { flex-direction: column-reverse; }
+  .admin-v3-calendar-toolbar { align-items: stretch; flex-direction: column; padding: 14px; }
+  .admin-v3-calendar-navigation { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .admin-v3-calendar-navigation .admin-v3-button { min-width: 0; padding-inline: 8px; font-size: .65rem; }
+  .admin-v3-calendar-filters { display: grid; grid-template-columns: 1fr; }
+  .admin-v3-calendar-filters label { min-width: 0; }
+  .admin-v3-month-calendar > header,
+  .admin-v3-calendar-agenda > header { padding: 16px; }
+  .admin-v3-calendar-agenda > header { align-items: stretch; flex-direction: column; }
+  .admin-v3-calendar-agenda > header .admin-v3-button { width: 100%; }
+  .admin-v3-calendar-day { min-height: 72px; gap: 4px; padding: 6px 4px; }
+  .admin-v3-calendar-day-number { font-size: .7rem; }
+  .admin-v3-calendar-day-number small { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .admin-v3-calendar-day > strong { width: 20px; height: 20px; font-size: .6rem; }
+  .admin-v3-calendar-day-services { display: grid; gap: 2px; }
+  .admin-v3-calendar-day-services span { min-height: 16px; justify-content: center; padding: 2px; font-size: .48rem; }
+  .admin-v3-agenda-list { padding: 12px; }
 }
 
 @media (max-width: 360px) {
@@ -1378,6 +1971,9 @@ body.admin-v3-body {
   .admin-v3-rail-heading { padding-inline: 14px; }
   .admin-v3-list-search { margin-inline: 12px; }
   .admin-v3-filter-row { padding-inline: 12px; }
+  .admin-v3-month-calendar { overflow-x: auto; }
+  .admin-v3-calendar-weekdays,
+  .admin-v3-calendar-grid { min-width: 308px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
