@@ -358,7 +358,7 @@
   bindShellEvents();
 
   /* Phase 4.1 Milestone 1 — functional operations modules. */
-  const moduleState = { requests: [], supportTickets: [], activeView: "requests" };
+  const moduleState = { requests: [], supportTickets: [], activeView: "requests", newOrderStep: 0, newOrderMaxStep: 0 };
   const appView = $("#requests");
   const moduleView = $("#adminModuleView");
   const moduleContent = $("#adminModuleContent");
@@ -404,8 +404,117 @@
     if(!rows.length)return '<div class="admin-v3-module-card admin-v3-empty-module"><h3>No scheduled dates</h3><p>Requested and confirmed appointment dates will appear here.</p></div>';
     return `<div class="admin-v3-calendar-list">${rows.map(r=>{const c=getCustomer(r)||{};const date=r.appointment_date||r.preferred_date;const time=r.appointment_time||r.preferred_time_window||"Time not set";return `<article class="admin-v3-calendar-item"><strong>${safe(new Date(`${date}T12:00:00`).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}</strong><div><h3>${safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client")}</h3><p>${safe(time)} · ${safe(labelFromStatus(r.service_type))}</p></div><button class="admin-v3-button admin-v3-button--outline module-open-request" data-request-id="${safe(r.id)}" data-tab="appointment" type="button">Open</button></article>`}).join("")}</div>`;
   }
+  const wizardSteps = ["Customer", "Service", "Details", "Scheduling", "Pricing", "Review"];
+  const serviceLabels = { ron: "Remote Online Notary", mobile: "Mobile Notary", print: "Print & Scan" };
+  function wizardCustomers() {
+    const customers = new Map();
+    moduleState.requests.forEach((request) => {
+      const customer = getCustomer(request);
+      if (customer?.id) customers.set(customer.id, customer);
+    });
+    return [...customers.values()].sort((a, b) => `${a.last_name || ""}${a.first_name || ""}`.localeCompare(`${b.last_name || ""}${b.first_name || ""}`));
+  }
+  function field(label, name, input, options = "") {
+    return `<label class="${options}"><span>${label}</span>${input}</label>`;
+  }
   function renderNewRequest() {
-    return `<form id="adminCreateRequestForm" class="admin-v3-module-card"><div class="admin-v3-form-grid"><label>First name<input name="first_name" required autocomplete="given-name"></label><label>Last name<input name="last_name" required autocomplete="family-name"></label><label>Email<input name="email" type="email" required autocomplete="email"></label><label>Phone<input name="phone" type="tel" autocomplete="tel"></label><label>Service<select name="service_type" required><option value="ron">Remote Online Notary</option><option value="mobile">Mobile Notary</option><option value="print">Print & Scan</option></select></label><label>Preferred contact<select name="preferred_contact"><option value="email">Email</option><option value="phone">Phone</option><option value="text">Text</option></select></label><label>Requested date<input name="preferred_date" type="date"></label><label>Time window<input name="preferred_time_window" placeholder="Example: 3–4 PM"></label><label class="wide">Internal/order notes<textarea name="notes" rows="5" placeholder="How the order was received, document type, special instructions, and follow-up needed."></textarea></label></div><div class="admin-v3-form-actions"><button class="admin-v3-button admin-v3-button--outline" data-cancel-new type="button">Cancel</button><button class="admin-v3-button admin-v3-button--gold" type="submit">Create Order</button></div><p id="adminCreateRequestStatus" aria-live="polite"></p></form>`;
+    const customers = wizardCustomers();
+    const customerOptions = customers.map((customer) => `<option value="${safe(customer.id)}">${safe(`${customer.first_name || ""} ${customer.last_name || ""}`.trim())} · ${safe(customer.email || customer.phone || "No contact details")}</option>`).join("");
+    const progress = wizardSteps.map((step, index) => `<button type="button" class="admin-v3-wizard-progress-step${index === 0 ? " is-current" : ""}" data-wizard-jump="${index}" aria-current="${index === 0 ? "step" : "false"}" ${index ? "disabled" : ""}><span>${index + 1}</span><strong>${step}</strong></button>`).join("");
+    return `<form id="adminCreateRequestForm" class="admin-v3-order-wizard" novalidate>
+      <nav class="admin-v3-wizard-progress" aria-label="New Order progress">${progress}</nav>
+      <div class="admin-v3-module-card admin-v3-wizard-card">
+        <section class="admin-v3-wizard-step is-current" data-wizard-step="0" aria-labelledby="wizardCustomerHeading">
+          <div class="admin-v3-wizard-heading"><span>Step 1 of 6</span><h2 id="wizardCustomerHeading">Customer</h2><p>Begin by entering the customer's contact information.</p></div>
+          ${customers.length ? field("Existing customer (optional)", "existing_customer_id", `<select name="existing_customer_id"><option value="">Create a new customer</option>${customerOptions}</select>`, "wide") : ""}
+          <div class="admin-v3-form-grid">
+            ${field("First name", "first_name", '<input name="first_name" required autocomplete="given-name">')}
+            ${field("Last name", "last_name", '<input name="last_name" required autocomplete="family-name">')}
+            ${field("Email", "email", '<input name="email" type="email" required autocomplete="email">')}
+            ${field("Phone", "phone", '<input name="phone" type="tel" autocomplete="tel">')}
+            ${field("Preferred contact method", "preferred_contact", '<select name="preferred_contact"><option value="email">Email</option><option value="phone">Phone</option><option value="text">Text</option></select>', "wide")}
+          </div>
+        </section>
+        <section class="admin-v3-wizard-step" data-wizard-step="1" aria-labelledby="wizardServiceHeading" hidden>
+          <div class="admin-v3-wizard-heading"><span>Step 2 of 6</span><h2 id="wizardServiceHeading">Service</h2><p>Select the service APS will provide for this order.</p></div>
+          <fieldset class="admin-v3-service-choices"><legend class="sr-only">Service type</legend>
+            <label><input type="radio" name="service_type" value="ron" required checked><span><strong>Remote Online Notary</strong><small>Secure online notarization.</small></span></label>
+            <label><input type="radio" name="service_type" value="mobile" required><span><strong>Mobile Notary</strong><small>On-site notarial service.</small></span></label>
+            <label><input type="radio" name="service_type" value="print" required><span><strong>Print &amp; Scan</strong><small>Printing, scanning, copies, or delivery.</small></span></label>
+          </fieldset>
+        </section>
+        <section class="admin-v3-wizard-step" data-wizard-step="2" aria-labelledby="wizardDetailsHeading" hidden>
+          <div class="admin-v3-wizard-heading"><span>Step 3 of 6</span><h2 id="wizardDetailsHeading">Service Details</h2><p>Collect only the intake information needed for the selected service.</p></div>
+          <div class="admin-v3-service-fields" data-service-fields="ron"><div class="admin-v3-form-grid">
+            ${field("Document type", "document_type", '<input name="document_type" placeholder="Example: Power of attorney">')}
+            ${field("Signer count", "ron_signer_count", '<input name="ron_signer_count" type="number" min="1" value="1" required>')}
+            ${field("Notarial acts", "ron_notarization_count", '<input name="ron_notarization_count" type="number" min="1" value="1" required>')}
+            ${field("Are witnesses needed?", "ron_witness_need", '<select name="ron_witness_need"><option value="no">No</option><option value="yes">Yes</option><option value="not_sure">Not sure</option></select>')}
+            ${field("Witness count", "ron_witness_count", '<select name="ron_witness_count"><option value="0">None</option><option value="1">1</option><option value="2">2</option><option value="not_sure">Not sure</option></select>', "admin-v3-witness-field")}
+            ${field("Witness provider", "ron_witness_provider", '<select name="ron_witness_provider"><option value="client">Customer</option><option value="aligned">APS</option><option value="shared">Shared</option><option value="not_sure">Not sure</option></select>', "admin-v3-witness-field")}
+            ${field("Customer-provided witnesses", "ron_client_witness_count", '<input name="ron_client_witness_count" type="number" min="0" value="0">', "admin-v3-witness-field")}
+            ${field("Technology ready", "ron_tech_ready", '<input name="ron_tech_ready" type="checkbox" class="admin-v3-check">')}
+            ${field("Valid ID confirmed", "ron_valid_id", '<input name="ron_valid_id" type="checkbox" class="admin-v3-check">')}
+            ${field("Recording consent confirmed", "ron_recording_consent", '<input name="ron_recording_consent" type="checkbox" class="admin-v3-check">')}
+          </div></div>
+          <div class="admin-v3-service-fields" data-service-fields="mobile" hidden><div class="admin-v3-form-grid">
+            ${field("Street address", "mobile_street", '<input name="mobile_street" autocomplete="street-address" required>')}
+            ${field("Unit / suite", "mobile_unit", '<input name="mobile_unit">')}
+            ${field("City", "mobile_city", '<input name="mobile_city" required>')}
+            ${field("State", "mobile_state", '<input name="mobile_state" value="TX" maxlength="2" required>')}
+            ${field("ZIP code", "mobile_zip", '<input name="mobile_zip" inputmode="numeric" required>')}
+            ${field("Estimated travel miles", "mobile_travel_miles", '<input name="mobile_travel_miles" type="number" min="0" step="0.1" placeholder="Optional">')}
+            ${field("Signer count", "mobile_signer_count", '<input name="mobile_signer_count" type="number" min="1" value="1" required>')}
+            ${field("Notarial acts", "mobile_notarization_count", '<input name="mobile_notarization_count" type="number" min="1" value="1" required>')}
+            ${field("Are witnesses needed?", "mobile_witness_need", '<select name="mobile_witness_need"><option value="no">No</option><option value="yes">Yes</option><option value="not_sure">Not sure</option></select>')}
+            ${field("Witness count", "mobile_witness_count", '<select name="mobile_witness_count"><option value="0">None</option><option value="1">1</option><option value="2">2</option><option value="not_sure">Not sure</option></select>', "admin-v3-witness-field")}
+            ${field("Witness provider", "mobile_witness_provider", '<select name="mobile_witness_provider"><option value="client">Customer</option><option value="aligned">APS</option><option value="shared">Shared</option><option value="not_sure">Not sure</option></select>', "admin-v3-witness-field")}
+            ${field("Customer-provided witnesses", "mobile_client_witness_count", '<input name="mobile_client_witness_count" type="number" min="0" value="0">', "admin-v3-witness-field")}
+          </div></div>
+          <div class="admin-v3-service-fields" data-service-fields="print" hidden><div class="admin-v3-form-grid">
+            ${field("Print / copy pages", "print_pages", '<input name="print_pages" type="number" min="0" value="0">')}
+            ${field("Copies", "print_copies", '<input name="print_copies" type="number" min="1" value="1">')}
+            ${field("Color", "print_color", '<select name="print_color"><option value="bw">Black &amp; white</option><option value="color">Color</option></select>')}
+            ${field("Sides", "print_sides", '<select name="print_sides"><option value="single">Single-sided</option><option value="double">Double-sided</option></select>')}
+            ${field("Paper size", "print_paper_size", '<select name="print_paper_size"><option value="letter">Letter</option><option value="legal">Legal</option></select>')}
+            ${field("Paper type", "print_paper_type", '<select name="print_paper_type"><option value="standard">Standard</option><option value="resume">Résumé</option><option value="cardstock">Cardstock</option><option value="color-paper">Color paper</option></select>')}
+            ${field("Pages to scan", "print_scan_pages", '<input name="print_scan_pages" type="number" min="0" value="0">')}
+            ${field("Delivery address", "print_delivery_address", '<textarea name="print_delivery_address" rows="3" placeholder="Required for courier or mobile service"></textarea>', "wide")}
+          </div></div>
+        </section>
+        <section class="admin-v3-wizard-step" data-wizard-step="3" aria-labelledby="wizardSchedulingHeading" hidden>
+          <div class="admin-v3-wizard-heading"><span>Step 4 of 6</span><h2 id="wizardSchedulingHeading">Scheduling &amp; Fulfillment</h2><p>Record the requested timing and any confirmed fulfillment details.</p></div>
+          <div class="admin-v3-form-grid">
+            ${field("Requested date", "preferred_date", '<input name="preferred_date" type="date">')}
+            ${field("Requested time", "preferred_time_window", '<input name="preferred_time_window" placeholder="Example: 3–4 PM">')}
+            ${field("Confirmed appointment date", "appointment_date", '<input name="appointment_date" type="date">', "admin-v3-scheduled-field")}
+            ${field("Confirmed appointment time", "appointment_time", '<input name="appointment_time" type="time">', "admin-v3-scheduled-field")}
+            ${field("Timezone", "appointment_timezone", '<select name="appointment_timezone"><option value="America/Chicago">Central Time</option><option value="America/New_York">Eastern Time</option><option value="America/Denver">Mountain Time</option><option value="America/Los_Angeles">Pacific Time</option></select>', "admin-v3-scheduled-field")}
+            ${field("RON platform", "ron_platform", '<input name="ron_platform" placeholder="Example: Proof">', "admin-v3-ron-schedule")}
+            ${field("Session link", "appointment_link", '<input name="appointment_link" type="url" placeholder="https://">', "admin-v3-ron-schedule")}
+            ${field("Appointment location", "appointment_location", '<input name="appointment_location" placeholder="Business name or meeting point">', "admin-v3-mobile-schedule")}
+            ${field("Fulfillment method", "print_fulfillment", '<select name="print_fulfillment"><option value="pickup">Pickup</option><option value="courier">Courier delivery</option><option value="mobile-service">Mobile document service</option><option value="mobile-notary">Mobile notary add-on</option></select>', "admin-v3-print-schedule")}
+            ${field("Appointment / fulfillment instructions", "appointment_instructions", '<textarea name="appointment_instructions" rows="4" placeholder="Access details, timing, or fulfillment instructions."></textarea>', "wide")}
+          </div>
+        </section>
+        <section class="admin-v3-wizard-step" data-wizard-step="4" aria-labelledby="wizardPricingHeading" hidden>
+          <div class="admin-v3-wizard-heading"><span>Step 5 of 6</span><h2 id="wizardPricingHeading">Pricing &amp; Documents</h2><p>Review the APS estimate and attach any documents supplied with the order.</p></div>
+          <div class="admin-v3-wizard-pricing-grid">
+            <article class="admin-v3-quote-summary"><span>Estimated quote</span><strong id="adminWizardEstimate">$0.00</strong><div id="adminWizardLineItems"></div><small>This estimate uses the existing APS pricing configuration. Invoices are created separately in Payments.</small></article>
+            <div class="admin-v3-document-control">${field("Order documents (optional)", "order_documents", '<input name="order_documents" type="file" multiple>')}<p>Documents will be stored with this request when the order is created.</p></div>
+          </div>
+          ${field("Internal order notes", "notes", '<textarea name="notes" rows="5" placeholder="How the order was received, special instructions, and follow-up needed."></textarea>', "admin-v3-wizard-notes")}
+        </section>
+        <section class="admin-v3-wizard-step" data-wizard-step="5" aria-labelledby="wizardReviewHeading" hidden>
+          <div class="admin-v3-wizard-heading"><span>Step 6 of 6</span><h2 id="wizardReviewHeading">Review &amp; Create</h2><p>Confirm the complete order before creating it.</p></div>
+          <div id="adminWizardReview" class="admin-v3-review-grid"></div>
+          <label class="admin-v3-confirmation"><input name="confirm_order" type="checkbox" required><span>I reviewed the order details and confirm they are ready to create.</span></label>
+        </section>
+        <div class="admin-v3-wizard-message" id="adminWizardValidation" role="alert"></div>
+        <div class="admin-v3-wizard-actions"><button class="admin-v3-button admin-v3-button--outline" data-cancel-new type="button">Cancel</button><div><button class="admin-v3-button admin-v3-button--outline" id="adminWizardPrevious" type="button" hidden>Previous</button><button class="admin-v3-button admin-v3-button--navy" id="adminWizardNext" type="button">Next</button><button class="admin-v3-button admin-v3-button--gold" id="adminWizardCreate" type="submit" hidden>Create Order</button></div></div>
+        <p id="adminCreateRequestStatus" aria-live="polite"></p>
+      </div>
+    </form>`;
   }
   function renderModule(view) {
     const rows=activeRequests();
@@ -424,17 +533,213 @@
   function bindModuleActions() {
     $$(".module-open-request", moduleContent).forEach(button=>button.addEventListener("click",()=>openRequestFromModule(button.dataset.requestId,button.dataset.tab||"overview")));
     $("[data-cancel-new]", moduleContent)?.addEventListener("click",()=>showAdminView("requests"));
-    $("#adminCreateRequestForm", moduleContent)?.addEventListener("submit", createAdminRequest);
+    const newOrderForm = $("#adminCreateRequestForm", moduleContent);
+    if (newOrderForm) bindNewOrderWizard(newOrderForm);
     $("#openLegacySupport", moduleContent)?.addEventListener("click",()=>showAdminView("requests"));
   }
+  function wizardValue(form, name) { return form.elements[name]?.value?.trim?.() || ""; }
+  function wizardNumber(form, name, fallback = 0) { const value = Number(form.elements[name]?.value); return Number.isFinite(value) ? value : fallback; }
+  function wizardChecked(form, name) { return Boolean(form.elements[name]?.checked); }
+  function wizardService(form) { return form.elements.service_type?.value || "ron"; }
+  function wizardMoney(value) { return `$${Number(value || 0).toFixed(2)}`; }
+  function wizardPrintCost(form, prefix = "print") {
+    const pages = wizardNumber(form, `${prefix}_pages`);
+    const copies = prefix === "print" ? Math.max(1, wizardNumber(form, "print_copies", 1)) : 1;
+    const color = wizardValue(form, `${prefix}_color`) || "bw";
+    const sides = wizardValue(form, `${prefix}_sides`) || "single";
+    const paperSize = wizardValue(form, `${prefix}_paper_size`) || "letter";
+    const paperType = wizardValue(form, `${prefix}_paper_type`) || "standard";
+    let rate = color === "color" ? (sides === "double" ? 0.6 : 0.5) : (sides === "double" ? 0.35 : 0.25);
+    if (paperSize === "legal") rate += 0.1;
+    rate += ({ resume: 0.25, cardstock: 0.4, "color-paper": 0.15 })[paperType] || 0;
+    return pages * copies * rate;
+  }
+  function wizardWitnessAllocation(form, service) {
+    const need = wizardValue(form, `${service}_witness_need`);
+    const provider = wizardValue(form, `${service}_witness_provider`);
+    const rawCount = wizardValue(form, `${service}_witness_count`);
+    const total = rawCount === "not_sure" ? 0 : Number(rawCount) || 0;
+    if (need !== "yes" || total <= 0) return { total: 0, customer: 0, aps: 0 };
+    if (provider === "aligned") return { total, customer: 0, aps: total };
+    if (provider === "client") return { total, customer: total, aps: 0 };
+    if (provider === "shared") {
+      const customer = Math.min(total, Math.max(0, wizardNumber(form, `${service}_client_witness_count`)));
+      return { total, customer, aps: total - customer };
+    }
+    return { total, customer: 0, aps: 0 };
+  }
+  function wizardEstimate(form) {
+    const pricing = window.ALIGNED_PRICING || {};
+    const service = wizardService(form);
+    const items = [];
+    const add = (label, amount) => { if (Number(amount) > 0) items.push([label, Number(amount)]); };
+    if (service === "ron") {
+      const acts = Math.max(1, wizardNumber(form, "ron_notarization_count", 1));
+      add("Online notarization service fee", pricing.ron?.onlineServiceFee || 25);
+      add(`${acts} notarial act${acts === 1 ? "" : "s"}`, (pricing.ron?.notarialAct || 10) * acts);
+      add("APS-provided witness coordination", (pricing.ron?.providedWitness || 25) * wizardWitnessAllocation(form, "ron").aps);
+    } else if (service === "mobile") {
+      const acts = Math.max(1, wizardNumber(form, "mobile_notarization_count", 1));
+      add("Mobile appointment base (0–15 miles)", pricing.mobile?.appointmentBase || 50);
+      add("Notarial act estimate", (pricing.mobile?.notarialAct || 10) * acts);
+      add("APS-provided witness coordination", (pricing.mobile?.providedWitness || 50) * wizardWitnessAllocation(form, "mobile").aps);
+    } else {
+      add("Printing / copies estimate", wizardPrintCost(form));
+      add("Scan to PDF estimate", wizardNumber(form, "print_scan_pages") * (pricing.documentServices?.scanPerPage || 1));
+      const fulfillment = wizardValue(form, "print_fulfillment") || "pickup";
+      if (fulfillment === "courier") add("Courier delivery estimate", pricing.documentServices?.courierBase || 20);
+      if (fulfillment === "mobile-service") add("Mobile document service base", pricing.documentServices?.mobileDocumentBase || 20);
+      if (fulfillment === "mobile-notary") {
+        add("Mobile appointment base add-on (0–15 miles)", pricing.mobile?.appointmentBase || 50);
+        add("Notarial act / signature add-on", pricing.mobile?.notarialAct || 10);
+      }
+    }
+    return { items, total: items.reduce((sum, item) => sum + item[1], 0) };
+  }
+  function updateWizardEstimate(form) {
+    const estimate = wizardEstimate(form);
+    $("#adminWizardEstimate", form).textContent = wizardMoney(estimate.total);
+    $("#adminWizardLineItems", form).innerHTML = estimate.items.length ? estimate.items.map(([label, amount]) => `<p><span>${safe(label)}</span><strong>${wizardMoney(amount)}</strong></p>`).join("") : "<p>Complete the service details to view an estimate.</p>";
+  }
+  function setWizardService(form) {
+    const service = wizardService(form);
+    $$('[data-service-fields]', form).forEach((section) => {
+      const active = section.dataset.serviceFields === service;
+      section.hidden = !active;
+      $$('input, select, textarea', section).forEach((control) => { control.disabled = !active; });
+    });
+    $$(".admin-v3-ron-schedule", form).forEach((field) => { field.hidden = service !== "ron"; $$('input, select, textarea', field).forEach((control) => { control.disabled = service !== "ron"; }); });
+    $$(".admin-v3-mobile-schedule", form).forEach((field) => { field.hidden = service !== "mobile"; $$('input, select, textarea', field).forEach((control) => { control.disabled = service !== "mobile"; }); });
+    $$(".admin-v3-print-schedule", form).forEach((field) => { field.hidden = service !== "print"; $$('input, select, textarea', field).forEach((control) => { control.disabled = service !== "print"; }); });
+    updateWizardEstimate(form);
+  }
+  function setWizardWitnessFields(form) {
+    ["ron", "mobile"].forEach((service) => {
+      const show = wizardValue(form, `${service}_witness_need`) !== "no";
+      $$(`.admin-v3-service-fields[data-service-fields="${service}"] .admin-v3-witness-field`, form).forEach((field) => { field.hidden = !show; });
+    });
+  }
+  function reviewItem(label, value) { return `<div><dt>${safe(label)}</dt><dd>${safe(value || "Not provided")}</dd></div>`; }
+  function renderWizardReview(form) {
+    const service = wizardService(form);
+    const files = Array.from(form.elements.order_documents?.files || []);
+    const estimate = wizardEstimate(form);
+    const customer = `${wizardValue(form, "first_name")} ${wizardValue(form, "last_name")}`.trim();
+    let details = "";
+    if (service === "ron") details = `${wizardValue(form, "document_type") || "Document type not provided"}; ${wizardNumber(form, "ron_signer_count", 1)} signer(s); ${wizardNumber(form, "ron_notarization_count", 1)} notarial act(s)`;
+    if (service === "mobile") details = `${wizardValue(form, "mobile_street")}, ${wizardValue(form, "mobile_city")}, ${wizardValue(form, "mobile_state")} ${wizardValue(form, "mobile_zip")}; ${wizardNumber(form, "mobile_notarization_count", 1)} notarial act(s)`;
+    if (service === "print") details = `${wizardNumber(form, "print_pages")} page(s) × ${wizardNumber(form, "print_copies", 1)} copy/copies; ${wizardNumber(form, "print_scan_pages")} scan page(s)`;
+    const appointment = [wizardValue(form, "appointment_date") || wizardValue(form, "preferred_date"), wizardValue(form, "appointment_time") || wizardValue(form, "preferred_time_window")].filter(Boolean).join(" · ") || "Not scheduled";
+    $("#adminWizardReview", form).innerHTML = `
+      <article><h3>Customer</h3><dl>${reviewItem("Name", customer)}${reviewItem("Email", wizardValue(form, "email"))}${reviewItem("Phone", wizardValue(form, "phone"))}${reviewItem("Preferred contact", labelFromStatus(wizardValue(form, "preferred_contact")))}</dl></article>
+      <article><h3>Service</h3><dl>${reviewItem("Service", serviceLabels[service])}${reviewItem("Details", details)}</dl></article>
+      <article><h3>Appointment</h3><dl>${reviewItem("Requested / confirmed", appointment)}${reviewItem("Platform / location", service === "ron" ? wizardValue(form, "ron_platform") : service === "mobile" ? wizardValue(form, "appointment_location") : labelFromStatus(wizardValue(form, "print_fulfillment")))}</dl></article>
+      <article><h3>Pricing</h3><dl>${reviewItem("Estimated quote", wizardMoney(estimate.total))}${reviewItem("Invoice", "Created separately in Payments")}</dl></article>
+      <article><h3>Documents</h3><dl>${reviewItem("Files", files.length ? files.map((file) => file.name).join(", ") : "No documents selected")}</dl></article>
+      <article><h3>Notes</h3><p>${safe(wizardValue(form, "notes") || "No internal notes added.")}</p></article>`;
+  }
+  function showWizardStep(form, nextStep, advancing = false) {
+    const step = Math.max(0, Math.min(wizardSteps.length - 1, nextStep));
+    moduleState.newOrderStep = step;
+    if (advancing) moduleState.newOrderMaxStep = Math.max(moduleState.newOrderMaxStep, step);
+    $$("[data-wizard-step]", form).forEach((panel) => { const current = Number(panel.dataset.wizardStep) === step; panel.hidden = !current; panel.classList.toggle("is-current", current); });
+    $$("[data-wizard-jump]", form).forEach((button) => {
+      const index = Number(button.dataset.wizardJump);
+      button.disabled = index > moduleState.newOrderMaxStep;
+      button.classList.toggle("is-current", index === step);
+      button.classList.toggle("is-complete", index < step);
+      if (index === step) button.setAttribute("aria-current", "step"); else button.removeAttribute("aria-current");
+    });
+    $("#adminWizardPrevious", form).hidden = step === 0;
+    $("#adminWizardNext", form).hidden = step === wizardSteps.length - 1;
+    $("#adminWizardCreate", form).hidden = step !== wizardSteps.length - 1;
+    $("#adminWizardValidation", form).textContent = "";
+    if (step === 4) updateWizardEstimate(form);
+    if (step === 5) renderWizardReview(form);
+    form.querySelector(".admin-v3-wizard-step.is-current h2")?.focus?.({ preventScroll: true });
+  }
+  function validateWizardStep(form) {
+    const panel = $(".admin-v3-wizard-step.is-current", form);
+    const controls = $$("input, select, textarea", panel).filter((control) => !control.disabled);
+    const invalid = controls.find((control) => !control.checkValidity());
+    if (!invalid) return true;
+    $("#adminWizardValidation", form).textContent = invalid.validationMessage || "Complete the required fields before continuing.";
+    invalid.reportValidity();
+    invalid.focus();
+    return false;
+  }
+  function selectExistingWizardCustomer(form) {
+    const id = wizardValue(form, "existing_customer_id");
+    if (!id) return;
+    const customer = wizardCustomers().find((item) => item.id === id);
+    if (!customer) return;
+    form.elements.first_name.value = customer.first_name || "";
+    form.elements.last_name.value = customer.last_name || "";
+    form.elements.email.value = customer.email || "";
+    form.elements.phone.value = customer.phone || "";
+    form.elements.preferred_contact.value = customer.preferred_contact || "email";
+  }
+  function bindNewOrderWizard(form) {
+    moduleState.newOrderStep = 0;
+    moduleState.newOrderMaxStep = 0;
+    setWizardService(form);
+    setWizardWitnessFields(form);
+    form.addEventListener("submit", createAdminRequest);
+    form.elements.existing_customer_id?.addEventListener("change", () => selectExistingWizardCustomer(form));
+    form.elements.service_type.forEach((control) => control.addEventListener("change", () => { setWizardService(form); setWizardWitnessFields(form); }));
+    form.addEventListener("input", () => updateWizardEstimate(form));
+    form.addEventListener("change", (event) => { if (event.target.name?.endsWith("_witness_need")) setWizardWitnessFields(form); updateWizardEstimate(form); });
+    $("#adminWizardNext", form).addEventListener("click", () => { if (validateWizardStep(form)) showWizardStep(form, moduleState.newOrderStep + 1, true); });
+    $("#adminWizardPrevious", form).addEventListener("click", () => showWizardStep(form, moduleState.newOrderStep - 1));
+    $$('[data-wizard-jump]', form).forEach((button) => button.addEventListener("click", () => { const target = Number(button.dataset.wizardJump); if (target <= moduleState.newOrderMaxStep) showWizardStep(form, target); }));
+  }
+  async function uploadNewOrderDocuments(requestId, files) {
+    for (const file of files) {
+      const fileName = String(file.name || "document").replace(/[^a-z0-9._-]+/gi, "-");
+      const path = `${requestId}/admin/${crypto.randomUUID()}-${fileName}`;
+      const { error: uploadError } = await adminClient.storage.from("service-request-files").upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
+      if (uploadError) throw uploadError;
+      const { error: recordError } = await adminClient.from("request_files").insert({ service_request_id: requestId, file_name: file.name, file_path: path, file_type: file.type, file_size: file.size, uploaded_by: "admin", document_category: "admin-additional", is_active: true });
+      if (recordError) throw recordError;
+    }
+    if (files.length) await adminClient.from("request_timeline_events").insert({ service_request_id: requestId, event_type: "documents_uploaded", title: "Administrator documents uploaded", detail: `${files.length} document(s) uploaded by administrator.`, actor_type: "admin", metadata: { file_count: files.length } });
+  }
   async function createAdminRequest(event) {
-    event.preventDefault(); const form=event.currentTarget; const status=$("#adminCreateRequestStatus"); const submit=form.querySelector('[type="submit"]');
+    event.preventDefault(); const form=event.currentTarget; const status=$("#adminCreateRequestStatus"); const submit=$("#adminWizardCreate", form);
+    if (!validateWizardStep(form)) return;
     submit.disabled=true; status.textContent="Creating request…";
-    try { const values=Object.fromEntries(new FormData(form).entries());
-      const {data:customer,error:customerError}=await adminClient.from("customers").insert({first_name:values.first_name.trim(),last_name:values.last_name.trim(),email:values.email.trim(),phone:values.phone.trim()||null,preferred_contact:values.preferred_contact||"email"}).select("id").single();
-      if(customerError) throw customerError;
-      const {data:request,error:requestError}=await adminClient.from("service_requests").insert({customer_id:customer.id,service_type:values.service_type,status:"under_review",workflow_status:"under_review",preferred_date:values.preferred_date||null,preferred_time_window:values.preferred_time_window.trim()||null,notes:values.notes.trim()||"Created by administrator."}).select("id").single();
+    try {
+      const service = wizardService(form);
+      let customerId = wizardValue(form, "existing_customer_id");
+      if (!customerId) {
+        const {data:customer,error:customerError}=await adminClient.from("customers").insert({first_name:wizardValue(form,"first_name"),last_name:wizardValue(form,"last_name"),email:wizardValue(form,"email"),phone:wizardValue(form,"phone")||null,preferred_contact:wizardValue(form,"preferred_contact")||"email"}).select("id").single();
+        if(customerError) throw customerError;
+        customerId = customer.id;
+      }
+      const estimate = wizardEstimate(form);
+      const appointmentDate = wizardValue(form, "appointment_date");
+      const appointmentTime = wizardValue(form, "appointment_time");
+      const {data:request,error:requestError}=await adminClient.from("service_requests").insert({customer_id:customerId,service_type:service,status:"under_review",workflow_status:"under_review",preferred_date:wizardValue(form,"preferred_date")||null,preferred_time_window:wizardValue(form,"preferred_time_window")||null,notes:wizardValue(form,"notes")||"Created by administrator.",estimated_total:estimate.total,appointment_date:appointmentDate||null,appointment_time:appointmentTime||null,appointment_timezone:(appointmentDate||appointmentTime)?wizardValue(form,"appointment_timezone")||"America/Chicago":null,appointment_location:service==="mobile"?wizardValue(form,"appointment_location")||null:null,appointment_link:service==="ron"?wizardValue(form,"appointment_link")||null:null,appointment_platform:service==="ron"?wizardValue(form,"ron_platform")||null:null,appointment_instructions:wizardValue(form,"appointment_instructions")||null}).select("id").single();
       if(requestError) throw requestError;
+      if (service === "ron") {
+        const witnesses = wizardWitnessAllocation(form, "ron");
+        const rawWitnessCount = wizardValue(form, "ron_witness_count");
+        const { error } = await adminClient.from("ron_requests").insert({ service_request_id:request.id,document_type:wizardValue(form,"document_type")||null,number_of_signers:wizardNumber(form,"ron_signer_count",1),number_of_notarizations:wizardNumber(form,"ron_notarization_count",1),ron_platform:wizardValue(form,"ron_platform")||null,tech_ready:wizardChecked(form,"ron_tech_ready"),valid_id_confirmed:wizardChecked(form,"ron_valid_id"),consent_to_recording:wizardChecked(form,"ron_recording_consent"),witness_need:wizardValue(form,"ron_witness_need")||"no",witness_count:rawWitnessCount==="not_sure"?null:witnesses.total,witness_provider:wizardValue(form,"ron_witness_provider")||null,client_witness_count:witnesses.customer,provided_witness_count:witnesses.aps,witness_review_required:["not_sure"].includes(wizardValue(form,"ron_witness_need"))||["not_sure"].includes(wizardValue(form,"ron_witness_provider"))||rawWitnessCount==="not_sure" });
+        if (error) throw error;
+      }
+      if (service === "mobile") {
+        const witnesses = wizardWitnessAllocation(form, "mobile");
+        const rawWitnessCount = wizardValue(form, "mobile_witness_count");
+        const witnessNeed = wizardValue(form, "mobile_witness_need")||"no";
+        const { error } = await adminClient.from("mobile_notary_requests").insert({ service_request_id:request.id,street_address:wizardValue(form,"mobile_street")||null,unit:wizardValue(form,"mobile_unit")||null,city:wizardValue(form,"mobile_city")||null,state:wizardValue(form,"mobile_state")||"TX",zip:wizardValue(form,"mobile_zip")||null,number_of_signers:wizardNumber(form,"mobile_signer_count",1),number_of_notarizations:wizardNumber(form,"mobile_notarization_count",1),witnesses_needed:witnessNeed==="yes",witness_need:witnessNeed,witness_count:rawWitnessCount==="not_sure"?null:witnesses.total,witness_provider:wizardValue(form,"mobile_witness_provider")||null,client_witness_count:witnesses.customer,provided_witness_count:witnesses.aps,witness_review_required:witnessNeed==="not_sure"||wizardValue(form,"mobile_witness_provider")==="not_sure"||rawWitnessCount==="not_sure",print_add_on:false,scan_back_needed:false,scan_to_pdf_needed:false,travel_miles:wizardNumber(form,"mobile_travel_miles")||null,travel_fee:(window.ALIGNED_PRICING?.mobile?.appointmentBase||50),dispatch_payment_required:(window.ALIGNED_PRICING?.mobile?.appointmentBase||50) });
+        if (error) throw error;
+      }
+      if (service === "print") {
+        const pages = wizardNumber(form,"print_pages"); const copies = Math.max(1,wizardNumber(form,"print_copies",1)); const totalPages = pages*copies; const isColor=wizardValue(form,"print_color")==="color"; const fulfillment=wizardValue(form,"print_fulfillment")||"pickup"; const printTotal=wizardPrintCost(form);
+        const { error } = await adminClient.from("print_scan_requests").insert({ service_request_id:request.id,fulfillment_type:fulfillment,delivery_address:wizardValue(form,"print_delivery_address")||null,black_white_pages:isColor?0:totalPages,color_pages:isColor?totalPages:0,paper_size:wizardValue(form,"print_paper_size")||null,print_sides:wizardValue(form,"print_sides")||null,paper_type:wizardValue(form,"print_paper_type")||null,scan_pages:wizardNumber(form,"print_scan_pages"),delivery_fee:fulfillment==="courier"?(window.ALIGNED_PRICING?.documentServices?.courierBase||20):0,print_total:printTotal,courier_requested:fulfillment==="courier",mobile_document_service_requested:fulfillment==="mobile-service",courier_fee:fulfillment==="courier"?(window.ALIGNED_PRICING?.documentServices?.courierBase||20):0,mobile_document_service_fee:fulfillment==="mobile-service"?(window.ALIGNED_PRICING?.documentServices?.mobileDocumentBase||20):0,copy_pages:totalPages });
+        if (error) throw error;
+      }
+      await uploadNewOrderDocuments(request.id, Array.from(form.elements.order_documents?.files||[]));
       status.textContent="Request created successfully."; await loadRequests(); openRequestFromModule(request.id);
     } catch(error) {status.textContent=`Could not create request: ${error.message||error}`;} finally {submit.disabled=false;}
   }
