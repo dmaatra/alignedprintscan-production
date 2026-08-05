@@ -71,3 +71,22 @@ entrypoint = "./functions/client-quote-action/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/create-additional-invoice/index.ts"
+
+# Phase 4.2 admin endpoints require a Supabase user JWT at the gateway and then
+# authorize the authenticated identity through public.is_admin().
+[functions.proof-admin-transaction]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/proof-admin-transaction/index.ts"
+
+[functions.proof-admin-document]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/proof-admin-document/index.ts"
+
+# Proof will call this endpoint without a Supabase JWT. The handler remains
+# fail-closed until provider HMAC verification is implemented against the raw body.
+[functions.proof-webhook]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/proof-webhook/index.ts"

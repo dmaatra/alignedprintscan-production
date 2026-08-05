@@ -1,0 +1,8 @@
+# Local and provider credentials must never be committed.
+.env
+.env.*
+!.env.example
+supabase/.env
+supabase/.env.*
+supabase/functions/.env
+supabase/functions/.env.*

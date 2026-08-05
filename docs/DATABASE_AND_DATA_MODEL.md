@@ -17,6 +17,10 @@
 | `print_scan_requests` | Print/scan/courier/fulfillment-specific fields | **CONFIRMED IN CODE** |
 | `request_files` | Storage object metadata, uploader/category, and detected pages | **CONFIRMED IN CODE** |
 | `support_tickets` | Public support requests and admin resolution state | **CONFIRMED IN CODE** |
+| `proof_transactions` | APS request linkage and normalized state for future Proof transactions | **CONFIRMED IN CODE** |
+| `proof_signers` | Participants attached to an APS-owned Proof transaction record | **CONFIRMED IN CODE** |
+| `proof_transaction_assets` | Metadata for future Proof source/completed documents and audit artifacts | **CONFIRMED IN CODE** |
+| `proof_webhook_events` | Idempotent provider-event intake and processing ledger | **CONFIRMED IN CODE** |
 
 Each service-specific row relates to `service_requests`; the exact live base foreign-key definitions are **PRODUCTION VERIFICATION REQUIRED** because the base schema is absent.
 
@@ -87,6 +91,7 @@ All are **CONFIRMED IN CODE**.
 | `20260718073000_pass_3_2_1_witness_allocation.sql` | Witness data normalization |
 | `20260722130000_pass_3_2_3_workflow_completion.sql` | Actions, timeline, communication, refund review |
 | `20260725050000_phase_4_1_m1_client_note_archive.sql` | Note history and defective paid-invoice trigger |
+| `20260805180105_phase_4_2_increment_1_proof_foundation.sql` | Additive Proof transaction/signer/asset/webhook foundation; RLS denies browser roles and server-side database access is reserved for service role |
 
 The ledger is **CONFIRMED IN CODE**. Several migrations overlap intentionally through `IF NOT EXISTS` compatibility changes.
 
