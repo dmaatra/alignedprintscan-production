@@ -2045,10 +2045,11 @@ async function toggleArchiveRequest() {
 }
 async function loadRequests() {
   setText("adminLiveStatus", "Loading requests…");
+  window.dispatchEvent(new CustomEvent("aps:requests-loading"));
   const { data, error } = await adminClient
     .from("service_requests")
     .select(
-      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(id,first_name,last_name,email,phone,preferred_contact)",
+      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(id,first_name,last_name,email,phone,preferred_contact),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
     )
     .order("created_at", {
       ascending: false,
@@ -2058,6 +2059,11 @@ async function loadRequests() {
     setText("adminLiveStatus", `Could not load requests: ${error.message}`);
     $("#requestList").innerHTML =
       `<div class="request-empty">${escapeHtml(error.message)}</div>`;
+    window.dispatchEvent(
+      new CustomEvent("aps:requests-error", {
+        detail: { message: error.message || "Requests could not be loaded." },
+      }),
+    );
     return;
   }
   requests = data || [];

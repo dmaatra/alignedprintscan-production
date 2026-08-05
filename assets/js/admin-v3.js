@@ -358,13 +358,26 @@
   bindShellEvents();
 
   /* Phase 4.1 Milestone 1 — functional operations modules. */
-  const moduleState = { requests: [], supportTickets: [], activeView: "requests", newOrderStep: 0, newOrderMaxStep: 0 };
+  const moduleState = {
+    requests: [],
+    supportTickets: [],
+    activeView: "requests",
+    newOrderStep: 0,
+    newOrderMaxStep: 0,
+    newOrderCalendarDate: null,
+    requestsState: "loading",
+    requestsError: "",
+    calendarMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+    calendarSelectedDate: null,
+    calendarService: "all",
+    calendarStatus: "all",
+  };
   const appView = $("#requests");
   const moduleView = $("#adminModuleView");
   const moduleContent = $("#adminModuleContent");
   const moduleTitles = {
     dashboard: ["Overview", "Operations Dashboard", "Live request, schedule, and revenue indicators."],
-    calendar: ["Operations", "Calendar", "Upcoming requested and confirmed appointment dates."],
+    calendar: ["Operations", "Scheduling Center", "Plan and export requested and confirmed APS appointments."],
     invoices: ["Financial", "Invoices", "Request-level invoice status and outstanding balances."],
     payments: ["Financial", "Payments", "Paid-to-date and remaining balance visibility."],
     customers: ["Clients", "Customers", "Customer directory built from active service requests."],
@@ -399,10 +412,127 @@
     const newCount = rows.filter((r)=>["under_review","new"].includes(requestStatus(r))).length;
     return `<div class="admin-v3-module-grid"><article class="admin-v3-module-card admin-v3-kpi"><span>Active requests</span><strong>${rows.length}</strong></article><article class="admin-v3-module-card admin-v3-kpi"><span>Needs review</span><strong>${newCount}</strong></article><article class="admin-v3-module-card admin-v3-kpi"><span>Upcoming dates</span><strong>${upcoming}</strong></article><article class="admin-v3-module-card admin-v3-kpi"><span>Outstanding</span><strong>${displayMoney(outstanding)}</strong></article></div><div class="admin-v3-module-card"><h2>Financial snapshot</h2><p><strong>${displayMoney(paid)}</strong> paid to date across loaded requests · <strong>${displayMoney(outstanding)}</strong> remaining.</p></div>${table(rows.slice(0,10),[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Customer",render:r=>{const c=getCustomer(r)||{};return safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client");}},{label:"Service",render:r=>safe(labelFromStatus(r.service_type))},{label:"Status",render:r=>safe(labelFromStatus(requestStatus(r)))}])}`;
   }
+  function dateKey(date) {
+    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+  }
+  function dateFromKey(value) {
+    const [year,month,day]=String(value||"").split("-").map(Number);
+    return year&&month&&day ? new Date(year,month-1,day,12) : null;
+  }
+  function addDays(value, amount) {
+    const date=dateFromKey(value); if(!date)return value;
+    date.setDate(date.getDate()+amount); return dateKey(date);
+  }
+  function getRelated(request, key) {
+    const value=request?.[key]; return Array.isArray(value) ? value[0] : value;
+  }
+  function appointmentDate(request) { return request.appointment_date||request.preferred_date||null; }
+  function appointmentTime(request) { return request.appointment_date ? request.appointment_time : request.preferred_time_window; }
+  function appointmentDesignation(request) { return request.appointment_date ? "Confirmed Appointment" : "Requested / Unconfirmed Time"; }
+  function appointmentLocation(request) {
+    if(request.appointment_location)return request.appointment_location;
+    if(request.service_type==="ron")return request.appointment_platform||getRelated(request,"ron_requests")?.ron_platform||"Remote Online Notary";
+    if(request.service_type==="mobile"){
+      const detail=getRelated(request,"mobile_notary_requests")||{};
+      return [detail.street_address,detail.unit,detail.city,detail.state,detail.zip].filter(Boolean).join(", ");
+    }
+    const detail=getRelated(request,"print_scan_requests")||{};
+    return detail.delivery_address||labelFromStatus(detail.fulfillment_type||request.appointment_platform||"");
+  }
+  function parseTimePart(value, fallbackMeridiem="") {
+    const match=String(value||"").trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    if(!match)return null;
+    let hour=Number(match[1]); const minute=Number(match[2]||0); const meridiem=(match[3]||fallbackMeridiem).toLowerCase();
+    if(meridiem==="pm"&&hour<12)hour+=12;
+    if(meridiem==="am"&&hour===12)hour=0;
+    if(hour>23||minute>59)return null;
+    return {minutes:hour*60+minute,meridiem};
+  }
+  function appointmentTimeRange(value) {
+    const parts=String(value||"").replace(/[–—]/g,"-").split("-").map(part=>part.trim()).filter(Boolean);
+    const end=parts[1]?parseTimePart(parts[1]):null;
+    const start=parseTimePart(parts[0],end?.meridiem||"");
+    if(!start)return null;
+    const duration=end&&end.minutes>start.minutes ? end.minutes-start.minutes : 60;
+    return {start:start.minutes,end:start.minutes+duration,duration};
+  }
+  function calendarStatusMatches(request, filter) {
+    if(filter==="all")return true;
+    const status=requestStatus(request);
+    if(filter==="active")return !["completed","cancelled"].includes(status);
+    if(filter==="pending")return ["under_review","quote_ready","quote_sent","awaiting_approval","changes_requested","awaiting_payment","payment_pending","payment_received","final_balance_due","final_payment_received","quote_expired","appointment_needs_rescheduling"].includes(status);
+    if(filter==="confirmed")return status==="appointment_confirmed"||request.appointment_state==="appointment_confirmed";
+    if(filter==="completed")return status==="completed";
+    if(filter==="cancelled")return status==="cancelled";
+    return true;
+  }
+  function calendarAppointments({filtered=true}={}) {
+    return moduleState.requests.filter(request=>appointmentDate(request)).filter(request=>!filtered||(moduleState.calendarService==="all"||request.service_type===moduleState.calendarService)&&calendarStatusMatches(request,moduleState.calendarStatus));
+  }
+  function calendarSort(rows) {
+    return [...rows].sort((a,b)=>{
+      const aTime=appointmentTimeRange(appointmentTime(a))?.start??Number.POSITIVE_INFINITY;
+      const bTime=appointmentTimeRange(appointmentTime(b))?.start??Number.POSITIVE_INFINITY;
+      return aTime-bTime||String(a.created_at||"").localeCompare(String(b.created_at||""));
+    });
+  }
+  function serviceAbbreviation(service) { return service==="ron"?"RON":service==="mobile"?"Mobile":"Print"; }
+  function calendarMonthName(date) { return date.toLocaleDateString(undefined,{month:"long",year:"numeric"}); }
+  function basicDate(value) { return String(value||"").replaceAll("-",""); }
+  function localDateTime(value, minutes) {
+    const date=dateFromKey(value); if(!date)return "";
+    date.setHours(0,minutes,0,0);
+    return `${date.getFullYear()}${String(date.getMonth()+1).padStart(2,"0")}${String(date.getDate()).padStart(2,"0")}T${String(date.getHours()).padStart(2,"0")}${String(date.getMinutes()).padStart(2,"0")}00`;
+  }
+  function calendarEvent(request) {
+    const date=appointmentDate(request); const range=appointmentTimeRange(appointmentTime(request));
+    const timezone=request.appointment_timezone||"America/Chicago";
+    const reference=`APS-${String(request.id).slice(0,8).toUpperCase()}`;
+    const service=serviceLabels[request.service_type]||labelFromStatus(request.service_type);
+    const title=`APS ${service} · ${reference}`;
+    const location=appointmentLocation(request)||"";
+    return {date,range,timezone,reference,service,title,location,description:`${reference} — ${service}. Calendar export from the APS Operations Portal.`};
+  }
+  function googleCalendarUrl(request) {
+    const event=calendarEvent(request); const params=new URLSearchParams({action:"TEMPLATE",text:event.title,details:event.description,ctz:event.timezone});
+    if(event.location)params.set("location",event.location);
+    params.set("dates",event.range?`${localDateTime(event.date,event.range.start)}/${localDateTime(event.date,event.range.end)}`:`${basicDate(event.date)}/${basicDate(addDays(event.date,1))}`);
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  }
+  function icsEscape(value) { return String(value||"").replaceAll("\\","\\\\").replaceAll(";","\\;").replaceAll(",","\\,").replace(/\r?\n/g,"\\n"); }
+  function icsTimestamp(date=new Date()) { return date.toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z"); }
+  function calendarIcs(request) {
+    const event=calendarEvent(request); const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Aligned Print & Scan//APS Scheduling Center//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH","BEGIN:VEVENT",`UID:${request.id}@alignedprintscan.com`,`DTSTAMP:${icsTimestamp()}`];
+    if(event.range){lines.push(`DTSTART;TZID=${event.timezone}:${localDateTime(event.date,event.range.start)}`,`DTEND;TZID=${event.timezone}:${localDateTime(event.date,event.range.end)}`);}else{lines.push(`DTSTART;VALUE=DATE:${basicDate(event.date)}`,`DTEND;VALUE=DATE:${basicDate(addDays(event.date,1))}`);}
+    lines.push(`SUMMARY:${icsEscape(event.title)}`);
+    if(event.location)lines.push(`LOCATION:${icsEscape(event.location)}`);
+    lines.push(`DESCRIPTION:${icsEscape(event.description)}`,"END:VEVENT","END:VCALENDAR","");
+    return lines.join("\r\n");
+  }
+  function renderCalendarAgenda(rows) {
+    const selected=moduleState.calendarSelectedDate;
+    const selectedDate=dateFromKey(selected)||new Date();
+    const title=selectedDate.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+    const cards=calendarSort(rows.filter(request=>appointmentDate(request)===selected));
+    const body=cards.length?cards.map(request=>{
+      const customer=getCustomer(request)||{}; const name=`${customer.first_name||""} ${customer.last_name||""}`.trim()||"Client";
+      const time=appointmentTime(request)||"Time not yet confirmed"; const reference=`APS-${String(request.id).slice(0,8).toUpperCase()}`;
+      const location=appointmentLocation(request);
+      return `<article class="admin-v3-agenda-card"><div class="admin-v3-agenda-card-head"><div><span class="admin-v3-service-label">${safe(serviceAbbreviation(request.service_type))}</span><span class="admin-v3-appointment-kind">${safe(appointmentDesignation(request))}</span></div><span class="admin-v3-status-badge">${safe(labelFromStatus(requestStatus(request)))}</span></div><h3>${safe(name)}</h3><p class="admin-v3-agenda-reference">${safe(reference)} · ${safe(serviceLabels[request.service_type])}</p><dl><div><dt>Time</dt><dd>${safe(time)}</dd></div>${location?`<div><dt>${request.service_type==="ron"?"Platform":"Location / fulfillment"}</dt><dd>${safe(location)}</dd></div>`:""}</dl><div class="admin-v3-agenda-actions"><button class="admin-v3-button admin-v3-button--navy module-open-request" data-request-id="${safe(request.id)}" data-tab="overview" type="button">Open Order</button><a class="admin-v3-button admin-v3-button--outline" href="${safe(googleCalendarUrl(request))}" target="_blank" rel="noopener noreferrer">Add to Google Calendar</a><button class="admin-v3-button admin-v3-button--outline calendar-download-ics" data-request-id="${safe(request.id)}" type="button">Download Calendar File</button></div></article>`;
+    }).join(""):`<div class="admin-v3-calendar-empty"><h3>No appointments on this date</h3><p>Select another date or begin a new order for ${safe(title)}.</p></div>`;
+    return `<aside class="admin-v3-calendar-agenda" tabindex="-1" aria-live="polite" aria-atomic="true"><header><div><span>Selected day</span><h2>${safe(title)}</h2><p>${cards.length} appointment${cards.length===1?"":"s"}</p></div><button class="admin-v3-button admin-v3-button--gold calendar-new-order" data-calendar-date="${safe(selected)}" type="button">New Order for This Date</button></header><div class="admin-v3-agenda-list">${body}</div></aside>`;
+  }
   function renderCalendar() {
-    const rows=activeRequests().filter(r=>r.appointment_date||r.preferred_date).sort((a,b)=>String(a.appointment_date||a.preferred_date).localeCompare(String(b.appointment_date||b.preferred_date)));
-    if(!rows.length)return '<div class="admin-v3-module-card admin-v3-empty-module"><h3>No scheduled dates</h3><p>Requested and confirmed appointment dates will appear here.</p></div>';
-    return `<div class="admin-v3-calendar-list">${rows.map(r=>{const c=getCustomer(r)||{};const date=r.appointment_date||r.preferred_date;const time=r.appointment_time||r.preferred_time_window||"Time not set";return `<article class="admin-v3-calendar-item"><strong>${safe(new Date(`${date}T12:00:00`).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}</strong><div><h3>${safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client")}</h3><p>${safe(time)} · ${safe(labelFromStatus(r.service_type))}</p></div><button class="admin-v3-button admin-v3-button--outline module-open-request" data-request-id="${safe(r.id)}" data-tab="appointment" type="button">Open</button></article>`}).join("")}</div>`;
+    if(!moduleState.calendarSelectedDate)moduleState.calendarSelectedDate=dateKey(new Date());
+    if(moduleState.requestsState==="loading")return '<div class="admin-v3-module-card admin-v3-calendar-state" role="status"><span class="admin-v3-calendar-loader" aria-hidden="true"></span><h2>Loading Scheduling Center</h2><p>Retrieving authenticated appointment data…</p></div>';
+    if(moduleState.requestsState==="error")return `<div class="admin-v3-module-card admin-v3-calendar-state" role="alert"><h2>Scheduling data could not be loaded</h2><p>${safe(moduleState.requestsError||"Try loading the calendar again.")}</p><button class="admin-v3-button admin-v3-button--navy calendar-retry" type="button">Retry</button></div>`;
+    const rows=calendarAppointments(); const allRows=calendarAppointments({filtered:false}); const month=moduleState.calendarMonth;
+    const monthStart=new Date(month.getFullYear(),month.getMonth(),1,12); const gridStart=new Date(monthStart); gridStart.setDate(1-monthStart.getDay());
+    const monthRows=rows.filter(request=>{const date=dateFromKey(appointmentDate(request));return date&&date.getFullYear()===month.getFullYear()&&date.getMonth()===month.getMonth();});
+    const allMonthRows=allRows.filter(request=>{const date=dateFromKey(appointmentDate(request));return date&&date.getFullYear()===month.getFullYear()&&date.getMonth()===month.getMonth();});
+    const cells=Array.from({length:42},(_,index)=>{const date=new Date(gridStart);date.setDate(gridStart.getDate()+index);const key=dateKey(date);const appointments=rows.filter(request=>appointmentDate(request)===key);const today=key===dateKey(new Date());const selected=key===moduleState.calendarSelectedDate;const outside=date.getMonth()!==month.getMonth();const serviceTags=[...new Set(appointments.map(request=>request.service_type))].slice(0,3).map(service=>`<span>${safe(serviceAbbreviation(service))}</span>`).join("");const aria=`${date.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"})}${today?", Today":""}, ${appointments.length} appointment${appointments.length===1?"":"s"}`;return `<button class="admin-v3-calendar-day${today?" is-today":""}${selected?" is-selected":""}${outside?" is-outside":""}" data-calendar-date="${key}" type="button" aria-label="${safe(aria)}" aria-pressed="${selected}"><span class="admin-v3-calendar-day-number">${date.getDate()}${today?'<small>Today</small>':""}</span>${appointments.length?`<strong>${appointments.length}</strong><span class="admin-v3-calendar-day-services">${serviceTags}</span>`:""}</button>`;}).join("");
+    const monthMessage=!allMonthRows.length?"No appointments this month":!monthRows.length?"No appointments matching filters":"";
+    return `<section class="admin-v3-scheduling-center"><div class="admin-v3-calendar-toolbar"><div class="admin-v3-calendar-navigation"><button class="admin-v3-button admin-v3-button--outline calendar-month-change" data-month-change="-1" type="button" aria-label="Previous Month">Previous Month</button><button class="admin-v3-button admin-v3-button--outline calendar-today" type="button">Today</button><button class="admin-v3-button admin-v3-button--outline calendar-month-change" data-month-change="1" type="button" aria-label="Next Month">Next Month</button></div><div class="admin-v3-calendar-filters"><label>Service<select id="calendarServiceFilter"><option value="all">All Services</option><option value="ron">Remote Online Notary</option><option value="mobile">Mobile Notary</option><option value="print">Print &amp; Scan</option></select></label><label>Status<select id="calendarStatusFilter"><option value="all">All Statuses</option><option value="active">Active</option><option value="pending">Pending / Awaiting Action</option><option value="confirmed">Confirmed</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></label></div></div><div class="admin-v3-scheduling-layout"><div class="admin-v3-month-calendar"><header><span>Month calendar</span><h2 id="calendarMonthHeading" tabindex="-1">${safe(calendarMonthName(month))}</h2>${monthMessage?`<p class="admin-v3-calendar-notice">${safe(monthMessage)}</p>`:""}</header><div class="admin-v3-calendar-weekdays" aria-hidden="true"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div><div class="admin-v3-calendar-grid" role="grid" aria-labelledby="calendarMonthHeading">${cells}</div></div>${renderCalendarAgenda(rows)}</div></section>`;
   }
   const wizardSteps = ["Customer", "Service", "Details", "Scheduling", "Pricing", "Review"];
   const serviceLabels = { ron: "Remote Online Notary", mobile: "Mobile Notary", print: "Print & Scan" };
@@ -532,10 +662,39 @@
   }
   function bindModuleActions() {
     $$(".module-open-request", moduleContent).forEach(button=>button.addEventListener("click",()=>openRequestFromModule(button.dataset.requestId,button.dataset.tab||"overview")));
-    $("[data-cancel-new]", moduleContent)?.addEventListener("click",()=>showAdminView("requests"));
+    $("[data-cancel-new]", moduleContent)?.addEventListener("click",()=>{const returnToCalendar=Boolean(moduleState.newOrderCalendarDate);moduleState.newOrderCalendarDate=null;showAdminView(returnToCalendar?"calendar":"requests");});
     const newOrderForm = $("#adminCreateRequestForm", moduleContent);
     if (newOrderForm) bindNewOrderWizard(newOrderForm);
+    bindCalendarActions();
     $("#openLegacySupport", moduleContent)?.addEventListener("click",()=>showAdminView("requests"));
+  }
+  function refreshCalendarView() {
+    if(moduleState.activeView!=="calendar")return;
+    moduleContent.innerHTML=renderCalendar(); bindModuleActions();
+  }
+  function openNewOrderForDate(value) {
+    moduleState.newOrderCalendarDate=value;
+    showAdminView("new");
+    const input=$("#adminCreateRequestForm [name='preferred_date']",moduleContent);
+    if(input)input.value=value;
+  }
+  function downloadCalendarFile(request) {
+    const reference=`APS-${String(request.id).slice(0,8).toUpperCase()}`;
+    const blob=new Blob([calendarIcs(request)],{type:"text/calendar;charset=utf-8"});
+    const url=URL.createObjectURL(blob); const link=document.createElement("a");
+    link.href=url; link.download=`${reference}.ics`; document.body.append(link); link.click(); link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  function bindCalendarActions() {
+    if(moduleState.activeView!=="calendar")return;
+    const serviceFilter=$("#calendarServiceFilter",moduleContent); if(serviceFilter){serviceFilter.value=moduleState.calendarService;serviceFilter.addEventListener("change",()=>{moduleState.calendarService=serviceFilter.value;refreshCalendarView();});}
+    const statusFilter=$("#calendarStatusFilter",moduleContent); if(statusFilter){statusFilter.value=moduleState.calendarStatus;statusFilter.addEventListener("change",()=>{moduleState.calendarStatus=statusFilter.value;refreshCalendarView();});}
+    $$(".calendar-month-change",moduleContent).forEach(button=>button.addEventListener("click",()=>{const direction=Number(button.dataset.monthChange)||0;const selected=dateFromKey(moduleState.calendarSelectedDate)||moduleState.calendarMonth;const target=new Date(moduleState.calendarMonth.getFullYear(),moduleState.calendarMonth.getMonth()+direction,1,12);const lastDay=new Date(target.getFullYear(),target.getMonth()+1,0).getDate();target.setDate(Math.min(selected.getDate(),lastDay));moduleState.calendarMonth=new Date(target.getFullYear(),target.getMonth(),1,12);moduleState.calendarSelectedDate=dateKey(target);refreshCalendarView();$("#calendarMonthHeading",moduleContent)?.focus?.();}));
+    $(".calendar-today",moduleContent)?.addEventListener("click",()=>{const today=new Date();moduleState.calendarMonth=new Date(today.getFullYear(),today.getMonth(),1,12);moduleState.calendarSelectedDate=dateKey(today);refreshCalendarView();});
+    $$(".admin-v3-calendar-day",moduleContent).forEach(button=>button.addEventListener("click",()=>{moduleState.calendarSelectedDate=button.dataset.calendarDate;const selected=dateFromKey(moduleState.calendarSelectedDate);if(selected&&(selected.getMonth()!==moduleState.calendarMonth.getMonth()||selected.getFullYear()!==moduleState.calendarMonth.getFullYear()))moduleState.calendarMonth=new Date(selected.getFullYear(),selected.getMonth(),1,12);refreshCalendarView();$(".admin-v3-calendar-agenda",moduleContent)?.focus?.();}));
+    $(".calendar-new-order",moduleContent)?.addEventListener("click",button=>openNewOrderForDate(button.currentTarget.dataset.calendarDate));
+    $$(".calendar-download-ics",moduleContent).forEach(button=>button.addEventListener("click",()=>{const request=moduleState.requests.find(item=>item.id===button.dataset.requestId);if(request)downloadCalendarFile(request);}));
+    $(".calendar-retry",moduleContent)?.addEventListener("click",()=>window.loadRequests?.());
   }
   function wizardValue(form, name) { return form.elements[name]?.value?.trim?.() || ""; }
   function wizardNumber(form, name, fallback = 0) { const value = Number(form.elements[name]?.value); return Number.isFinite(value) ? value : fallback; }
@@ -740,7 +899,9 @@
         if (error) throw error;
       }
       await uploadNewOrderDocuments(request.id, Array.from(form.elements.order_documents?.files||[]));
-      status.textContent="Request created successfully."; await loadRequests(); openRequestFromModule(request.id);
+      const calendarDate=moduleState.newOrderCalendarDate;
+      status.textContent="Request created successfully."; await loadRequests();
+      if(calendarDate){moduleState.newOrderCalendarDate=null;moduleState.calendarSelectedDate=calendarDate;const selected=dateFromKey(calendarDate);if(selected)moduleState.calendarMonth=new Date(selected.getFullYear(),selected.getMonth(),1,12);showAdminView("calendar");}else{openRequestFromModule(request.id);}
     } catch(error) {status.textContent=`Could not create request: ${error.message||error}`;} finally {submit.disabled=false;}
   }
   function showAdminView(view) {
@@ -748,14 +909,18 @@
     const isRequests=view==="requests";
     appView.hidden=!isRequests; moduleView.hidden=isRequests;
     if(!isRequests){const labels=moduleTitles[view]||moduleTitles.dashboard;$("#moduleEyebrow").textContent=labels[0];$("#moduleTitle").textContent=labels[1];$("#moduleSubtitle").textContent=labels[2];moduleContent.innerHTML=renderModule(view);bindModuleActions();}
+    $("#adminSidebar")?.classList.remove("is-open");
+    $("#adminMenuButton")?.setAttribute("aria-expanded","false");
     $$('[data-admin-view]').forEach(link=>link.classList.toggle("is-active",(view==="dashboard"&&link.textContent.includes("Dashboard"))||link.dataset.adminView===view));
     window.scrollTo({top:0,behavior:"auto"});
   }
-  window.addEventListener("aps:requests-loaded",event=>{moduleState.requests=event.detail.requests||[];if(moduleState.activeView!=="requests")showAdminView(moduleState.activeView);});
+  window.addEventListener("aps:requests-loading",()=>{moduleState.requestsState="loading";moduleState.requestsError="";if(moduleState.activeView==="calendar")refreshCalendarView();});
+  window.addEventListener("aps:requests-error",event=>{moduleState.requestsState="error";moduleState.requestsError=event.detail?.message||"Requests could not be loaded.";if(moduleState.activeView==="calendar")refreshCalendarView();});
+  window.addEventListener("aps:requests-loaded",event=>{moduleState.requests=event.detail.requests||[];moduleState.requestsState="ready";moduleState.requestsError="";if(moduleState.activeView!=="requests")showAdminView(moduleState.activeView);});
   window.addEventListener("aps:support-loaded",event=>{moduleState.supportTickets=event.detail.supportTickets||[];if(moduleState.activeView==="support")showAdminView("support");});
   $("#returnToRequests")?.addEventListener("click",()=>showAdminView("requests"));
   $("#newRequestButton")?.replaceWith($("#newRequestButton").cloneNode(true));
-  $("#newRequestButton")?.addEventListener("click",()=>showAdminView("new"));
+  $("#newRequestButton")?.addEventListener("click",()=>{moduleState.newOrderCalendarDate=null;showAdminView("new");});
   $$('[data-admin-view]').forEach(link=>{const clone=link.cloneNode(true);link.replaceWith(clone);clone.addEventListener("click",event=>{event.preventDefault();const view=clone.dataset.adminView;showAdminView(view==="requests"&&clone.textContent.includes("Dashboard")?"dashboard":view);});});
 
   /** Public bridge used by admin.js after it resolves a selected request. */
@@ -765,5 +930,15 @@
     activateTab,
     filterVisibleRequestCards,
     showAdminView,
+    calendarIcs,
+    googleCalendarUrl,
+    calendarIcsForRequest: (id) => {
+      const request=moduleState.requests.find(item=>item.id===id);
+      return request?calendarIcs(request):"";
+    },
+    googleCalendarUrlForRequest: (id) => {
+      const request=moduleState.requests.find(item=>item.id===id);
+      return request?googleCalendarUrl(request):"";
+    },
   };
 })();
