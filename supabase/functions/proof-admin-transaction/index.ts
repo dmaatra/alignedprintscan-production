@@ -15,6 +15,7 @@ import {
   ProofTransactionLifecycle,
   type TransactionCommandInput,
 } from "../_shared/proof/transaction-lifecycle.ts";
+import { registerProofWebhook } from "../_shared/proof/webhook-registration.ts";
 
 const commands = new Set([
   "organization_check",
@@ -34,6 +35,7 @@ const activationCommands = new Set([
   "mark_signer_manual_review",
   "mark_activation_manual_review",
 ]);
+const infrastructureCommands = new Set(["register_webhook"]);
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
@@ -59,7 +61,8 @@ Deno.serve(async (request) => {
     if (
       !body ||
       !(commands.has(String(body.command ?? "")) ||
-        activationCommands.has(String(body.command ?? "")))
+        activationCommands.has(String(body.command ?? "")) ||
+        infrastructureCommands.has(String(body.command ?? "")))
     ) {
       throw new ProofError(
         "PROOF_VALIDATION_ERROR",
@@ -69,7 +72,9 @@ Deno.serve(async (request) => {
     }
     const config = getProofConfig();
     const service = new ProofService();
-    const result = activationCommands.has(String(body.command))
+    const result = infrastructureCommands.has(String(body.command))
+      ? await registerProofWebhook(service)
+      : activationCommands.has(String(body.command))
       ? await new ProofActivationLifecycle(
         new SupabaseActivationRepository(),
         service,

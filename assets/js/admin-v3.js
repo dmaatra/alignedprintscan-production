@@ -657,7 +657,7 @@
     if(view==="documents") return `<div class="admin-v3-module-card"><h2>Request document workspace</h2><p>Document access remains securely scoped to each request. Open a request directly in its Documents tab.</p></div>${table(rows,[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Customer",render:r=>{const c=getCustomer(r)||{};return safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client");}},{label:"Service",render:r=>safe(labelFromStatus(r.service_type))},{label:"Pages detected",render:r=>safe(r.detected_pdf_page_count||"—")}])}`;
     if(view==="templates") return '<div class="admin-v3-module-grid"><article class="admin-v3-module-card"><h3>Quote & invoice items</h3><p>Use the request Payments tab to build a quote from centralized APS pricing.</p></article><article class="admin-v3-module-card"><h3>Customer status emails</h3><p>Approved status messages remain connected to the existing Resend functions.</p></article><article class="admin-v3-module-card"><h3>Appointment instructions</h3><p>Store appointment links, location, platform, and preparation notes in each request.</p></article><article class="admin-v3-module-card"><h3>Support responses</h3><p>Use the Support module to track customer follow-up and internal notes.</p></article></div>';
     if(view==="support") {const tickets=moduleState.supportTickets;return `<div class="admin-v3-module-grid"><article class="admin-v3-module-card admin-v3-kpi"><span>Open tickets</span><strong>${tickets.length}</strong></article></div><div class="admin-v3-module-card"><h2>Support workspace</h2><p>Open the request workspace to use the full support controls already connected to Supabase.</p><button class="admin-v3-button admin-v3-button--navy" id="openLegacySupport" type="button">Open support controls</button></div>`;}
-    if(view==="settings") return '<div class="admin-v3-module-grid"><article class="admin-v3-module-card"><h3>Supabase</h3><p>Request storage, authentication, files, and realtime updates are connected through the existing configuration.</p></article><article class="admin-v3-module-card"><h3>Stripe</h3><p>Invoice checkout and webhook logic remain unchanged by this milestone.</p></article><article class="admin-v3-module-card"><h3>Resend</h3><p>Transactional email functions remain unchanged by this milestone.</p></article><article class="admin-v3-module-card"><h3>Proof</h3><p>Live RON session integration remains deferred to a later milestone.</p></article></div>';
+    if(view==="settings") return '<div class="admin-v3-module-grid"><article class="admin-v3-module-card"><h3>Supabase</h3><p>Request storage, authentication, files, and realtime updates are connected through the existing configuration.</p></article><article class="admin-v3-module-card"><h3>Stripe</h3><p>Invoice checkout and webhook logic remain unchanged.</p></article><article class="admin-v3-module-card"><h3>Resend</h3><p>Transactional email functions remain unchanged.</p></article><article class="admin-v3-module-card"><h3>Proof infrastructure</h3><p>Owner-supervised connection and webhook setup only. No transaction controls are available here.</p><div class="admin-v3-agenda-actions"><button class="admin-v3-button admin-v3-button--navy" id="verifyProofConnection" type="button">Verify Proof Connection</button><button class="admin-v3-button admin-v3-button--outline" id="registerProofWebhook" type="button">Register Proof Webhook</button></div><div id="proofInfrastructureStatus" role="status" aria-live="polite"><p>No infrastructure check has run in this session.</p></div></article></div>';
     return renderDashboard();
   }
   function bindModuleActions() {
@@ -667,6 +667,33 @@
     if (newOrderForm) bindNewOrderWizard(newOrderForm);
     bindCalendarActions();
     $("#openLegacySupport", moduleContent)?.addEventListener("click",()=>showAdminView("requests"));
+    $("#verifyProofConnection", moduleContent)?.addEventListener("click",()=>runProofInfrastructureCommand("organization_check"));
+    $("#registerProofWebhook", moduleContent)?.addEventListener("click",()=>runProofInfrastructureCommand("register_webhook"));
+  }
+
+  async function runProofInfrastructureCommand(command) {
+    const status = $("#proofInfrastructureStatus", moduleContent);
+    const buttons = $$("#verifyProofConnection, #registerProofWebhook", moduleContent);
+    if (!status || !adminClient) return;
+    buttons.forEach((button) => button.disabled = true);
+    status.innerHTML = "<p>Working…</p>";
+    try {
+      const { data, error } = await adminClient.functions.invoke("proof-admin-transaction", { body: { command } });
+      if (error) throw error;
+      const timestamp = new Date().toLocaleString();
+      if (command === "organization_check") {
+        const organization = data?.organization || {};
+        status.innerHTML = `<p><strong>Connection verified</strong></p><p>${safe(organization.name || "Proof organization")} · ${safe(organization.id || "Identifier unavailable")}</p><p>Production · ${safe(timestamp)}</p>`;
+      } else {
+        const subscription = data?.subscription || {};
+        const events = Array.isArray(subscription.subscriptions) ? subscription.subscriptions : [];
+        status.innerHTML = `<p><strong>Webhook ${subscription.enabled ? "active" : "not active"}</strong></p><p>${safe(subscription.id || "Identifier unavailable")} · ${events.length} events</p><p>${events.map(safe).join(", ")}</p><p>${data?.reused ? "Existing subscription reused" : "New subscription registered"} · ${safe(timestamp)}</p>`;
+      }
+    } catch (error) {
+      status.innerHTML = `<p><strong>Proof infrastructure check failed</strong></p><p>${safe(error?.message || "The operation could not be completed.")}</p><p>${safe(new Date().toLocaleString())}</p>`;
+    } finally {
+      buttons.forEach((button) => button.disabled = false);
+    }
   }
   function refreshCalendarView() {
     if(moduleState.activeView!=="calendar")return;

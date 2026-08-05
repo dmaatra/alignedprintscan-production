@@ -79,6 +79,13 @@ export interface ProofRetrievedAsset {
   contentType: string;
 }
 
+export interface ProofWebhookSubscription {
+  id: string;
+  url: string;
+  enabled: boolean;
+  subscriptions: string[];
+}
+
 export class ProofService {
   constructor(private readonly client: ProofTransport = new ProofClient()) {}
 
@@ -95,6 +102,56 @@ export class ProofService {
       );
     }
     return { id, name: safeString(object.name ?? object.organization_name) };
+  }
+
+  async listWebhookSubscriptions(): Promise<ProofWebhookSubscription[]> {
+    const data = await this.client.request<unknown>("/v2/webhooks", {
+      method: "GET",
+      retry: true,
+    });
+    const rows = Array.isArray(data)
+      ? data
+      : Array.isArray(asObject(data).webhooks)
+      ? asObject(data).webhooks as unknown[]
+      : [];
+    return rows.map(sanitizeWebhookSubscription);
+  }
+
+  async createWebhookSubscription(input: {
+    url: string;
+    subscriptions: string[];
+    signingKey: string;
+  }): Promise<ProofWebhookSubscription> {
+    const data = await this.client.request<unknown>("/v2/webhooks", {
+      method: "POST",
+      retry: false,
+      json: {
+        url: input.url,
+        subscriptions: input.subscriptions,
+        signing_key: input.signingKey,
+      },
+    });
+    return sanitizeWebhookSubscription(data);
+  }
+
+  async updateWebhookSubscription(
+    id: string,
+    input: { url: string; subscriptions: string[]; signingKey: string },
+  ): Promise<ProofWebhookSubscription> {
+    assertProviderId(id);
+    const data = await this.client.request<unknown>(
+      `/v2/webhooks/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        retry: false,
+        json: {
+          url: input.url,
+          subscriptions: input.subscriptions,
+          signing_key: input.signingKey,
+        },
+      },
+    );
+    return sanitizeWebhookSubscription(data);
   }
 
   async createDraftTransaction(
@@ -283,6 +340,29 @@ export class ProofService {
       documents: documents.map((document) => sanitizeDocument(document, false)),
     };
   }
+}
+
+export function sanitizeWebhookSubscription(
+  data: unknown,
+): ProofWebhookSubscription {
+  const object = asObject(data);
+  const id = safeString(object.id ?? object.webhook_id);
+  const url = safeString(object.url);
+  if (!id || !url) {
+    throw malformed("Proof returned an invalid webhook subscription.");
+  }
+  assertProviderId(id);
+  const subscriptions = Array.isArray(object.subscriptions)
+    ? object.subscriptions.map(safeString).filter((value): value is string =>
+      Boolean(value)
+    )
+    : [];
+  return {
+    id,
+    url,
+    enabled: object.enabled === true,
+    subscriptions,
+  };
 }
 
 export function sanitizeDocument(
