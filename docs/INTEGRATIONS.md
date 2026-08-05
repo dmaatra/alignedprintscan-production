@@ -45,7 +45,7 @@ The existing APS function set is supplemented by exactly three Phase 4.2 Proof f
 | `customer-request-action` | Submits cancellation/reschedule request after request-email match; emails customer/admin | Not listed in config; handler validates email and action | Supabase, Resend | **CONFIRMED IN CODE** |
 | `admin-resolve-customer-action` | Approves/denies customer action, updates request, creates refund review, emails customer | Not listed in config; handler does not visibly authenticate admin caller | Supabase, Resend | **CONFIRMED IN CODE; AUTH REVIEW REQUIRED** |
 | `customer-upload-document` | Accepts base64 files up to 10 MB each after request-email match | Not listed in config; validates request and email | Supabase Database/Storage | **CONFIRMED IN CODE** |
-| `proof-admin-transaction` | Future create, activate, and retrieve transaction operations | Valid Supabase user JWT plus `public.is_admin()`; placeholder only | Shared Proof service | **CONFIRMED IN CODE: STUB** |
+| `proof-admin-transaction` | Organization check and APS-originated draft create/retrieve/refresh/delete/local-state commands | Valid Supabase user JWT plus `public.is_admin()` | Shared Proof lifecycle/service/client | **CONFIRMED IN CODE; LIVE CALLS OWNER-GATED** |
 | `proof-admin-document` | Future upload and retrieve-completed-document operations | Valid Supabase user JWT plus `public.is_admin()`; placeholder only | Shared Proof service | **CONFIRMED IN CODE: STUB** |
 | `proof-webhook` | Future Proof webhook receiver | Fails closed; future exact-raw-body HMAC authentication, never service-role authentication | Shared Proof logging | **CONFIRMED IN CODE: STUB** |
 
@@ -78,7 +78,7 @@ The existing APS function set is supplemented by exactly three Phase 4.2 Proof f
 - **CONFIRMED IN CODE:** Request records and UI can store/display `ron_session_url`, `appointment_link`, `appointment_platform`, and RON service-detail session fields.
 - **CONFIRMED IN CODE:** Admin RON Session is currently a placeholder when no data-backed section exists.
 - **CONFIRMED IN DOCUMENTATION:** Proof ODN workflows and APS-originated RON sessions powered by Proof are distinct workflow categories and must remain separately documented as integration work develops.
-- **CONFIRMED IN CODE:** Phase 4.2 Increment 1 provides an additive schema, shared provider client/service/error/logging/status foundation, two administrator-authenticated function skeletons, and one fail-closed future-HMAC webhook skeleton. It creates no Proof resources and accepts no provider webhook traffic.
+- **CONFIRMED IN CODE:** Increment 2 implements a database-backed APS-originated draft lifecycle with atomic claims, deliberate retry, ambiguous-result preservation, stored-ID refresh, incomplete-draft deletion, sanitized command audit records, and explicit Proof ODN separation. No document, activation, invitation, or webhook path is active.
 - **CONFIRMED IN DOCUMENTATION:** Proof API session creation, invitations, identity-status tracking, recording synchronization, and audit-trail synchronization remain deferred and must not be described as operational without verification in both code and production.
 - See `docs/PROOF_INTEGRATION.md` for the current boundary and future lifecycle.
 - **HISTORICAL OR POSSIBLY OUTDATED:** BlueNotary, OneNotary, and generic RON providers were previously listed as options; Proof now supersedes them as the approved planned provider.

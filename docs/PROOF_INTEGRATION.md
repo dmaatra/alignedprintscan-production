@@ -2,7 +2,7 @@
 
 ## Scope
 
-**CONFIRMED IN CODE:** Phase 4.2 Increment 1 installs an additive database model, shared server-side Proof client, normalized errors/logging/statuses, service boundary, two administrator-authenticated Edge Function placeholders, and a fail-closed webhook placeholder. It does not create transactions, upload documents, activate sessions, retrieve completed files, or accept Proof webhooks.
+**CONFIRMED IN CODE:** Phase 4.2 Increment 2 adds the administrator-only draft transaction lifecycle on top of the unapplied Increment 1 foundation. It supports organization metadata retrieval, local atomic create claims, draft creation, stored-ID retrieval/refresh, incomplete-draft deletion, safe local cancellation, and manual-review state. It does not upload documents, activate or invite signers, retrieve completed files, process webhooks, or alter APS payment/workflow state.
 
 **CONFIRMED IN DOCUMENTATION:** APS remains the system of record for customers, orders, invoices/payments, scheduling, workflow, communications, the customer portal, and the admin dashboard. Proof is the RON integration engine and signer experience.
 
@@ -14,15 +14,16 @@ The Proof configuration names are `PROOF_API_KEY`, `PROOF_API_BASE_URL`, and `PR
 
 The only Proof Edge Function directories are:
 
-- `proof-admin-transaction`: create, activate, and retrieve transaction placeholders.
+- `proof-admin-transaction`: approved draft lifecycle commands; all provider calls remain owner-gated until controlled testing is separately approved.
 - `proof-admin-document`: upload and retrieve-completed-document placeholders.
 - `proof-webhook`: future provider HMAC entrypoint.
 
 ## Shared service layer
 
-- `config.ts` loads and validates the two Proof secrets.
-- `client.ts` is the only provider HTTP transport. It supports JSON and multipart bodies, bearer authorization, timeouts, safe retries, idempotency headers, and normalized failures.
-- `service.ts` is the business-facing integration boundary. Increment 1 methods deliberately return not-implemented placeholders and do not construct a client or call Proof.
+- `config.ts` loads and validates `PROOF_API_KEY`, `PROOF_API_BASE_URL`, and `PROOF_ENVIRONMENT`.
+- `client.ts` is the only provider HTTP transport. It supports JSON and multipart bodies, Proof's `ApiKey` header, timeouts, safe read retries, and normalized failures.
+- `service.ts` is the business-facing integration boundary for the four Increment 2 endpoints. Create and delete explicitly disable transport retries.
+- `transaction-lifecycle.ts` owns readiness, database idempotency, reconciliation, status synchronization, deletion, and manual-review decisions.
 - `status-map.ts` maps provider vocabulary to APS-owned status values and customer-safe labels. Raw provider values are internal only.
 - `logger.ts` emits structured API request, response, retry, error, and idempotency events with sensitive fields redacted.
 - `errors.ts` maps network failures, timeouts, HTTP 401/403/404/409/422/429, and provider 5xx responses to stable APS error codes.
@@ -45,7 +46,15 @@ All four tables have RLS enabled, no anon/authenticated policies, explicit privi
 6. Webhook and retrieval reconciliation update raw Proof data and mapped APS state.
 7. APS retrieves completed documents/audit artifacts, stores controlled asset metadata, and drives APS communications and completion rules.
 
-Steps 2–7 are future increments and are not implemented by this foundation.
+Increment 2 implements only the draft portion of steps 2–3. Document, activation, webhook, artifact, communication, and portal work remain future increments.
+
+## Increment 2 idempotency and ambiguity
+
+**CONFIRMED IN CODE:** APS claims one active `aps_originated` integration per service request and Proof environment before dispatch. The stable provider correlation value is `aps:service_request:<request UUID>`, and every deliberate attempt has a unique local idempotency key. Duplicate and concurrent commands return the stored integration. Confirmed provider rejections may be deliberately retried; successful or ambiguous creates may not.
+
+**CONFIRMED IN DOCUMENTATION:** Proof's documented transaction list filters do not include `external_id`, and the reviewed create contract does not document an HTTP idempotency guarantee. If a create response is ambiguous and no provider transaction ID was captured, APS preserves the active claim, prohibits blind retry, and requires manual review. Retrieval and refresh use only a stored provider transaction ID.
+
+APS-originated and `proof_odn` records are separate. APS blocks create and delete for `proof_odn`; a legitimate stored ODN provider ID may be retrieved without assuming payer, invitation, or signer-link ownership.
 
 ## Planned webhook lifecycle
 

@@ -5,11 +5,20 @@ export interface ProofAdminIdentity {
   email: string;
 }
 
+export interface ProofAdminAuthOptions {
+  supabaseUrl?: string;
+  anonKey?: string;
+  fetcher?: typeof fetch;
+}
+
 export async function requireProofAdmin(
   request: Request,
+  options: ProofAdminAuthOptions = {},
 ): Promise<ProofAdminIdentity> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim();
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")?.trim();
+  const supabaseUrl = options.supabaseUrl ??
+    Deno.env.get("SUPABASE_URL")?.trim();
+  const anonKey = options.anonKey ?? Deno.env.get("SUPABASE_ANON_KEY")?.trim();
+  const fetcher = options.fetcher ?? fetch;
   const authorization = request.headers.get("authorization")?.trim() ?? "";
   const token = authorization.replace(/^Bearer\s+/i, "").trim();
 
@@ -29,7 +38,7 @@ export async function requireProofAdmin(
   }
 
   const authHeaders = { apikey: anonKey, Authorization: `Bearer ${token}` };
-  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+  const userResponse = await fetcher(`${supabaseUrl}/auth/v1/user`, {
     headers: authHeaders,
   });
   if (!userResponse.ok) {
@@ -48,7 +57,7 @@ export async function requireProofAdmin(
     );
   }
 
-  const adminResponse = await fetch(`${supabaseUrl}/rest/v1/rpc/is_admin`, {
+  const adminResponse = await fetcher(`${supabaseUrl}/rest/v1/rpc/is_admin`, {
     method: "POST",
     headers: { ...authHeaders, "Content-Type": "application/json" },
     body: "{}",

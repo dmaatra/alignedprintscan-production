@@ -9,12 +9,20 @@ export type ProofErrorCode =
   | "PROOF_VALIDATION_ERROR"
   | "PROOF_RATE_LIMITED"
   | "PROOF_PROVIDER_ERROR"
+  | "PROOF_MALFORMED_RESPONSE"
+  | "PROOF_AMBIGUOUS_RESULT"
+  | "PROOF_READINESS_ERROR"
   | "PROOF_NOT_IMPLEMENTED";
 
 const statusCodes: Record<
   number,
   { code: ProofErrorCode; message: string; retryable: boolean }
 > = {
+  400: {
+    code: "PROOF_VALIDATION_ERROR",
+    message: "Proof rejected the submitted request.",
+    retryable: false,
+  },
   401: {
     code: "PROOF_UNAUTHORIZED",
     message: "Proof authentication failed.",
@@ -43,7 +51,7 @@ const statusCodes: Record<
   429: {
     code: "PROOF_RATE_LIMITED",
     message: "Proof is temporarily rate limiting requests.",
-    retryable: true,
+    retryable: false,
   },
 };
 
@@ -55,6 +63,7 @@ export class ProofError extends Error {
     public readonly retryable = false,
     public readonly providerStatus?: number,
     public readonly providerRequestId?: string,
+    public readonly requestMayHaveReachedProvider = false,
   ) {
     super(message);
     this.name = "ProofError";

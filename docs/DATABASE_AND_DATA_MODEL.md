@@ -92,6 +92,7 @@ All are **CONFIRMED IN CODE**.
 | `20260722130000_pass_3_2_3_workflow_completion.sql` | Actions, timeline, communication, refund review |
 | `20260725050000_phase_4_1_m1_client_note_archive.sql` | Note history and defective paid-invoice trigger |
 | `20260805180105_phase_4_2_increment_1_proof_foundation.sql` | Additive Proof transaction/signer/asset/webhook foundation; RLS denies browser roles and server-side database access is reserved for service role |
+| `20260805195132_phase_4_2_increment_2_draft_transaction_lifecycle.sql` | Renames the Proof workflow category, adds environment-scoped atomic creation/ambiguity/manual-review state, and creates a sanitized administrator command-attempt ledger; requires empty Increment 1 Proof tables |
 
 The ledger is **CONFIRMED IN CODE**. Several migrations overlap intentionally through `IF NOT EXISTS` compatibility changes.
 

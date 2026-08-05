@@ -17,7 +17,10 @@ export interface ProofRequestOptions {
 }
 
 export class ProofClient {
-  constructor(private readonly config: ProofConfig = getProofConfig()) {}
+  constructor(
+    private readonly config: ProofConfig = getProofConfig(),
+    private readonly fetcher: typeof fetch = fetch,
+  ) {}
 
   async request<T>(
     path: string,
@@ -72,7 +75,7 @@ export class ProofClient {
         idempotency_key: options.idempotencyKey,
       });
       try {
-        const response = await fetch(url, {
+        const response = await this.fetcher(url, {
           method,
           headers,
           body,
@@ -88,13 +91,47 @@ export class ProofClient {
         });
         if (response.ok) {
           if (response.status === 204) return undefined as T;
-          return await response.json() as T;
+          try {
+            return await response.json() as T;
+          } catch {
+            throw new ProofError(
+              "PROOF_MALFORMED_RESPONSE",
+              "Proof returned an unreadable response.",
+              502,
+              false,
+              response.status,
+              response.headers.get("x-request-id") ?? undefined,
+              method !== "GET",
+            );
+          }
         }
-        const normalized = normalizeProofHttpError(response);
+        const baseError = normalizeProofHttpError(response);
+        const normalized = new ProofError(
+          baseError.code,
+          baseError.message,
+          baseError.httpStatus,
+          baseError.retryable,
+          baseError.providerStatus,
+          baseError.providerRequestId,
+          method !== "GET" && response.status >= 500,
+        );
         if (!normalized.retryable || attempt === maxAttempts) throw normalized;
         await this.waitBeforeRetry(response, attempt);
       } catch (error) {
-        const normalized = normalizeProofFailure(error);
+        const base = normalizeProofFailure(error);
+        const normalized = method !== "GET" &&
+            (base.code === "PROOF_TIMEOUT" ||
+              base.code === "PROOF_NETWORK_ERROR")
+          ? new ProofError(
+            base.code,
+            base.message,
+            base.httpStatus,
+            base.retryable,
+            base.providerStatus,
+            base.providerRequestId,
+            true,
+          )
+          : base;
         proofLogger.error({
           code: normalized.code,
           method,
