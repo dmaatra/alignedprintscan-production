@@ -48,8 +48,8 @@ The existing APS function set is supplemented by exactly three Phase 4.2 Proof f
 | `admin-resolve-customer-action` | Approves/denies customer action, updates request, creates refund review, emails customer | Not listed in config; handler does not visibly authenticate admin caller | Supabase, Resend | **CONFIRMED IN CODE; AUTH REVIEW REQUIRED** |
 | `customer-upload-document` | Accepts base64 files up to 10 MB each after request-email match | Not listed in config; validates request and email | Supabase Database/Storage | **CONFIRMED IN CODE** |
 | `proof-admin-transaction` | Organization check and APS-originated draft create/retrieve/refresh/delete/local-state commands | Valid Supabase user JWT plus `public.is_admin()` | Shared Proof lifecycle/service/client | **CONFIRMED IN CODE; LIVE CALLS OWNER-GATED** |
-| `proof-admin-document` | Future upload and retrieve-completed-document operations | Valid Supabase user JWT plus `public.is_admin()`; placeholder only | Shared Proof service | **CONFIRMED IN CODE: STUB** |
-| `proof-webhook` | Future Proof webhook receiver | Fails closed; future exact-raw-body HMAC authentication, never service-role authentication | Shared Proof logging | **CONFIRMED IN CODE: STUB** |
+| `proof-admin-document` | Source uploads plus admin-only completed-document/audit retrieval into protected APS storage | Valid Supabase user JWT plus `public.is_admin()` | Shared Proof service, Database, private Storage | **CONFIRMED IN CODE** |
+| `proof-webhook` | Webhooks V2 ingestion, durable deduplication, monotonic synchronization, retry/dead-letter state | Exact raw-body `X-Notarize-Signature` HMAC with `PROOF_WEBHOOK_SECRET`; no Supabase JWT | Database through service role after HMAC | **CONFIRMED IN CODE** |
 
 ### Function configuration gap
 

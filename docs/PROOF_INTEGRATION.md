@@ -109,3 +109,9 @@ Increment 1 does not use Supabase JWT or service-role authentication for the pro
 The readiness evaluator fails closed on ownership, draft state, ambiguity/manual review, signer count/configuration, processed documents, witness mapping, outstanding non-void/non-cancelled invoice balances, confirmed appointment fields, IANA timezone, prior activation, and administrator confirmation. It never modifies APS financial, scheduling, or workflow state.
 
 **UNKNOWN / OWNER CONFIRMATION REQUIRED:** APS has signer count but no structured request-scoped signer identity table. Signer identities therefore require explicit administrator approval and the customer is never inferred as signer. Witness-bearing requests return `WITNESS_MAPPING_REQUIRED`. Alternative non-payment resolution states remain undefined.
+
+## Increment 5 webhook and completed assets
+
+**CONFIRMED IN CODE:** `proof-webhook` accepts POST without a Supabase JWT, reads the body once, verifies hexadecimal `X-Notarize-Signature` HMAC-SHA256 over the exact bytes using server-only `PROOF_WEBHOOK_SECRET`, and parses JSON only after constant-time verification. Accepted events use event-ID/fingerprint deduplication, delivery counts, monotonic Proof-owned synchronization, and retry/dead-letter/manual-review states. Raw bodies and signatures are neither stored nor logged.
+
+**CONFIRMED IN CODE:** Completed-document and audit-trail commands remain administrator-only in `proof-admin-document`. They use stored Proof identifiers through `ProofService`/`ProofClient`, validate PDF bytes, compute SHA-256, and write new objects to the private `proof-assets` bucket. Provider URLs and protected paths are not returned. ODN retrieval and all recording-content retrieval remain blocked pending separate authorization and legal/retention approval.

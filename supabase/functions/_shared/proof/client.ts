@@ -14,6 +14,11 @@ export interface ProofRequestOptions {
   idempotencyKey?: string;
   timeoutMs?: number;
   retry?: boolean;
+  responseType?: "json" | "bytes";
+}
+export interface ProofBinaryResponse {
+  bytes: Uint8Array;
+  contentType: string | null;
 }
 
 export class ProofClient {
@@ -56,7 +61,7 @@ export class ProofClient {
       );
       const headers = new Headers(options.headers);
       headers.set("ApiKey", this.config.apiKey);
-      headers.set("Accept", "application/json");
+      if (!headers.has("Accept")) headers.set("Accept", "application/json");
       if (options.idempotencyKey) {
         headers.set("Idempotency-Key", options.idempotencyKey);
       }
@@ -91,6 +96,12 @@ export class ProofClient {
         });
         if (response.ok) {
           if (response.status === 204) return undefined as T;
+          if (options.responseType === "bytes") {
+            return {
+              bytes: new Uint8Array(await response.arrayBuffer()),
+              contentType: response.headers.get("content-type"),
+            } as T;
+          }
           try {
             return await response.json() as T;
           } catch {

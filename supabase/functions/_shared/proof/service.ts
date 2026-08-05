@@ -1,4 +1,8 @@
-import { ProofClient, type ProofRequestOptions } from "./client.ts";
+import {
+  type ProofBinaryResponse,
+  ProofClient,
+  type ProofRequestOptions,
+} from "./client.ts";
 import { ProofError } from "./errors.ts";
 
 export interface ProofTransport {
@@ -69,6 +73,10 @@ export interface ProofProviderDocument {
   processingState: string;
   createdAt: string | null;
   updatedAt: string | null;
+}
+export interface ProofRetrievedAsset {
+  bytes: Uint8Array;
+  contentType: string;
 }
 
 export class ProofService {
@@ -206,6 +214,59 @@ export class ProofService {
   ): Promise<ProofProviderDocument[]> {
     const transaction = await this.getTransactionWithDocuments(transactionId);
     return transaction.documents;
+  }
+
+  async getCompletedDocument(
+    transactionId: string,
+    documentId: string,
+  ): Promise<ProofRetrievedAsset> {
+    assertProviderId(transactionId);
+    assertProviderId(documentId);
+    const data = await this.client.request<unknown>(
+      `/v1/transactions/${encodeURIComponent(transactionId)}/documents/${
+        encodeURIComponent(documentId)
+      }?encoding=base64&document_url_version=v2`,
+      { method: "GET", retry: true },
+    );
+    const object = asObject(data);
+    const candidate = object.document ?? object.resource ?? object.data;
+    const encoded = typeof candidate === "string" ? candidate.trim() : "";
+    if (
+      !encoded || encoded.length > 42_000_000 ||
+      !/^[A-Za-z0-9+/=\s]+$/.test(encoded)
+    ) {
+      throw malformed("Proof returned an invalid completed document.");
+    }
+    try {
+      return {
+        bytes: Uint8Array.from(
+          atob(encoded.replace(/\s/g, "")),
+          (c) => c.charCodeAt(0),
+        ),
+        contentType: "application/pdf",
+      };
+    } catch {
+      throw malformed("Proof returned an unreadable completed document.");
+    }
+  }
+
+  async getAuditTrail(transactionId: string): Promise<ProofRetrievedAsset> {
+    assertProviderId(transactionId);
+    const result = await this.client.request<ProofBinaryResponse>(
+      `/v1/transactions/${
+        encodeURIComponent(transactionId)
+      }/assets/audit_trail`,
+      {
+        method: "GET",
+        retry: true,
+        responseType: "bytes",
+        headers: { Accept: "application/pdf" },
+      },
+    );
+    return {
+      bytes: result.bytes,
+      contentType: result.contentType ?? "application/pdf",
+    };
   }
 
   private async getTransactionWithDocuments(

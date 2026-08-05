@@ -84,8 +84,8 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/proof-admin-document/index.ts"
 
-# Proof will call this endpoint without a Supabase JWT. The handler remains
-# fail-closed until provider HMAC verification is implemented against the raw body.
+# Proof calls this endpoint without a Supabase JWT. The handler authenticates
+# X-Notarize-Signature against the exact raw body with PROOF_WEBHOOK_SECRET.
 [functions.proof-webhook]
 enabled = true
 verify_jwt = false

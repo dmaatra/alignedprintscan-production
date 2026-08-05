@@ -17,6 +17,7 @@ const transactionStatuses: Readonly<Record<string, ApsProofStatus>> = Object
     active: "in_progress",
     in_progress: "in_progress",
     completed: "completed",
+    released: "completed",
     complete: "completed",
     completed_with_rejections: "requires_attention",
     complete_with_rejections: "requires_attention",
