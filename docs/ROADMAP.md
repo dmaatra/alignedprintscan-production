@@ -47,7 +47,8 @@ All are **CONFIRMED IN CODE AS OPEN GAPS**. Repair has not been authorized by th
 - **CONFIRMED IN CODE:** Route-distance functions remain stubs. **CONFIRMED IN DOCUMENTATION:** This is acceptable until an owner-approved replacement provides reliable Mobile Notary distance/travel calculations.
 - **OWNER DECISION REQUIRED:** Approve the future provider and implementation proposal before replacement.
 - **CONFIRMED IN DOCUMENTATION:** External calendar synchronization is deferred.
-- **CONFIRMED IN DOCUMENTATION:** Proof is the approved future RON provider. Design and implement separately verified Proof ODN and APS-originated RON workflows; live API session creation, invitations, identity tracking, recording synchronization, and audit-trail synchronization remain deferred.
+- **CONFIRMED IN CODE:** Phase 4.2 Increment 1 establishes the local Proof integration foundation without creating transactions, uploading documents, activating sessions, or accepting provider webhooks.
+- **CONFIRMED IN DOCUMENTATION:** Proof is the approved RON provider. Design and implement separately verified Proof ODN and APS-originated RON workflows; live API session creation, invitations, identity tracking, recording synchronization, and audit-trail synchronization remain future increments.
 - **HISTORICAL OR POSSIBLY OUTDATED:** SMS integration was recommended but never implemented.
 - **CONFIRMED IN DOCUMENTATION:** SMS notifications, calendar synchronization, CRM, accounting, and analytics are evaluation-only roadmap items and are not approved implementation work.
 

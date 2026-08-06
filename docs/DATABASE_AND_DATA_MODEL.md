@@ -17,6 +17,10 @@
 | `print_scan_requests` | Print/scan/courier/fulfillment-specific fields | **CONFIRMED IN CODE** |
 | `request_files` | Storage object metadata, uploader/category, and detected pages | **CONFIRMED IN CODE** |
 | `support_tickets` | Public support requests and admin resolution state | **CONFIRMED IN CODE** |
+| `proof_transactions` | APS request linkage and normalized state for future Proof transactions | **CONFIRMED IN CODE** |
+| `proof_signers` | Participants attached to an APS-owned Proof transaction record | **CONFIRMED IN CODE** |
+| `proof_transaction_assets` | Metadata for future Proof source/completed documents and audit artifacts | **CONFIRMED IN CODE** |
+| `proof_webhook_events` | Idempotent provider-event intake and processing ledger | **CONFIRMED IN CODE** |
 
 Each service-specific row relates to `service_requests`; the exact live base foreign-key definitions are **PRODUCTION VERIFICATION REQUIRED** because the base schema is absent.
 
@@ -47,6 +51,8 @@ All are **CONFIRMED IN CODE**.
 - **CONFIRMED IN CODE:** Bucket name is `service-request-files`.
 - **CONFIRMED IN CODE:** Initial uploads use request-scoped paths; later customer uploads use `{requestId}/additional/{uuid}-{safeName}`; admin uploads use request-scoped admin paths.
 - **CONFIRMED IN CODE:** `request_files` stores file name/path/type/size plus uploader/category metadata where newer columns exist.
+- **CONFIRMED IN CODE:** The unapplied Increment 3 migration extends `proof_transaction_assets` with a restricted `request_files` foreign key, stable tracking ID, exact SHA-256/byte count, approved document flags, upload/dispatch/processing states, ambiguity and retry controls, safe errors, audit identities, and provider synchronization timestamps. Partial unique indexes prevent a source file or tracking ID from being mapped twice to one Proof transaction.
+- **CONFIRMED IN CODE:** `proof_document_command_attempts` is a service-role-only sanitized command ledger. It stores identifiers, command/outcome, administrator identity, provider status/error code, and timestamps—not document bytes, signed URLs, storage paths, credentials, or raw provider responses.
 - **CONFIRMED IN DOCUMENTATION:** The bucket is intended to be private, with signed admin links.
 - **PRODUCTION VERIFICATION REQUIRED:** Live bucket creation, size/type restrictions, and current Storage RLS are not fully defined in migrations.
 - **CONFIRMED IN DOCUMENTATION:** APS will comply with Texas notary requirements and applicable legal/business record-retention obligations. Specific retention periods remain an intentionally deferred future policy decision.
@@ -87,6 +93,8 @@ All are **CONFIRMED IN CODE**.
 | `20260718073000_pass_3_2_1_witness_allocation.sql` | Witness data normalization |
 | `20260722130000_pass_3_2_3_workflow_completion.sql` | Actions, timeline, communication, refund review |
 | `20260725050000_phase_4_1_m1_client_note_archive.sql` | Note history and defective paid-invoice trigger |
+| `20260805180105_phase_4_2_increment_1_proof_foundation.sql` | Additive Proof transaction/signer/asset/webhook foundation; RLS denies browser roles and server-side database access is reserved for service role |
+| `20260805195132_phase_4_2_increment_2_draft_transaction_lifecycle.sql` | Renames the Proof workflow category, adds environment-scoped atomic creation/ambiguity/manual-review state, and creates a sanitized administrator command-attempt ledger; requires empty Increment 1 Proof tables |
 
 The ledger is **CONFIRMED IN CODE**. Several migrations overlap intentionally through `IF NOT EXISTS` compatibility changes.
 
@@ -97,3 +105,5 @@ The ledger is **CONFIRMED IN CODE**. Several migrations overlap intentionally th
 - **CONFIRMED IN CODE:** The note-history policy allows every authenticated user full access.
 - **CONFIRMED IN DOCUMENTATION:** `PATCH_3_2_DEPLOYMENT_AND_ACCEPTANCE.md` references a `20260719150000...` migration that is absent; equivalent later tables appear in the `20260722130000...` migration.
 - **PRODUCTION VERIFICATION REQUIRED:** Remote migration ledger and drift from local files.
+- **CONFIRMED IN CODE:** The unapplied Increment 4 migration adds signer order/external identity, configuration/invitation state, access-link presence only, activation claims/ambiguity/timestamps, Proof email ownership, audit support, and uniqueness constraints for signer position, email, external ID, and successful activation.
+- **CONFIRMED IN CODE:** The unapplied Increment 5 migration adds verified webhook fingerprints, delivery and processing state, monotonic synchronization metadata, completed/audit asset retrieval state, and a dedicated private `proof-assets` bucket. Browser roles retain no Proof-table access and recording content remains blocked.

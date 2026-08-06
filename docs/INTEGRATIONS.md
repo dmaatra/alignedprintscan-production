@@ -16,17 +16,19 @@
 
 **CONFIRMED IN CODE:** Request documents are uploaded to the `service-request-files` bucket. Browser intake uploads directly under public/RLS permissions; later customer upload uses a service-role Edge Function after email matching; admin upload uses the authenticated client. Admin downloads use signed URLs.
 
+**CONFIRMED IN CODE:** The local Proof document integration retrieves approved source PDFs server-side from `service-request-files`; signed URLs and storage paths are never returned by the Proof admin function. It enforces the existing APS 10 MB ceiling even though Proof documents may be up to 30 MB, computes SHA-256, and sends multipart bytes only through `ProofService` and `ProofClient`. The feature is not deployed and the supporting migrations are unapplied.
+
 ### Realtime
 
 **CONFIRMED IN CODE:** Admin subscribes to `service_requests` and `support_tickets`, then reloads affected lists. Production publication state is **PRODUCTION VERIFICATION REQUIRED**.
 
 ### Migrations
 
-**CONFIRMED IN CODE:** Eighteen additive SQL migration files exist. They are overlapping release-era patches rather than a clean base-to-current schema. The initial schema is absent. Never infer that local migration presence means remote application.
+**CONFIRMED IN CODE:** The repository contains additive SQL migrations, including the Phase 4.2 Proof foundation. They are overlapping release-era patches rather than a clean base-to-current schema. The initial schema is absent. Never infer that local migration presence means remote application.
 
 ## Edge Function catalog
 
-There are 15 function directories. `supabase/config.toml` explicitly configures only the first ten legacy entries shown there; five newer functions rely on platform defaults or deployment configuration not recorded locally.
+The existing APS function set is supplemented by exactly three Phase 4.2 Proof foundation directories. The two admin functions require an authenticated Supabase administrator JWT. The webhook is a fail-closed placeholder reserved for future Proof HMAC authentication. Existing non-Proof configuration gaps remain outside this increment.
 
 | Function | Purpose and caller | Auth/validation | Dependencies | Status |
 |---|---|---|---|---|
@@ -45,6 +47,9 @@ There are 15 function directories. `supabase/config.toml` explicitly configures 
 | `customer-request-action` | Submits cancellation/reschedule request after request-email match; emails customer/admin | Not listed in config; handler validates email and action | Supabase, Resend | **CONFIRMED IN CODE** |
 | `admin-resolve-customer-action` | Approves/denies customer action, updates request, creates refund review, emails customer | Not listed in config; handler does not visibly authenticate admin caller | Supabase, Resend | **CONFIRMED IN CODE; AUTH REVIEW REQUIRED** |
 | `customer-upload-document` | Accepts base64 files up to 10 MB each after request-email match | Not listed in config; validates request and email | Supabase Database/Storage | **CONFIRMED IN CODE** |
+| `proof-admin-transaction` | Organization check and APS-originated draft create/retrieve/refresh/delete/local-state commands | Valid Supabase user JWT plus `public.is_admin()` | Shared Proof lifecycle/service/client | **CONFIRMED IN CODE; LIVE CALLS OWNER-GATED** |
+| `proof-admin-document` | Source uploads plus admin-only completed-document/audit retrieval into protected APS storage | Valid Supabase user JWT plus `public.is_admin()` | Shared Proof service, Database, private Storage | **CONFIRMED IN CODE** |
+| `proof-webhook` | Webhooks V2 ingestion, durable deduplication, monotonic synchronization, retry/dead-letter state | Exact raw-body `X-Notarize-Signature` HMAC with `PROOF_WEBHOOK_SECRET`; no Supabase JWT | Database through service role after HMAC | **CONFIRMED IN CODE** |
 
 ### Function configuration gap
 
@@ -75,7 +80,9 @@ There are 15 function directories. `supabase/config.toml` explicitly configures 
 - **CONFIRMED IN CODE:** Request records and UI can store/display `ron_session_url`, `appointment_link`, `appointment_platform`, and RON service-detail session fields.
 - **CONFIRMED IN CODE:** Admin RON Session is currently a placeholder when no data-backed section exists.
 - **CONFIRMED IN DOCUMENTATION:** Proof ODN workflows and APS-originated RON sessions powered by Proof are distinct workflow categories and must remain separately documented as integration work develops.
-- **CONFIRMED IN DOCUMENTATION:** Proof API session creation, invitations, identity-status tracking, recording synchronization, and audit-trail synchronization are planned/deferred and must not be described as operational without verification in both code and production.
+- **CONFIRMED IN CODE:** Increment 2 implements a database-backed APS-originated draft lifecycle with atomic claims, deliberate retry, ambiguous-result preservation, stored-ID refresh, incomplete-draft deletion, sanitized command audit records, and explicit Proof ODN separation. No document, activation, invitation, or webhook path is active.
+- **CONFIRMED IN DOCUMENTATION:** Proof API session creation, invitations, identity-status tracking, recording synchronization, and audit-trail synchronization remain deferred and must not be described as operational without verification in both code and production.
+- See `docs/PROOF_INTEGRATION.md` for the current boundary and future lifecycle.
 - **HISTORICAL OR POSSIBLY OUTDATED:** BlueNotary, OneNotary, and generic RON providers were previously listed as options; Proof now supersedes them as the approved planned provider.
 - **CONFIRMED IN DOCUMENTATION:** APS supports two planned Proof categories: Proof ODN assignments and APS-originated RON sessions powered by Proof. The customer-facing objective for APS-originated sessions is APS branding with Proof as the underlying compliant RON platform.
 - **OWNER DECISION REQUIRED:** Approve detailed Proof API scope, workflow design, legal/retention requirements, webhook design, and rollout/testing plan before implementation.
@@ -108,3 +115,4 @@ There are 15 function directories. `supabase/config.toml` explicitly configures 
 - **HISTORICAL OR POSSIBLY OUTDATED:** Twilio/Clerk SMS was recommended, but current code only records `sent_sms=false` and contains no SMS provider call.
 - **HISTORICAL OR POSSIBLY OUTDATED:** Google Maps Address Autocomplete was planned but is not present.
 - **CONFIRMED IN DOCUMENTATION:** SMS notifications, calendar synchronization, CRM, accounting, and analytics are long-term evaluation items only. No implementation or provider is approved.
+- **CONFIRMED IN CODE:** Local Increment 4 Proof activation is administrator-only, explicitly confirmed, and gated by APS readiness. Proof sends invitations; APS does not send access links or phone numbers, mutate payment state, or activate automatically. It is not deployed and the migration is unapplied.
