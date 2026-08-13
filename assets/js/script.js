@@ -417,6 +417,38 @@ function updateConditional() {
         ? "block"
         : "none";
   });
+  qsa("[data-upload-exception]").forEach((el) => {
+    el.style.display = wizard.elements.documentUploadException?.checked ? "block" : "none";
+  });
+  renderSignerAndActFields();
+  renderWitnessIdentityFields();
+}
+
+function renderWitnessIdentityFields() {
+  ["ron", "mobile"].forEach((service) => {
+    const host = qs(`#${service}WitnessFields`);
+    if (!host) return;
+    const count = witnessAllocation(service).customerProvides;
+    if (Number(host.dataset.count || 0) === count) return;
+    host.dataset.count = String(count);
+    host.innerHTML = Array.from({ length: count }, (_, index) => `<div class="form-grid"><div><label>Witness ${index + 1} full legal ID name *</label><input name="${service}WitnessLegalName${index}" required></div><div><label>Witness ${index + 1} email (optional)</label><input name="${service}WitnessEmail${index}" type="email"></div></div>`).join("");
+  });
+}
+
+function renderSignerAndActFields() {
+  if (!wizard) return;
+  const signerHost = qs("#signerFields");
+  const actHost = qs("#notarialActFields");
+  const signerCount = Math.max(1, Number(wizard.elements.signerCount?.value || 1));
+  const actCount = Math.max(1, Number(wizard.elements.notarizationCount?.value || 1));
+  if (signerHost && Number(signerHost.dataset.count || 0) !== signerCount) {
+    signerHost.dataset.count = String(signerCount);
+    signerHost.innerHTML = Array.from({ length: signerCount }, (_, index) => `<div class="form-grid"><div><label>Signer ${index + 1} full legal ID name *</label><input name="signerLegalName${index}" required></div><div><label>Signer ${index + 1} individual email${activeService === "ron" ? " *" : " (optional)"}</label><input name="signerEmail${index}" type="email" ${activeService === "ron" ? "required" : ""}></div></div>`).join("");
+  }
+  if (actHost && Number(actHost.dataset.count || 0) !== actCount) {
+    actHost.dataset.count = String(actCount);
+    actHost.innerHTML = Array.from({ length: actCount }, (_, index) => `<label>Act ${index + 1}</label><select name="notarialActType${index}" required><option value="acknowledgment">Acknowledgment</option><option value="jurat">Jurat / verification on oath</option><option value="signature_witnessing">Signature witnessing</option><option value="certified_copy">Certified copy (when permitted)</option><option value="unsure">I&rsquo;m not sure</option></select>`).join("");
+  }
 }
 
 function showStep(n) {
@@ -508,15 +540,20 @@ function validateStep(showErrors = false) {
     need(["firstName", "lastName", "email", "phone"]);
   }
   if (currentStep === 1) {
+    const uploadException = wizard.elements.documentUploadException?.checked;
+    if (uploadException) {
+      need(["documentUploadExceptionReason"]);
+      if (wizard.elements.documentUploadExceptionReason?.value === "other") need(["documentUploadExceptionDetail"]);
+    }
     if (activeService === "ron") {
       need([
         "documentType",
         "notarizationCount",
         "signerCount",
-        "ronFiles",
         "techReady",
         "recordingConsent",
       ]);
+      if (!uploadException) need(["ronFiles"]);
     }
     if (activeService === "mobile") {
       need([
@@ -527,9 +564,10 @@ function validateStep(showErrors = false) {
         "city",
         "zip",
       ]);
+      if (!uploadException) need(["mobileFiles"]);
     }
     if (activeService === "print") {
-      need(["printFiles"]);
+      if (!uploadException) need(["printFiles"]);
       if (
         (+wizard.elements.pages.value || 0) <= 0 &&
         (+wizard.elements.scanPages.value || 0) <= 0
@@ -538,6 +576,15 @@ function validateStep(showErrors = false) {
         if (showErrors)
           markInvalid("pages", "Enter the number of print or scan pages.");
       }
+    }
+    if (["ron", "mobile"].includes(activeService)) {
+      const signerCount = Math.max(1, numericValue("signerCount"));
+      const actCount = Math.max(1, numericValue("notarizationCount"));
+      for (let index = 0; index < signerCount; index += 1) {
+        need([`signerLegalName${index}`]);
+        if (activeService === "ron") need([`signerEmail${index}`]);
+      }
+      for (let index = 0; index < actCount; index += 1) need([`notarialActType${index}`]);
     }
   }
   if (currentStep === 2) {
@@ -579,6 +626,10 @@ function validateStep(showErrors = false) {
           "printSignerCount",
           "printNotaryDocType",
         ]);
+    }
+    if (["ron", "mobile"].includes(activeService)) {
+      const customerWitnesses = witnessAllocation(activeService).customerProvides;
+      for (let index = 0; index < customerWitnesses; index += 1) need([`${activeService}WitnessLegalName${index}`]);
     }
   }
   if (currentStep === 3) {
@@ -823,6 +874,12 @@ async function submitRequestToSupabase(e) {
       preferred_time_window: f.timeWindow.value || null,
       notes: f.notes.value || null,
       estimated_total: estimateNumber(),
+      request_completeness: "submitted",
+      document_state: f.documentUploadException?.checked ? "pending" : "received",
+      participant_state: "submitted",
+      fulfillment_state: "not_started",
+      document_upload_exception_reason: f.documentUploadException?.checked ? f.documentUploadExceptionReason?.value || null : null,
+      document_upload_exception_detail: f.documentUploadException?.checked ? f.documentUploadExceptionDetail?.value || null : null,
       detected_pdf_page_count: detectedPdfPageCount,
       ...urgencyFlags,
     };
@@ -833,6 +890,50 @@ async function submitRequestToSupabase(e) {
       .single();
     if (requestError) throw requestError;
     const requestId = request.id;
+    if (["ron", "mobile"].includes(activeService)) {
+      const signerCount = Math.max(1, numericValue("signerCount"));
+      const participants = Array.from({ length: signerCount }, (_, index) => ({
+        service_request_id: requestId,
+        participant_type: "signer",
+        full_legal_name: f[`signerLegalName${index}`]?.value?.trim() || null,
+        email: f[`signerEmail${index}`]?.value?.trim() || null,
+        identity_name_confirmed: true,
+        sort_order: index,
+      }));
+      const { error: participantError } = await supabaseClient.from("request_participants").insert(participants);
+      if (participantError) throw participantError;
+      const actCount = Math.max(1, numericValue("notarizationCount"));
+      const acts = Array.from({ length: actCount }, (_, index) => {
+        const actType = f[`notarialActType${index}`]?.value || "unsure";
+        return { service_request_id: requestId, act_number: index + 1, act_type: actType, requires_admin_review: actType === "unsure" };
+      });
+      const { error: actError } = await supabaseClient.from("request_notarial_acts").insert(acts);
+      if (actError) throw actError;
+      const allocation = witnessAllocation(activeService);
+      const witnesses = Array.from({ length: allocation.customerProvides }, (_, index) => ({
+        service_request_id: requestId,
+        participant_type: "witness",
+        witness_source: "customer",
+        full_legal_name: f[`${activeService}WitnessLegalName${index}`]?.value?.trim() || null,
+        email: f[`${activeService}WitnessEmail${index}`]?.value?.trim() || null,
+        identity_name_confirmed: true,
+        sort_order: signerCount + index,
+      }));
+      if (allocation.alignedProvides > 0) witnesses.push({
+        service_request_id: requestId,
+        participant_type: "witness",
+        witness_source: "aps",
+        full_legal_name: null,
+        email: null,
+        identity_name_confirmed: false,
+        quantity: allocation.alignedProvides,
+        sort_order: signerCount + allocation.customerProvides,
+      });
+      if (witnesses.length) {
+        const { error: witnessError } = await supabaseClient.from("request_participants").insert(witnesses);
+        if (witnessError) throw witnessError;
+      }
+    }
     if (activeService === "ron") {
       const ronWitnessAllocation = witnessAllocation("ron");
       const { error } = await supabaseClient.from("ron_requests").insert({
@@ -912,6 +1013,7 @@ async function submitRequestToSupabase(e) {
           "mobilePrintFiles",
           "mobile-print-files",
         );
+      await uploadFileGroup(requestId, "mobileFiles", "mobile-documents");
     }
     if (activeService === "print") {
       const fulfillment = f.fulfillment?.value || "courier";
@@ -1238,6 +1340,15 @@ const publicStatusCopy = {
 
 function statusCopy(status) {
   return publicStatusCopy[status] || publicStatusCopy.under_review;
+}
+
+function customerCompletionCopy(request = {}, detail = {}) {
+  const type = workflowKind(request.service_type);
+  if (type === "ron") return { ...publicStatusCopy.completed, headline: "Your Notarization Is Complete", title: "Notarization Complete", body: "Your remote online notarization is complete. Available documents and receipts remain in this request." };
+  if (type === "mobile") return { ...publicStatusCopy.completed, headline: "Your Mobile Service Is Complete", title: "Mobile Service Complete", body: detail.scan_to_pdf_needed ? "Your mobile service and requested scan delivery are complete." : "Your mobile notary appointment is complete." };
+  if (Number(detail.scan_pages || 0) > 0 && Number(detail.black_white_pages || 0) + Number(detail.color_pages || 0) === 0) return { ...publicStatusCopy.completed, headline: "Your Completed Scans Are Ready", title: "Scans Complete", body: "Your scanning service is complete. Your released scans are available in Documents." };
+  if (String(detail.fulfillment_type || "").toLowerCase() === "courier") return { ...publicStatusCopy.completed, headline: "Your Delivery Is Complete", title: "Delivery Complete", body: "Your courier delivery and handoff are complete." };
+  return { ...publicStatusCopy.completed, headline: "Your Document Service Is Complete", title: "Document Service Complete", body: "Your print, copy, or document-service fulfillment is complete." };
 }
 
 function invoiceTotal(items = []) {
@@ -1933,7 +2044,7 @@ function ronNextStepPanel(request = {}, detail = {}) {
   if (!link) return "";
   return `<div class="next-panel reveal"><h3>Secure Online Session</h3><p>Your RON session link is available below.</p><a class="btn primary" href="${escapePublic(link)}" target="_blank" rel="noopener">Open Secure Session</a></div>`;
 }
-async function submitQuoteDecision(requestId, reference, decision) {
+async function submitQuoteDecision(requestId, reference, decision, quoteId = "") {
   if (!supabaseClient || !requestId)
     throw new Error("Missing request information.");
   const { data, error } = await supabaseClient.functions.invoke(
@@ -1943,6 +2054,7 @@ async function submitQuoteDecision(requestId, reference, decision) {
         request_id: requestId,
         reference_number: reference,
         action: decision,
+        quote_id: quoteId,
       },
     },
   );
@@ -2147,7 +2259,7 @@ async function initSuccessPage() {
     sessionId && ["awaiting_payment", "payment_pending"].includes(status)
       ? "payment_submitted"
       : status;
-  const copy = statusCopy(displayStatus);
+  const copy = displayStatus === "completed" ? customerCompletionCopy(request, detail || {}) : statusCopy(displayStatus);
   const quoteAmount =
     Number(request.quote_amount || request.estimated_total || 0) || 0;
 
@@ -2189,10 +2301,69 @@ async function initSuccessPage() {
     quoteAmount > 0 &&
     request.id &&
     status !== "quote_expired";
+  const actionRequired = canApprove
+    ? `<section class="next-panel reveal" aria-labelledby="customerActionHeading"><p class="eyebrow">Action Required</p><h3 id="customerActionHeading">Review and approve your quote</h3><p>Total: <strong>${money(quoteAmount)}</strong></p><a class="btn primary" href="#quoteActionPanel">Review &amp; Approve Quote</a></section>`
+    : canPay
+      ? `<section class="next-panel reveal" aria-labelledby="customerActionHeading"><p class="eyebrow">Action Required</p><h3 id="customerActionHeading">Payment required</h3><p>Amount due: <strong>${money(Number(request.balance_due || quoteAmount))}</strong></p><a class="btn primary" href="#paymentSchedule">Pay Now</a></section>`
+      : !fileCount && ["under_review", "document_pending"].includes(status)
+        ? `<section class="next-panel reveal" aria-labelledby="customerActionHeading"><p class="eyebrow">Action Required</p><h3 id="customerActionHeading">Document needed</h3><p>Upload the document APS needs to review your request.</p><a class="btn primary" href="#customerActionsPanel">Upload Document</a></section>`
+        : "";
 
   const customer = Array.isArray(request.customers)
     ? request.customers[0]
     : request.customers || {};
+  const documents = result.customer_documents || [];
+  const messages = result.messages || [];
+  const activity = result.customer_activity || [];
+  const portalTab = params.get("tab") || "overview";
+  const tabLink = (tab) => `success.html?request_id=${encodeURIComponent(request.id || requestId || "")}&tab=${tab}`;
+  successBox.innerHTML = `
+    <div class="success-ref reveal">${escapePublic(reference)}</div>
+    <nav class="customer-portal-tabs" aria-label="Request sections">
+      ${[["overview","Overview / Next Action"],["documents","Documents"],["quote-payment","Quote & Payment"],["fulfillment","Appointment/Fulfillment"],["messages","Messages"],["activity","Activity"]].map(([key,label]) => `<a href="${tabLink(key)}" data-portal-tab="${key}" class="${portalTab === key ? "is-active" : ""}">${label}</a>`).join("")}
+    </nav>
+    <section data-portal-panel="overview" ${portalTab !== "overview" ? "hidden" : ""}>
+      ${actionRequired}
+      ${statusTimeline(displayStatus, request.service_type)}
+      <div class="success-grid reveal"><div><span class="small-label">Service</span><strong>${escapePublic(serviceName)}</strong></div><div><span class="small-label">Current Status</span><strong>${escapePublic(copy.title)}</strong></div><div><span class="small-label">Next Action</span><strong>${canApprove ? "Approve quote" : canPay ? "Make payment" : !fileCount ? "Upload requested document" : "APS is handling the next step"}</strong></div></div>
+      <div class="email-notice status-${statusClass} reveal"><h3>${escapePublic(copy.title)}</h3><p>${escapePublic(copy.body)}</p></div>
+      ${customerCard(customer)}${printControls(reference)}
+    </section>
+    <section data-portal-panel="documents" ${portalTab !== "documents" ? "hidden" : ""}>
+      <div class="next-panel reveal"><h3>Documents</h3><p>Only files intentionally released by APS appear here.</p>${documents.length ? `<ul class="portal-document-list">${documents.map(file => `<li><strong>${escapePublic(file.file_name)}</strong><span>${escapePublic(file.document_classification || "Customer document")}</span>${file.download_url ? `<a class="btn dark" href="${escapePublic(file.download_url)}" target="_blank" rel="noopener">Download</a>` : ""}</li>`).join("")}</ul>` : "<p>No completed documents have been released yet.</p>"}</div>
+      <div id="customerActionsPanel">${customerActionPanel(request, reference, customerActions)}</div>
+    </section>
+    <section data-portal-panel="quote-payment" ${portalTab !== "quote-payment" ? "hidden" : ""}>
+      ${hasQuote ? `<div class="next-panel invoice-panel reveal"><h3>Prepared Service Quote</h3>${invoiceList(items)}${quoteNote ? `<div class="email-notice slim-note"><h3>APS Note</h3><p>${escapePublic(quoteNote)}</p></div>` : ""}</div><div id="paymentSchedule">${paymentSchedulePanel({ request, invoices, quoteItems: items, additionalItems, quoteAmount })}</div>` : '<div class="next-panel"><h3>Quote &amp; Payment</h3><p>Your quote is being prepared.</p></div>'}
+      ${canApprove ? `<div class="next-panel" id="quoteActionPanel"><h3>Review Quote</h3><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" role="status"></div></div>` : ""}
+      ${receiptPanel({ ...request, status: displayStatus }, reference)}
+    </section>
+    <section data-portal-panel="fulfillment" ${portalTab !== "fulfillment" ? "hidden" : ""}>
+      ${appointmentDetailsPanel({ ...request, status: displayStatus })}${ronNextStepPanel(request, detail)}${prepVideo || '<div class="next-panel"><h3>Appointment / Fulfillment</h3><p>Confirmed details and delivery instructions will appear here.</p></div>'}
+    </section>
+    <section data-portal-panel="messages" ${portalTab !== "messages" ? "hidden" : ""}>
+      <div class="next-panel"><h3>Messages</h3>${messages.length ? `<ul class="portal-message-list">${messages.map(message => `<li><strong>${escapePublic(message.subject)}</strong><p>${escapePublic(message.rendered_text || "")}</p><small>${formatDateValue(message.sent_at || message.created_at)}</small></li>`).join("")}</ul>` : "<p>No customer messages have been sent yet.</p>"}</div>
+    </section>
+    <section data-portal-panel="activity" ${portalTab !== "activity" ? "hidden" : ""}>
+      <div class="next-panel"><h3>Activity</h3>${activity.length ? `<ol class="portal-activity-list">${activity.map(event => `<li><strong>${escapePublic(event.title || event.event_type || "Request updated")}</strong><p>${escapePublic(event.detail || event.description || "")}</p><small>${formatDateValue(event.created_at)}</small></li>`).join("")}</ol>` : "<p>Your request activity will appear here.</p>"}</div>
+    </section>
+    <div class="next-panel support-panel"><h3>Need Help?</h3><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Contact Customer Support</a></div>`;
+
+  qsa("[data-portal-tab]").forEach(link => link.addEventListener("click", event => {
+    event.preventDefault();
+    const tab = link.dataset.portalTab;
+    qsa("[data-portal-tab]").forEach(item => item.classList.toggle("is-active", item.dataset.portalTab === tab));
+    qsa("[data-portal-panel]").forEach(panel => panel.hidden = panel.dataset.portalPanel !== tab);
+    history.replaceState(null, "", tabLink(tab));
+  }));
+  qs("#approveQuoteBtn")?.addEventListener("click", async () => { const box = qs("#quoteActionStatus"); try { if (box) box.textContent = "Approving your quote…"; await submitQuoteDecision(request.id, reference, "approve", request.current_quote_id || ""); location.reload(); } catch (_) { if (box) box.textContent = "Approval failed. Refresh this page or contact APS."; } });
+  bindCustomerActionControls(request.id || requestId);
+  const portalInitialInvoice = findInitialInvoice(invoices);
+  qs("#startPaymentBtn")?.addEventListener("click", event => startEmbeddedPayment(request.id || requestId, event.currentTarget?.dataset?.invoiceId || portalInitialInvoice?.id || null));
+  qsa(".payAdditionalInvoice").forEach(button => button.addEventListener("click", () => startEmbeddedPayment(request.id || requestId, button.dataset.invoiceId)));
+  if (sessionId || ["awaiting_payment", "payment_pending"].includes(status)) startStatusPolling(request.id, status);
+  initReveals(successBox);
+  return;
   if (
     ["payment_received", "paid_confirmed", "scheduling"].includes(displayStatus)
   ) {
@@ -2253,6 +2424,7 @@ async function initSuccessPage() {
 
   successBox.innerHTML = `
     <div class="success-ref reveal">${escapePublic(reference)}</div>
+    ${actionRequired}
     ${statusTimeline(displayStatus, request.service_type)}
     <div class="success-grid reveal">
       <div><span class="small-label">Selected Service</span><strong>${escapePublic(serviceName)}</strong></div>
@@ -2271,10 +2443,10 @@ async function initSuccessPage() {
       ${serviceDetailSummary(request.service_type, detail)}
     </div>
     <div class="email-notice status-${statusClass} reveal"><h3>${escapePublic(copy.title)}</h3><p>${escapePublic(copy.body)}</p></div>
-    ${customerActionPanel(request, reference, customerActions)}
+    <div id="customerActionsPanel">${customerActionPanel(request, reference, customerActions)}</div>
     ${hasQuote ? `<div class="next-panel invoice-panel reveal"><h3>Prepared Service Quote</h3><p class="premium-intro">This is the full estimated service quote for your request. Payments are handled below based on the approved schedule.</p>${invoiceList(items)}<p class="admin-muted">Quote Reference: <strong>QUOTE-${escapePublic(reference.replace(/^APS-/, ""))}</strong></p>${quoteNote ? `<div class="email-notice slim-note"><h3>Client Note</h3><p>${escapePublic(quoteNote)}</p></div>` : ""}</div>` : ""}
-    ${hasQuote ? paymentSchedulePanel({ request, invoices, quoteItems: items, additionalItems, quoteAmount }) : ""}
-    ${canApprove ? `<div class="next-panel reveal"><h3>Review Quote</h3><p>Please review the itemized quote and service details. Approving the quote moves your request to the secure payment step. If anything needs to change, request an edit before paying.</p><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" class="form-submit-status" role="status" aria-live="polite"></div></div>` : ""}
+    ${hasQuote ? `<div id="paymentSchedule">${paymentSchedulePanel({ request, invoices, quoteItems: items, additionalItems, quoteAmount })}</div>` : ""}
+    ${canApprove ? `<div class="next-panel reveal" id="quoteActionPanel"><h3>Review Quote</h3><p>Please review the itemized quote and service details. Approving the quote moves your request to the secure payment step. If anything needs to change, request an edit before paying.</p><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" class="form-submit-status" role="status" aria-live="polite"></div></div>` : ""}
     
     ${receiptPanel({ ...request, status: displayStatus }, reference)}
     ${appointmentDetailsPanel({ ...request, status: displayStatus })}

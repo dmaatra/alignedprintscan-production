@@ -12,6 +12,21 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "https://sfsdniavqldgbiretp
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const SITE_URL = Deno.env.get("SITE_URL") || "https://alignedprintscan.com";
 
+async function requireAdmin(request: Request) {
+  const authorization = request.headers.get("Authorization") || "";
+  if (!authorization.startsWith("Bearer ")) throw new Error("Administrator authentication is required.");
+  const userResponse = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: { apikey: SERVICE_ROLE_KEY, Authorization: authorization },
+  });
+  if (!userResponse.ok) throw new Error("Administrator authentication is required.");
+  const adminResponse = await fetch(`${SUPABASE_URL}/rest/v1/rpc/is_admin`, {
+    method: "POST",
+    headers: { apikey: SERVICE_ROLE_KEY, Authorization: authorization, "Content-Type": "application/json" },
+    body: "{}",
+  });
+  if (!adminResponse.ok || await adminResponse.json() !== true) throw new Error("Administrator access is required.");
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
@@ -25,6 +40,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
+    await requireAdmin(req);
     const body = await req.json();
     const requestId = String(body.request_id || "").trim();
     const ref = body.reference_number || refFromId(requestId);

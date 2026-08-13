@@ -476,7 +476,7 @@ function renderRequestList() {
 async function getFiles(requestId) {
   const { data, error } = await adminClient
     .from("request_files")
-    .select("id,file_name,file_path,file_type,file_size,created_at,uploaded_by,document_category,is_active")
+    .select("id,file_name,file_path,file_type,file_size,created_at,uploaded_by,document_category,document_classification,customer_visible,eligible_for_delivery,is_active")
     .eq("service_request_id", requestId)
     .order("created_at", {
       ascending: false,
@@ -1143,7 +1143,10 @@ async function uploadAdminDocuments(requestId) {
     const path = `${requestId}/admin/${crypto.randomUUID()}-${safe}`;
     const { error: uploadError } = await adminClient.storage.from("service-request-files").upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
     if (uploadError) throw uploadError;
-    const { error: recordError } = await adminClient.from("request_files").insert({ service_request_id: requestId, file_name: file.name, file_path: path, file_type: file.type, file_size: file.size, uploaded_by: "admin", document_category: "admin-additional", is_active: true });
+    const classification = document.querySelector("#adminDocumentClassification")?.value || "internal_document";
+    // Classification describes the file; it never releases the file. Customer
+    // access requires the separate, explicit Release to Customer action.
+    const { error: recordError } = await adminClient.from("request_files").insert({ service_request_id: requestId, file_name: file.name, file_path: path, file_type: file.type, file_size: file.size, uploaded_by: "admin", document_category: "admin-additional", document_classification: classification, customer_visible: false, eligible_for_delivery: false, is_active: true });
     if (recordError) throw recordError;
   }
   await adminClient.from("request_timeline_events").insert({ service_request_id: requestId, event_type: "documents_uploaded", title: "Administrator documents uploaded", detail: `${files.length} document(s) uploaded by administrator.`, actor_type: "admin", metadata: { file_count: files.length } });
@@ -1172,17 +1175,28 @@ async function selectRequest(id) {
       : selectedRequest.service_type === "mobile"
         ? "mobile_notary_requests"
         : "print_scan_requests";
-  const [files, serviceDetails, invoices, patch32Records] = await Promise.all([
+  const [files, serviceDetails, invoices, patch32Records, participantResult, actResult, templateResult, messageResult, completionResult] = await Promise.all([
     getFiles(id),
     getDetailRows(table, id),
     getInvoices(id),
     getPatch32Records(id),
+    adminClient.from("request_participants").select("*").eq("service_request_id", id).order("sort_order"),
+    adminClient.from("request_notarial_acts").select("*").eq("service_request_id", id).order("act_number"),
+    adminClient.from("message_templates").select("*").eq("active", true).order("name"),
+    adminClient.from("messages").select("*").eq("service_request_id", id).order("created_at", { ascending: false }),
+    adminClient.from("request_completion_facts").select("*").eq("service_request_id", id).maybeSingle(),
   ]);
+  const participants = participantResult.data || [];
+  const notarialActs = actResult.data || [];
+  const messageTemplates = templateResult.data || [];
+  const requestMessages = messageResult.data || [];
+  const completionFacts = completionResult.data || {};
   const invoiceItems = await getInvoiceItems(id, invoices);
   const fileItems = await Promise.all(
     files.map(async (f) => {
       const url = await signedUrl(f.file_path);
-      return `<li>${url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(f.file_name)}</a>` : escapeHtml(f.file_name)}<small>${f.file_type || "file"} · ${f.file_size ? Math.round(f.file_size / 1024) + " KB" : ""}</small></li>`;
+      const released = f.customer_visible && f.eligible_for_delivery && f.document_classification !== "internal_document";
+      return `<li>${url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(f.file_name)}</a>` : escapeHtml(f.file_name)}<small>${f.file_type || "file"} · ${f.file_size ? Math.round(f.file_size / 1024) + " KB" : ""} · ${released ? "Released to customer" : "Internal / not released"}</small><button class="btn dark release-document-btn" data-file-id="${escapeHtml(f.id)}" data-released="${released}" type="button">${released ? "Withdraw Release" : "Release to Customer"}</button></li>`;
     }),
   );
   const quoteLocked = [
@@ -1231,7 +1245,7 @@ async function selectRequest(id) {
 
     ${internalWorkflowGuide(selectedRequest)}
 
-    <div class="admin-detail-section invoice-builder-card" data-v3-tab-target="payments" data-payment-group="quote">
+    <div class="admin-detail-section invoice-builder-card" data-v3-tab-target="quote" data-payment-group="quote">
       <div class="admin-v3-section-heading"><span class="small-label">Quote</span><h3>Full Service Quote Builder</h3></div>
       <p class="admin-muted">Build the full estimated service quote here. Saving the quote updates the customer-facing quote; status buttons control when emails are sent.</p>
       <div class="invoice-preset-row"><select id="invoicePresetSelect"><option value="">Add common line item…</option></select><button id="addPresetInvoiceRow" class="btn dark" type="button">Add Selected</button></div><div id="invoiceRows" class="invoice-rows"></div>
@@ -1240,7 +1254,7 @@ async function selectRequest(id) {
       <textarea id="invoiceNote" placeholder="Premium client-facing note, preparation instructions, appointment readiness, or quote terms…">${escapeHtml(selectedRequest.quote_notes || selectedRequest.customer_message || "")}</textarea>
       <div class="dashboard-action-groups">
         <div class="dashboard-action-group"><span class="small-label">Quote Actions</span><div class="status-actions invoice-actions"><button id="addInvoiceRow" class="btn dark" type="button">Add Line Item</button><button id="saveInvoiceBtn" class="btn primary" type="button">Save Quote</button><button id="openStatusPageBtn" class="btn dark" type="button">Open Client Status Page</button></div></div>
-        <div class="dashboard-action-group"><span class="small-label">Payment Actions</span><div class="status-actions invoice-actions"><button id="createAdditionalInvoiceBtn" class="btn dark" type="button">Issue Final Balance Invoice</button></div></div>
+        <div class="dashboard-action-group"><span class="small-label">Payment Actions</span><div class="status-actions invoice-actions"><button id="recordPrimaryPaymentBtn" class="btn dark" type="button">Record Primary Payment</button><button id="recordSupplementalPaymentBtn" class="btn dark" type="button">Record Supplemental Payment</button><button id="createAdditionalInvoiceBtn" class="btn dark" type="button">Create Additional Invoice</button></div></div>
       </div>
       <p class="admin-muted small-admin-note">Save the quote first. Then use Status Update to send Quote Ready or move the request forward.</p>
     </div>
@@ -1258,7 +1272,7 @@ async function selectRequest(id) {
 
     ${patch32AdminPanels(patch32Records)}
 
-    <div class="admin-detail-section appointment-editor-card" data-v3-tab-target="appointment">
+    <div class="admin-detail-section appointment-editor-card" data-v3-tab-target="fulfillment">
       <h3>Appointment / Fulfillment Details</h3>
       <p class="admin-muted">Update these before marking the appointment confirmed. These details appear on the customer's status page and in the appointment confirmation email.</p>
       <div class="admin-detail-grid appointment-fields">
@@ -1281,12 +1295,42 @@ async function selectRequest(id) {
       </div>
     </div>
 
+    <div class="admin-detail-section completion-facts-card" data-v3-tab-target="fulfillment">
+      <div class="admin-v3-section-heading"><span class="small-label">Completion Gate</span><h3>Authoritative Fulfillment Facts</h3></div>
+      <p class="admin-muted">Record what was actually purchased and fulfilled. A zero balance alone does not complete an order.</p>
+      <fieldset><legend>Purchased service components</legend>${["ron","mobile","print_copy","scan","courier"].map(component => `<label class="check"><input class="completion-component" type="checkbox" value="${component}" ${(completionFacts.components || []).includes(component) ? "checked" : ""}> ${escapeHtml(statusLabel(component))}</label>`).join("")}</fieldset>
+      <div class="admin-detail-grid">
+        ${[["ron_session_completed","RON session completed"],["mobile_service_completed","Mobile service performed"],["production_completed","Print/Copy production completed"],["scan_completed","Scanning completed"],["pickup_completed","Pickup/handoff completed"],["delivery_completed","Delivery/handoff completed"],["proof_of_delivery_present","Proof of delivery present"]].map(([key,label]) => `<label class="check"><input class="completion-fact" data-key="${key}" type="checkbox" ${completionFacts[key] ? "checked" : ""}> ${label}</label>`).join("")}
+      </div>
+      <div class="admin-detail-grid">
+        <label>Document readiness<select id="completionDocumentState"><option value="pending" ${selectedRequest.document_state === "pending" ? "selected" : ""}>Pending / review required</option><option value="approved" ${selectedRequest.document_state === "approved" ? "selected" : ""}>Reviewed and ready</option><option value="not_applicable" ${selectedRequest.document_state === "not_applicable" ? "selected" : ""}>Not applicable</option></select></label>
+        <label>Participant / witness readiness<select id="completionParticipantState"><option value="pending" ${selectedRequest.participant_state === "pending" ? "selected" : ""}>Pending / unresolved</option><option value="approved" ${selectedRequest.participant_state === "approved" ? "selected" : ""}>Prepared and ready</option><option value="not_applicable" ${selectedRequest.participant_state === "not_applicable" ? "selected" : ""}>Not applicable</option></select></label>
+        <label>Customer-delivery path<select id="completionDeliveryPath"><option value="">Select the applicable path…</option><option value="aps" ${completionFacts.aps_deliverable_required === true ? "selected" : ""}>APS must release a portal deliverable</option><option value="external" ${completionFacts.external_platform_delivery ? "selected" : ""}>External platform delivers final document</option><option value="physical" ${completionFacts.physical_only ? "selected" : ""}>Physical-only; no portal deliverable</option><option value="declined" ${completionFacts.customer_declined_optional_deliverable ? "selected" : ""}>Customer declined optional deliverable</option></select></label>
+        <label class="check"><input id="completionPickupRequired" type="checkbox" ${completionFacts.pickup_required !== false ? "checked" : ""}> Courier pickup is required</label>
+        <label class="check"><input id="completionPodRequired" type="checkbox" ${completionFacts.proof_of_delivery_required ? "checked" : ""}> Proof of delivery is required</label>
+      </div>
+      <button id="saveCompletionFactsBtn" class="btn primary" type="button">Save Fulfillment Facts</button>
+      <div id="completionGateResult" class="email-notice" role="status" aria-live="polite" hidden></div>
+      <div id="completionExceptionPanel" class="email-notice" hidden>
+        <h4>Complete with Exception</h4><p>This is an intentional audited override, not the normal completion path.</p>
+        <label>Exception type<select id="completionExceptionType"><option value="">Select type…</option><option value="approved_balance_exception">Approved balance exception</option><option value="physical_only_no_portal_deliverable">Physical-only fulfillment; no portal deliverable required</option><option value="customer_declined_optional_deliverable">Customer declined optional deliverable</option><option value="external_platform_delivery">External-platform final document delivery</option><option value="administrative_closure">Administrative closure</option><option value="other">Other</option></select></label>
+        <label>Required explanation<textarea id="completionExceptionExplanation"></textarea></label>
+        <button id="completeWithExceptionBtn" class="btn dark" type="button">Complete with Exception</button>
+      </div>
+    </div>
+
     <section class="admin-detail-section customer-identity-card" data-v3-tab-target="customer">
       <div class="admin-v3-section-heading"><span class="small-label">Customer Identity</span><h3>${escapeHtml(customerName)}</h3></div>
       <div class="admin-detail-grid">
         <div><span class="small-label">APS Reference</span><strong>${escapeHtml(ref)}</strong></div>
         <div><span class="small-label">Order Relationship</span><strong>Primary customer</strong></div>
       </div>
+    </section>
+
+    <section class="admin-detail-section" data-v3-tab-target="customer">
+      <div class="admin-v3-section-heading"><span class="small-label">Transaction Participants</span><h3>Signers &amp; Witnesses</h3></div>
+      ${participants.length ? `<ul class="admin-file-list">${participants.map(person=>`<li><strong>${escapeHtml(person.full_legal_name || (person.witness_source === "aps" ? `APS-provided witness × ${person.quantity || 1}` : "Identity pending"))}</strong><small>${escapeHtml(statusLabel(person.participant_type))}${person.email ? ` · ${escapeHtml(person.email)}` : ""}</small></li>`).join("")}</ul>` : '<p class="admin-muted">No structured participants are stored for this legacy request.</p>'}
+      ${notarialActs.length ? `<h4>Requested acts</h4><ul class="admin-file-list">${notarialActs.map(act=>`<li><strong>Act ${act.act_number}: ${escapeHtml(statusLabel(act.act_type))}</strong><small>${act.requires_admin_review ? "Admin review required; APS must not choose certificate language." : "Customer selection recorded"}</small></li>`).join("")}</ul>` : ""}
     </section>
 
     <section class="admin-detail-section" data-v3-tab-target="customer">
@@ -1328,16 +1372,30 @@ async function selectRequest(id) {
     <div class="admin-detail-section" data-v3-tab-target="documents">
       <h3>Uploaded Files</h3>
       ${fileItems.length ? `<ul class="admin-file-list">${fileItems.join("")}</ul>` : '<p class="admin-muted">No files uploaded with this request.</p>'}
+      <label>Document classification<select id="adminDocumentClassification"><option value="completed_scan">Completed Scan</option><option value="completed_notarized_document">Completed Notarized Document</option><option value="customer_deliverable">Customer Deliverable</option><option value="internal_document" selected>Internal Document</option><option value="supporting_document">Supporting Document</option><option value="other">Other</option></select></label>
       <label>Upload additional administrator documents<input id="adminAdditionalFiles" type="file" multiple></label><button id="uploadAdminFilesBtn" class="btn dark" type="button">Upload Documents</button>
     </div>
 
-    <section class="admin-detail-section notes-active-card" data-v3-tab-target="notes">
-      <div class="admin-v3-section-heading"><span class="small-label">Customer Update</span><h3>Current Customer Update</h3></div>
-      <p class="admin-v3-note-display">${activeClientNote ? escapeHtml(activeClientNote) : "No current customer-facing update."}</p>
-      <button class="btn dark" type="button" data-open-workspace-tab="payments">Open Customer Update Editor</button>
+    <section class="admin-detail-section notes-active-card" data-v3-tab-target="messages">
+      <div class="admin-v3-section-heading"><span class="small-label">Customer Communication</span><h3>Message Composer</h3></div>
+      <div class="admin-detail-grid">
+        <label>Template<select id="messageTemplateSelect"><option value="">Select an APS template…</option>${messageTemplates.map(template => `<option value="${escapeHtml(template.id)}" data-status="${escapeHtml(template.associated_status || "")}" data-required="${escapeHtml(template.required_attachment_type || "")}">${escapeHtml(template.name)}</option>`).join("")}</select></label>
+        <label>Recipient<input id="messageRecipient" type="email" value="${escapeHtml(customer?.email || "")}"></label>
+        <label>CC (comma separated)<input id="messageCc" type="text"></label>
+        <label>Status after successful send<select id="messageStatus"><option value="">No status change</option>${["under_review","quote_ready","awaiting_approval","awaiting_payment","payment_received","final_payment_received","appointment_confirmed","appointment_needs_rescheduling","quote_expired","completed"].map(value => `<option value="${value}">${escapeHtml(statusLabel(value))}</option>`).join("")}</select></label>
+      </div>
+      <label>Subject<input id="messageSubject" type="text"></label>
+      <label>Message HTML<textarea id="messageBody" rows="10"></textarea></label>
+      <fieldset class="message-attachments"><legend>Existing order documents</legend>
+        ${files.length ? files.map(file => `<label class="check"><input class="message-file-attachment" type="checkbox" value="${escapeHtml(file.id)}" ${file.customer_visible && file.eligible_for_delivery && file.document_classification !== "internal_document" ? "" : "disabled"}> ${escapeHtml(file.file_name)} <small>${file.customer_visible && file.eligible_for_delivery ? "Released deliverable" : "Not released"}</small></label>`).join("") : '<p class="admin-muted">No order documents available.</p>'}
+      </fieldset>
+      <p id="messageRequirement" class="admin-muted">Choose a template to see attachment requirements.</p>
+      <div id="messagePreview" class="email-notice" hidden></div>
+      <div class="status-actions"><button id="previewMessageBtn" class="btn dark" type="button">Preview</button><button id="sendMessageBtn" class="btn primary" type="button">Send Message</button><button id="sendAndUpdateStatusBtn" class="btn primary" type="button">Send &amp; Update Status</button></div>
+      <div id="messageComposerStatus" role="status" aria-live="polite"></div>
     </section>
 
-    <section class="admin-detail-section" data-v3-tab-target="notes">
+    <section class="admin-detail-section" data-v3-tab-target="messages">
       <div class="admin-v3-notes-subsection">
         <div class="admin-v3-section-heading"><span class="small-label">Workflow Status</span><h3>Update Order Status</h3></div>
         <div class="status-actions">
@@ -1357,19 +1415,21 @@ async function selectRequest(id) {
         <div class="admin-v3-section-heading"><span class="small-label">Internal Notes</span><h3>APS Staff Note</h3></div>
         <p class="admin-muted">Internal notes are visible only to APS staff and are not visible to the customer.</p>
         <textarea id="adminStatusNote" placeholder="Add an internal note visible only to APS staff..."></textarea>
+        <label class="check"><input id="updateStatusWithoutSending" type="checkbox"> Update Status Without Sending (exception only)</label>
       </div>
     </section>
 
-    <section class="admin-detail-section notes-history-card" data-v3-tab-target="notes">
+    <section class="admin-detail-section notes-history-card" data-v3-tab-target="messages">
       <div class="admin-v3-section-heading"><span class="small-label">Archived Customer Updates</span><h3>Customer Update History</h3></div>
       <div id="archivedCustomerUpdatesHistory" aria-live="polite">
         <div class="admin-v3-history-state" data-history-state="loading">
           <strong>Loading archived customer updates…</strong>
         </div>
       </div>
+      ${requestMessages.length ? `<ul class="admin-file-list">${requestMessages.map(message => `<li><strong>${escapeHtml(message.subject)}</strong><small>${escapeHtml(message.recipient)} · ${escapeHtml(statusLabel(message.delivery_state))} · ${new Date(message.sent_at || message.created_at).toLocaleString()}</small></li>`).join("")}</ul>` : '<p class="admin-muted">No messages sent for this request.</p>'}
     </section>
 
-    <section class="admin-detail-section" data-v3-tab-target="notes">
+    <section class="admin-detail-section" data-v3-tab-target="overview">
       <div class="admin-v3-section-heading"><span class="small-label">Request Administration</span><h3>Request Visibility</h3></div>
       <div class="status-actions archive-actions">
         <button id="archiveRequestBtn" class="btn dark" type="button">${isArchived(selectedRequest) ? "Restore Request" : "Archive Request"}</button>
@@ -1378,11 +1438,14 @@ async function selectRequest(id) {
     </section>
   `;
   renderInvoiceRows(rows);
-  $$(".status-actions button[data-status]", detail).forEach((btn) =>
-    btn.addEventListener("click", () =>
-      updateRequestStatus(btn.dataset.status),
-    ),
-  );
+  $$(".status-actions button[data-status]", detail).forEach((btn) => btn.addEventListener("click", () => btn.dataset.status === "completed" ? beginCompletion(messageTemplates) : selectStatusMessage(btn.dataset.status, messageTemplates)));
+  $("#messageTemplateSelect", detail)?.addEventListener("change", () => applyMessageTemplate(messageTemplates, customer, ref));
+  $("#previewMessageBtn", detail)?.addEventListener("click", previewMessage);
+  $("#sendMessageBtn", detail)?.addEventListener("click", () => sendComposedMessage(false));
+  $("#sendAndUpdateStatusBtn", detail)?.addEventListener("click", () => sendComposedMessage(true));
+  $$(".release-document-btn", detail).forEach(button => button.addEventListener("click", () => setDocumentRelease(button.dataset.fileId, button.dataset.released !== "true")));
+  $("#saveCompletionFactsBtn", detail)?.addEventListener("click", saveCompletionFacts);
+  $("#completeWithExceptionBtn", detail)?.addEventListener("click", completeWithException);
   populateInvoicePresetSelect();
 
   $$(".resolve-customer-action", detail).forEach((button) => button.addEventListener("click", async () => { try { await resolveCustomerAction(button); } catch (error) { alert(error.message || "Action could not be resolved."); } }));
@@ -1402,6 +1465,8 @@ async function selectRequest(id) {
     addSelectedPresetInvoiceRow(),
   );
   $("#saveInvoiceBtn")?.addEventListener("click", saveInvoice);
+  $("#recordPrimaryPaymentBtn")?.addEventListener("click", () => recordAdminPayment("initial"));
+  $("#recordSupplementalPaymentBtn")?.addEventListener("click", () => recordAdminPayment("final"));
   $("#createAdditionalInvoiceBtn")?.addEventListener(
     "click",
     createAdditionalInvoice,
@@ -1663,6 +1728,151 @@ async function refreshSelectedRequest(requestId) {
   await selectRequest(requestId);
 }
 
+function renderMessageTemplate(value, customer, ref) {
+  const replacements = {
+    request_reference: ref,
+    customer_first_name: customer?.first_name || "Customer",
+    customer_name: [customer?.first_name, customer?.last_name].filter(Boolean).join(" ") || "Customer",
+    quote_amount: Number(selectedRequest?.quote_amount || selectedRequest?.estimated_total || 0).toFixed(2),
+    appointment_date: selectedRequest?.appointment_date || selectedRequest?.preferred_date || "",
+    appointment_time: selectedRequest?.appointment_time || selectedRequest?.preferred_time_window || "",
+    appointment_location: selectedRequest?.appointment_location || "",
+    appointment_link: selectedRequest?.appointment_link || selectedRequest?.ron_session_url || "",
+    portal_url: `${location.origin}/success.html?request_id=${selectedRequest?.id || ""}`,
+  };
+  return String(value || "").replace(/{{\s*([a-z0-9_]+)\s*}}/gi, (_, key) => replacements[key] ?? "");
+}
+
+function applyMessageTemplate(templates, customer, ref) {
+  const template = templates.find(item => item.id === $("#messageTemplateSelect")?.value);
+  if (!template) return;
+  $("#messageSubject").value = renderMessageTemplate(template.subject_template, customer, ref);
+  $("#messageBody").value = renderMessageTemplate(template.html_template, customer, ref);
+  $("#messageStatus").value = template.associated_status || "";
+  $("#messageRequirement").textContent = template.required_attachment_type
+    ? `Required attachment: ${statusLabel(template.required_attachment_type)}. The message cannot be sent without it.`
+    : "No attachment is required. Released order documents may be selected below.";
+  previewMessage();
+}
+
+function selectStatusMessage(status, templates) {
+  window.AdminV3?.activateTab("messages");
+  const select = $("#messageTemplateSelect");
+  const template = templates.find(item => item.associated_status === status);
+  $("#messageStatus").value = status;
+  if (template && select) {
+    select.value = template.id;
+    select.dispatchEvent(new Event("change"));
+  } else {
+    $("#messageComposerStatus").textContent = `No active centralized template is mapped to ${statusLabel(status)}.`;
+  }
+  $("#messageTemplateSelect")?.focus();
+}
+
+function previewMessage() {
+  const preview = $("#messagePreview");
+  if (!preview) return;
+  preview.hidden = false;
+  preview.innerHTML = `<h3>${escapeHtml($("#messageSubject")?.value || "Message preview")}</h3>${$("#messageBody")?.value || "<p>Choose a template or enter a message.</p>"}`;
+}
+
+async function saveCompletionFacts() {
+  if (!selectedRequest) return;
+  const deliveryPath = $("#completionDeliveryPath")?.value || "";
+  const payload = {
+    service_request_id: selectedRequest.id,
+    components: $$(".completion-component:checked").map(input => input.value),
+    pickup_required: Boolean($("#completionPickupRequired")?.checked),
+    proof_of_delivery_required: Boolean($("#completionPodRequired")?.checked),
+    aps_deliverable_required: deliveryPath === "aps" ? true : deliveryPath ? false : null,
+    external_platform_delivery: deliveryPath === "external",
+    physical_only: deliveryPath === "physical",
+    customer_declined_optional_deliverable: deliveryPath === "declined",
+  };
+  $$(".completion-fact").forEach(input => { payload[input.dataset.key] = Boolean(input.checked); });
+  payload.updated_at = new Date().toISOString();
+  const [{ error }, { error: requestError }] = await Promise.all([
+    adminClient.from("request_completion_facts").upsert(payload, { onConflict: "service_request_id" }),
+    adminClient.from("service_requests").update({ document_state: $("#completionDocumentState")?.value || "pending", participant_state: $("#completionParticipantState")?.value || "pending" }).eq("id", selectedRequest.id),
+  ]);
+  const result = $("#completionGateResult");
+  if (error || requestError) { result.hidden = false; result.textContent = error?.message || requestError?.message || "Fulfillment facts could not be saved."; return; }
+  selectedRequest.document_state = $("#completionDocumentState")?.value || "pending";
+  selectedRequest.participant_state = $("#completionParticipantState")?.value || "pending";
+  result.hidden = false; result.textContent = "Fulfillment facts saved.";
+}
+
+function renderCompletionBlockers(blockers = []) {
+  const result = $("#completionGateResult");
+  if (!result) return;
+  result.hidden = false;
+  result.innerHTML = blockers.length
+    ? `<h4>Completion is blocked</h4><ul>${blockers.map(item => `<li><button class="completion-blocker-link" data-tab="${escapeHtml(item.target_tab || "overview")}" type="button">${escapeHtml(item.message)}</button></li>`).join("")}</ul>`
+    : "<strong>All applicable completion requirements are satisfied.</strong>";
+  $$(".completion-blocker-link", result).forEach(button => button.addEventListener("click", () => window.AdminV3?.activateTab(button.dataset.tab)));
+  const exception = $("#completionExceptionPanel");
+  if (exception) exception.hidden = blockers.length === 0;
+}
+
+async function beginCompletion(templates) {
+  if (!selectedRequest) return;
+  const { data, error } = await adminClient.functions.invoke("update-request-status", { body: { request_id: selectedRequest.id, status: "completed", validate_only: true, send_message: false } });
+  if (error || data?.ok === false) { renderCompletionBlockers(data?.blockers || data?.validation?.blockers || [{ message: data?.error || error?.message || "Completion could not be evaluated.", target_tab: "overview" }]); return; }
+  renderCompletionBlockers(data.validation?.blockers || []);
+  if (data.validation?.allowed) selectStatusMessage("completed", templates);
+  else window.AdminV3?.activateTab("fulfillment");
+}
+
+async function completeWithException() {
+  if (!selectedRequest) return;
+  const exceptionType = $("#completionExceptionType")?.value || "";
+  const explanation = $("#completionExceptionExplanation")?.value?.trim() || "";
+  if (!exceptionType || explanation.length < 5) { renderCompletionBlockers([{ message: "Select an exception type and enter a meaningful explanation.", target_tab: "fulfillment" }]); return; }
+  const { data, error } = await adminClient.functions.invoke("update-request-status", { body: { request_id: selectedRequest.id, status: "completed", send_message: false, complete_with_exception: true, exception_type: exceptionType, exception_explanation: explanation } });
+  if (error || data?.ok === false) { renderCompletionBlockers(data?.blockers || [{ message: data?.error || error?.message || "Exception completion failed.", target_tab: "fulfillment" }]); return; }
+  showToast("Order completed with an audited exception.");
+  await refreshSelectedRequest(selectedRequest.id);
+}
+
+async function setDocumentRelease(fileId, released) {
+  if (!selectedRequest || !fileId) return;
+  const update = released
+    ? { customer_visible: true, eligible_for_delivery: true, document_classification: "customer_deliverable", review_state: "approved" }
+    : { customer_visible: false, eligible_for_delivery: false };
+  const { error } = await adminClient.from("request_files").update(update).eq("id", fileId).eq("service_request_id", selectedRequest.id);
+  if (error) { alert(error.message || "Document release could not be updated."); return; }
+  await adminClient.from("request_timeline_events").insert({ service_request_id: selectedRequest.id, event_type: released ? "document_released" : "document_release_withdrawn", title: released ? "Document released" : "Document release withdrawn", actor_type: "admin", visibility: "customer" });
+  await selectRequest(selectedRequest.id);
+  window.AdminV3?.activateTab("documents");
+}
+
+async function sendComposedMessage(updateStatus) {
+  if (!selectedRequest) return;
+  if (window.__alignedSendingMessage) return;
+  const templateId = $("#messageTemplateSelect")?.value;
+  const status = updateStatus ? $("#messageStatus")?.value : "";
+  const output = $("#messageComposerStatus");
+  if (!templateId) { output.textContent = "Select an APS message template."; return; }
+  if (updateStatus && !status) { output.textContent = "Select the status to apply after delivery."; return; }
+  window.__alignedSendingMessage = true;
+  output.textContent = "Sending…";
+  const requestFileIds = $$(".message-file-attachment:checked").map(input => input.value);
+  try {
+    const { data, error } = await adminClient.functions.invoke("send-message", { body: {
+      request_id: selectedRequest.id, template_id: templateId, recipient: $("#messageRecipient")?.value,
+      cc: $("#messageCc")?.value, subject: $("#messageSubject")?.value, html: $("#messageBody")?.value,
+      request_file_ids: requestFileIds, status,
+    } });
+    if (error || data?.ok === false) { output.textContent = data?.error || error?.message || "Message delivery failed; status was not changed."; return; }
+    output.textContent = updateStatus ? "Message delivered and status updated." : "Message delivered.";
+    await refreshSelectedRequest(selectedRequest.id);
+  } catch (error) {
+    output.textContent = error?.message || "Message delivery failed; status was not changed.";
+  } finally {
+    window.__alignedSendingMessage = false;
+  }
+}
+
 async function updateRequestStatus(status) {
   // STATUS UPDATE + EMAILS
   // Uses the deployed Edge Function so status, history, customer email,
@@ -1702,15 +1912,8 @@ async function updateRequestStatus(status) {
 
   const note = $("#adminStatusNote")?.value || "";
 
-  if (status === "payment_received") {
-    const recorded = await recordAdminPayment("initial");
-    if (!recorded) return;
-  }
-
-  if (status === "final_payment_received") {
-    const recorded = await recordAdminPayment("final");
-    if (!recorded) return;
-  }
+  // Status transitions are operational only. Payments are recorded through
+  // the explicit Payment Actions above and never materialized by a status.
 
   if (status === "appointment_confirmed") {
     const saved = await saveAppointmentDetails();
@@ -1763,6 +1966,7 @@ async function updateRequestStatus(status) {
           request_id: selectedRequest.id,
           status,
           note,
+          send_message: !$("#updateStatusWithoutSending")?.checked,
           paid_amount: null,
           appointment: appointmentPayload,
         },
@@ -1784,10 +1988,6 @@ async function updateRequestStatus(status) {
     status,
     ...appointmentPayload,
   });
-  if (status === "payment_received") {
-    selectedRequest.payment_status = "paid";
-    selectedRequest.paid_at = new Date().toISOString();
-  }
   if (status === "appointment_confirmed") {
     selectedRequest.appointment_confirmed_at = new Date().toISOString();
   }
@@ -1947,6 +2147,26 @@ async function saveInvoice() {
     alert(updateError.message);
     return false;
   }
+  let quoteId = selectedRequest.current_quote_id || null;
+  if (quoteId) {
+    const { error: quoteError } = await adminClient.from("quotes").update({ amount: total, notes: note, state: "saved", updated_at: new Date().toISOString() }).eq("id", quoteId);
+    if (quoteError) { alert(quoteError.message); return false; }
+  } else {
+    const { data: existingQuote } = await adminClient.from("quotes").select("id").eq("service_request_id", selectedRequest.id).order("version", { ascending: false }).limit(1).maybeSingle();
+    quoteId = existingQuote?.id || null;
+    if (quoteId) {
+      const { error: quoteError } = await adminClient.from("quotes").update({ amount: total, notes: note, state: "saved", updated_at: new Date().toISOString() }).eq("id", quoteId);
+      if (quoteError) { alert(quoteError.message); return false; }
+    } else {
+      const quoteNumber = `Q-${String(selectedRequest.id).slice(0,8).toUpperCase()}-01`;
+      const { data: quote, error: quoteError } = await adminClient.from("quotes").insert({ service_request_id: selectedRequest.id, quote_number: quoteNumber, state: "saved", amount: total, notes: note, version: 1 }).select("id").single();
+      if (quoteError) { alert(quoteError.message); return false; }
+      quoteId = quote.id;
+    }
+    const { error: linkError } = await adminClient.from("service_requests").update({ current_quote_id: quoteId }).eq("id", selectedRequest.id);
+    if (linkError) { alert(linkError.message); return false; }
+    selectedRequest.current_quote_id = quoteId;
+  }
   // Only replace the initial quote rows. Final-balance invoice items have an
   // invoice_id and must never be deleted when Invoice #1 is edited.
   await adminClient
@@ -2049,7 +2269,7 @@ async function loadRequests() {
   const { data, error } = await adminClient
     .from("service_requests")
     .select(
-      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(id,first_name,last_name,email,phone,preferred_contact),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
+      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(id,first_name,last_name,email,phone,preferred_contact),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
     )
     .order("created_at", {
       ascending: false,

@@ -1,0 +1,219 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
+
+test("status selection does not record or create payment", async () => {
+  const admin = await read("assets/js/admin.js");
+  const statusFunction = admin.slice(admin.indexOf("async function updateRequestStatus"), admin.indexOf("async function saveInvoice"));
+  assert.doesNotMatch(statusFunction, /recordAdminPayment\(/);
+  assert.match(admin, /recordPrimaryPaymentBtn/);
+  assert.match(admin, /recordSupplementalPaymentBtn/);
+});
+
+test("manual payment fallback cannot duplicate a paid primary invoice", async () => {
+  const source = await read("supabase/functions/record-admin-payment/index.ts");
+  assert.match(source, /The primary invoice is already paid/);
+  assert.match(source, /existingPrimary/);
+});
+
+test("Stripe webhook verifies signatures and deduplicates sessions", async () => {
+  const source = await read("supabase/functions/stripe-webhook/index.ts");
+  assert.match(source, /STRIPE_WEBHOOK_SECRET/);
+  assert.match(source, /verifyStripeSignature/);
+  assert.match(source, /external_reference=eq/);
+  assert.match(source, /duplicate: true/);
+  assert.match(source, /const newPaid = currentPaid \+ amount/);
+  assert.match(source, /paidInFull \? invoiceStatus : "partially_paid"/);
+  assert.match(source, /paymentResponse\.status === 409/);
+});
+
+test("admin service-role mutations require administrator authorization", async () => {
+  const config = await read("supabase/config.toml");
+  const status = await read("supabase/functions/update-request-status/index.ts");
+  const supplemental = await read("supabase/functions/create-additional-invoice/index.ts");
+  const invoiceEmail = await read("supabase/functions/send-invoice-email/index.ts");
+  assert.match(config, /\[functions\.update-request-status\][\s\S]*?verify_jwt = true/);
+  assert.match(config, /\[functions\.create-additional-invoice\][\s\S]*?verify_jwt = true/);
+  assert.match(config, /\[functions\.send-invoice-email\][\s\S]*?verify_jwt = true/);
+  for (const source of [status, supplemental, invoiceEmail]) {
+    assert.match(source, /requireAdmin/);
+    assert.match(source, /rpc\/is_admin/);
+  }
+});
+
+test("quote approval is stale-safe and preserves partial payments", async () => {
+  const source = await read("supabase/functions/client-quote-action/index.ts");
+  const portal = await read("assets/js/script.js");
+  assert.match(source, /This quote is no longer current/);
+  assert.match(source, /hasRecordedPayment/);
+  assert.match(source, /alreadyApproved/);
+  assert.match(source, /insertResponse\.status === 409/);
+  assert.match(portal, /quote_id: quoteId/);
+});
+
+test("quote save is financially side-effect free", async () => {
+  const admin = await read("assets/js/admin.js");
+  const saveQuote = admin.slice(admin.indexOf("async function saveInvoice"), admin.indexOf("async function sendInvoiceEmail"));
+  assert.doesNotMatch(saveQuote, /\.from\("invoices"\)/);
+  assert.doesNotMatch(saveQuote, /send-order-email/);
+  assert.match(saveQuote, /Quote saved by admin\. No customer email sent/);
+});
+
+test("intake captures service-aware signer and upload exception data", async () => {
+  const html = await read("pricing.html");
+  const script = await read("assets/js/script.js");
+  assert.match(html, /signerFields/);
+  assert.match(html, /documentUploadExceptionReason/);
+  assert.match(html, /mobileFiles/);
+  assert.match(script, /activeService === "ron" \? " \*"/);
+  assert.match(script, /request_notarial_acts/);
+  assert.match(script, /witness_source: "aps"/);
+});
+
+test("workspace and global navigation follow the locked boundary", async () => {
+  const html = await read("admin-dashboard.html");
+  for (const tab of ["overview", "customer", "documents", "quote", "payments", "messages", "fulfillment", "timeline"]) {
+    assert.match(html, new RegExp(`data-workspace-tab="${tab}"`));
+  }
+  assert.doesNotMatch(html, /data-admin-view="documents"/);
+  assert.match(html, /data-admin-view="review"/);
+  assert.match(html, /data-admin-view="messages"/);
+});
+
+test("migration adds durable financial uniqueness and protected communications", async () => {
+  const sql = await read("supabase/migrations/20260813020000_aps_workflow_refactor.sql");
+  assert.match(sql, /invoices_one_primary_per_source_quote/);
+  assert.match(sql, /request_payments_external_reference_unique/);
+  assert.match(sql, /message_templates/);
+  assert.match(sql, /'aps_admin_only_'\|\|t/);
+  assert.match(sql, /invalidate_changed_document_review/);
+  assert.match(sql, /drop policy if exists "public read invoices"/);
+  assert.match(sql, /drop policy if exists "Allow public reads from service request files"/);
+});
+
+test("status-message workflow sends before changing status", async () => {
+  const source = await read("supabase/functions/update-request-status/index.ts");
+  const sendAt = source.indexOf("const emailResponse = await fetch");
+  const updateAt = source.indexOf("const updateResponse = await supabaseFetch");
+  assert.ok(sendAt > 0 && updateAt > sendAt);
+  assert.match(source, /status was not changed/);
+  assert.match(source, /status_changed_without_message/);
+});
+
+test("customer portal prioritizes one action-required card", async () => {
+  const html = await read("success.html");
+  const script = await read("assets/js/script.js");
+  assert.match(html, />View My Request</);
+  assert.match(script, /Action Required/);
+  assert.match(script, /Review &amp; Approve Quote/);
+  assert.match(script, /Payment required/);
+  assert.match(script, /Document needed/);
+});
+
+test("message composer uses centralized templates and status-after-send", async () => {
+  const admin = await read("assets/js/admin.js");
+  assert.match(admin, /Message Composer/);
+  assert.match(admin, /messageTemplateSelect/);
+  assert.match(admin, /sendAndUpdateStatusBtn/);
+  assert.match(admin, /functions\.invoke\("send-message"/);
+  assert.match(admin, /message-file-attachment/);
+});
+
+test("message delivery validates attachments and releases status only after send", async () => {
+  const source = await read("supabase/functions/send-message/index.ts");
+  const sendAt = source.indexOf('fetch("https://api.resend.com/emails"');
+  const statusAt = source.indexOf('rest(`service_requests?id=eq.${requestId}`');
+  assert.ok(sendAt > 0 && statusAt > sendAt);
+  assert.match(source, /requires at least one released customer deliverable/);
+  assert.match(source, /Only intentionally released customer deliverables/);
+  assert.match(source, /validate_only: true/);
+  assert.match(source, /Completion requirements are not satisfied/);
+  assert.match(source, /providerAttachments/);
+  assert.match(source, /providerAccepted/);
+  assert.match(source, /Message was sent, but the status update failed/);
+  assert.match(source, /message_sent: providerAccepted/);
+});
+
+test("admin upload never releases a document implicitly", async () => {
+  const admin = await read("assets/js/admin.js");
+  const upload = admin.slice(admin.indexOf("async function uploadAdminDocuments"), admin.indexOf("async function selectRequest"));
+  assert.match(upload, /customer_visible: false/);
+  assert.match(upload, /eligible_for_delivery: false/);
+  assert.doesNotMatch(upload, /const customerVisible/);
+});
+
+test("customer portal exposes all six deep-linkable sections", async () => {
+  const script = await read("assets/js/script.js");
+  for (const tab of ["overview", "documents", "quote-payment", "fulfillment", "messages", "activity"]) {
+    assert.match(script, new RegExp(`data-portal-panel=\\"${tab}\\"`));
+  }
+  assert.match(script, /params\.get\("tab"\)/);
+  assert.match(script, /customer_documents/);
+  assert.match(script, /customer_activity/);
+});
+
+test("public status reader excludes unreleased and internal documents", async () => {
+  const source = await read("supabase/functions/get-request-status/index.ts");
+  assert.match(source, /file\.customer_visible === true/);
+  assert.match(source, /file\.eligible_for_delivery === true/);
+  assert.match(source, /file\.document_classification !== "internal_document"/);
+  assert.match(source, /delivery_state=eq\.sent/);
+  const response = source.slice(source.indexOf("return json({\n      ok: true"));
+  assert.doesNotMatch(response, /\n\s*files,/);
+  assert.doesNotMatch(response, /\n\s*timeline_events:/);
+  assert.doesNotMatch(response, /\n\s*communications,/);
+  assert.match(response, /visibility === "customer"/);
+  assert.match(source, /const publicRequest = pick/);
+  assert.match(source, /const publicInvoices = invoices\.map/);
+  assert.match(source, /const publicServiceDetail = serviceDetail \? pick/);
+  assert.doesNotMatch(response, /service_detail: serviceDetail/);
+});
+
+test("supplemental invoices preserve earlier balances and support invoice three plus", async () => {
+  const source = await read("supabase/functions/create-additional-invoice/index.ts");
+  const checkout = await read("supabase/functions/create-embedded-checkout/index.ts");
+  assert.match(source, /requestBalance = activeInvoices\.reduce/);
+  assert.match(source, /paidAmount <= 0/);
+  assert.match(source, /invoice_type/);
+  assert.match(checkout, /supplemental/);
+  assert.match(checkout, /-0\*\[2-9\]/);
+});
+
+test("intake confirmation reads the centralized branded template", async () => {
+  const source = await read("supabase/functions/send-request-email/index.ts");
+  assert.match(source, /message_templates\?select=\*&template_key=eq\.request_received/);
+  assert.match(source, /template_id: template\.id/);
+});
+
+test("completion exceptions are admin-only, reasoned, and separately audited", async () => {
+  const source = await read("supabase/functions/update-request-status/index.ts");
+  const migration = await read("supabase/migrations/20260813030000_service_aware_completion_gate.sql");
+  assert.match(source, /const admin = await requireAdmin/);
+  assert.match(source, /Complete with Exception requires an explanation/);
+  assert.match(source, /order_completed_with_exception/);
+  assert.match(source, /Order Completed with Exception/);
+  assert.match(source, /overridden_blockers/);
+  assert.match(migration, /request_completion_exceptions/);
+  assert.match(migration, /created_by uuid not null/);
+  assert.match(migration, /aps_admin_completion_exceptions/);
+});
+
+test("completion UI shows blocker targets and requires an intentional exception", async () => {
+  const admin = await read("assets/js/admin.js");
+  assert.match(admin, /Authoritative Fulfillment Facts/);
+  assert.match(admin, /Completion is blocked/);
+  assert.match(admin, /completion-blocker-link/);
+  assert.match(admin, /Complete with Exception/);
+  assert.match(admin, /complete_with_exception: true/);
+});
+
+test("customer completion copy is service-specific and hides gate internals", async () => {
+  const portal = await read("assets/js/script.js");
+  assert.match(portal, /Your Notarization Is Complete/);
+  assert.match(portal, /Your Completed Scans Are Ready/);
+  assert.match(portal, /Your Delivery Is Complete/);
+  const copy = portal.slice(portal.indexOf("function customerCompletionCopy"), portal.indexOf("function invoiceTotal"));
+  assert.doesNotMatch(copy, /completion RPC|service-aware gate|override reason|unresolved review item/i);
+});

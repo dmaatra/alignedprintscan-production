@@ -69,8 +69,9 @@ async function stripePost(path: string, params: URLSearchParams) {
 
 function isFinalInvoice(invoice: Record<string, unknown>) {
   return (
-    String(invoice.invoice_type || "").includes("final") ||
-    String(invoice.invoice_number || "").endsWith("-02")
+    ["final", "final_balance", "supplemental", "additional"].some((kind) =>
+      String(invoice.invoice_type || "").includes(kind)
+    ) || /-0*[2-9]\d*$/.test(String(invoice.invoice_number || ""))
   );
 }
 

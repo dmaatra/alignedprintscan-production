@@ -4296,3 +4296,4 @@ button.btn.secondary:hover {
     filter: none !important;
   }
 }
+.customer-portal-tabs{display:flex;gap:.55rem;overflow-x:auto;margin:1.25rem 0 2rem;padding:.4rem;border:1px solid rgba(23,43,58,.15);border-radius:16px;background:#fff}.customer-portal-tabs a{flex:0 0 auto;padding:.7rem .9rem;border-radius:11px;color:inherit;font-weight:700;text-decoration:none}.customer-portal-tabs a.is-active{background:#173044;color:#fff}.portal-document-list,.portal-message-list,.portal-activity-list{display:grid;gap:1rem;padding:0;list-style:none}.portal-document-list li,.portal-message-list li,.portal-activity-list li{display:grid;gap:.4rem;padding:1rem;border:1px solid rgba(23,43,58,.12);border-radius:12px}.portal-document-list .btn{justify-self:start}[data-portal-panel][hidden]{display:none!important}
