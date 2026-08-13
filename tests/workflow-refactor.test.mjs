@@ -108,7 +108,7 @@ test("customer portal prioritizes one action-required card", async () => {
   const script = await read("assets/js/script.js");
   assert.match(html, />View My Request</);
   assert.match(script, /Action Required/);
-  assert.match(script, /Review &amp; Approve Quote/);
+  assert.match(script, /Review & Approve Quote/);
   assert.match(script, /Payment required/);
   assert.match(script, /Document needed/);
 });
@@ -221,7 +221,7 @@ test("customer completion copy is service-specific and hides gate internals", as
 
 test("customer portal initializes a completed existing request", async () => {
   const portal = await read("assets/js/script.js");
-  const start = portal.indexOf("async function initSuccessPage()");
+  const start = portal.indexOf("function customerPrimaryAction");
   const end = portal.indexOf("\n}\ninitSuccessPage();", start) + 2;
   assert.ok(start >= 0 && end > start, "initSuccessPage source is available");
 

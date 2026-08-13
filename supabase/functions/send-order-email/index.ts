@@ -1,4 +1,6 @@
-// Aligned Document Services — Branded order-status emails
+import { customerPortalUrl, recipientGreeting, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
+
+// Aligned Print & Scan — Branded order-status emails
 // Purpose: Send customer + admin emails for every client workflow phase.
 // Phases handled here: quote_ready/awaiting_approval, payment_received,
 // appointment_confirmed, final_balance_due/final_payment_received, completed, and general status updates.
@@ -15,7 +17,7 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
 const SITE_URL = Deno.env.get("SITE_URL") || "https://alignedprintscan.com";
 const SUPPORT_EMAIL = Deno.env.get("SUPPORT_EMAIL") || "hello@alignedprintscan.com";
 const ADMIN_EMAIL = Deno.env.get("ADMIN_EMAIL") || SUPPORT_EMAIL;
-const FROM_EMAIL = Deno.env.get("FROM_EMAIL") || `Aligned Document Services <${SUPPORT_EMAIL}>`;
+const FROM_EMAIL = Deno.env.get("FROM_EMAIL") || `Aligned Print & Scan <${SUPPORT_EMAIL}>`;
 const SUPPORT_PHONE = Deno.env.get("SUPPORT_PHONE") || "(469) 383-8879";
 const LOGO_URL = Deno.env.get("EMAIL_LOGO_URL") || `${SITE_URL}/assets/images/logo-full.webp`;
 
@@ -90,7 +92,7 @@ async function sendEmail(to: string | string[], subject: string, html: string) {
 }
 
 function emailShell(body: string, preheader: string) {
-  return `<!doctype html><html><head><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"></head><body style="margin:0;background:#f6f3ee;font-family:Arial,Helvetica,sans-serif;color:#2d2d2d;line-height:1.6"><div style="display:none;max-height:0;overflow:hidden">${esc(preheader)}</div><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f6f3ee;padding:28px 12px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:680px;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #e7dcc5"><tr><td style="background:#ffffff;padding:30px 34px 20px;text-align:center;border-bottom:4px solid #c8a96b"><img src="${LOGO_URL}" alt="Aligned Document Services" style="max-width:210px;margin:0 auto 14px;display:block"><div style="font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#161c4d;font-weight:800">Remote & Mobile Notary · Print, Scan, Copies & Courier Support</div></td></tr><tr><td style="padding:34px;background:#ffffff;color:#2d2d2d">${body}</td></tr><tr><td style="padding:26px 34px;background:#fffaf2;border-top:1px solid #e7dcc5;color:#5b5a61;font-size:14px"><strong style="color:#161c4d">Need assistance?</strong><br>Contact customer support and include your APS reference number.<br><br><a href="mailto:${SUPPORT_EMAIL}" style="color:#161c4d;font-weight:bold">${SUPPORT_EMAIL}</a><br>${SUPPORT_PHONE}<br>Waxahachie, Texas<br><br><a href="${SITE_URL}/support.html" style="color:#c8a96b;font-weight:bold">Customer Support</a><div style="margin-top:18px;color:#8a8072">Aligned Document Services LLC</div></td></tr></table></td></tr></table></body></html>`;
+  return renderCustomerEmailShell({ body, preheader, siteUrl: SITE_URL, logoUrl: LOGO_URL, supportEmail: SUPPORT_EMAIL, supportPhone: SUPPORT_PHONE });
 }
 
 function button(url: string, label: string) {
@@ -138,15 +140,16 @@ function requestSummary(request: any, customer: any, ref: string, total: number)
 function buildCustomerContent(status: string, request: any, customer: any, items: any[], note: string, invoice: any = null) {
   const ref = refFromId(request.id);
   const total = Number(invoice?.amount_due || request.quote_amount || request.paid_amount || request.estimated_total || 0);
-  const statusUrl = `${SITE_URL}/success.html?request_id=${request.id}&ref=${encodeURIComponent(ref)}`;
-  const first = customer?.first_name || "there";
+  const portalTab = ["quote_ready", "awaiting_approval", "awaiting_payment", "final_balance_due", "payment_received", "final_payment_received"].includes(status) ? "quote-payment" : ["appointment_confirmed", "appointment_needs_rescheduling"].includes(status) ? "fulfillment" : "overview";
+  const statusUrl = customerPortalUrl(SITE_URL, request.id, portalTab);
+  const greeting = recipientGreeting(customer);
   const service = serviceLabel(request.service_type);
 
   if (["quote_ready", "awaiting_approval"].includes(status)) {
     return {
       subject: `Quote ready: ${ref}`,
-      preheader: `Your Aligned Document Services quote is ready for review.`,
-      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Quote Ready</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Quote Is Ready</h1><p>Hello ${esc(first)},</p><p>Your ${esc(service)} request has been reviewed. Please review the request summary and itemized quote, then approve or request changes from your secure status page.</p>${requestSummary(request, customer, ref, total)}${itemTable(items, total)}${request.quote_notes ? `<p><strong>Quote note:</strong> ${esc(request.quote_notes)}</p>` : ""}${button(statusUrl, "Review Quote")}`,
+      preheader: `Your Aligned Print & Scan quote is ready for review.`,
+      html: `<p>${greeting}</p><p>Your ${esc(service)} request has been reviewed. Please review the request summary and itemized quote, then approve or request changes from your secure status page.</p>${requestSummary(request, customer, ref, total)}${itemTable(items, total)}${request.quote_notes ? `<p><strong>Quote note:</strong> ${esc(request.quote_notes)}</p>` : ""}${button(statusUrl, "Review Quote")}`,
     };
   }
 
@@ -154,7 +157,7 @@ function buildCustomerContent(status: string, request: any, customer: any, items
     return {
       subject: `Appointment needs rescheduling: ${ref}`,
       preheader: `Your requested appointment time needs to be updated.`,
-      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Rescheduling Needed</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Appointment Needs Rescheduling</h1><p>Hello ${esc(first)},</p><p>Your payment/request has been received, but your requested appointment time is no longer available or requires adjustment. Please reply with your next best availability, or watch for an updated appointment option from Aligned Print & Scan.</p>${note ? `<p><strong>Note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Status")}`,
+      html: `<p>${greeting}</p><p>Your payment/request has been received, but your requested appointment time is no longer available or requires adjustment. Please reply with your next best availability, or watch for an updated appointment option from Aligned Print & Scan.</p>${note ? `<p><strong>Note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Appointment")}`,
     };
   }
 
@@ -162,7 +165,7 @@ function buildCustomerContent(status: string, request: any, customer: any, items
     return {
       subject: `Quote expired: ${ref}`,
       preheader: `Your quote has expired and may need review.`,
-      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Quote Expired</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">This Quote Has Expired</h1><p>Hello ${esc(first)},</p><p>The secure payment option for <strong>${esc(ref)}</strong> is no longer active. Please submit a new request or contact support if you would like this quote reviewed again.</p>${button(statusUrl, "View Status")}`,
+      html: `<p>${greeting}</p><p>The secure payment option for <strong>${esc(ref)}</strong> is no longer active. Please submit a new request or contact support if you would like this quote reviewed again.</p>${button(statusUrl, "View My Request")}`,
     };
   }
 
@@ -171,7 +174,7 @@ function buildCustomerContent(status: string, request: any, customer: any, items
     return {
       subject: `Final balance due: ${ref}`,
       preheader: `A final balance invoice is ready for your review and payment.`,
-      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Final Balance Due</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Final Balance Invoice Ready</h1><p>Hello ${esc(first)},</p><p>A final balance invoice has been issued for additional on-site, courier, document, or fulfillment services connected to your request.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}<br><strong style="color:#161c4d">Invoice:</strong> ${esc(invoiceNumber)}<br><strong style="color:#161c4d">Final Balance:</strong> ${money(total)}</div>${itemTable(items, total)}${note ? `<p><strong>Note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "Review & Pay Final Balance")}`,
+      html: `<p>${greeting}</p><p>A final balance invoice has been issued for additional on-site, courier, document, or fulfillment services connected to your request.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}<br><strong style="color:#161c4d">Invoice:</strong> ${esc(invoiceNumber)}<br><strong style="color:#161c4d">Final Balance:</strong> ${money(total)}</div>${itemTable(items, total)}${note ? `<p><strong>Note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "Review & Pay Final Balance")}`,
     };
   }
 
@@ -179,7 +182,7 @@ function buildCustomerContent(status: string, request: any, customer: any, items
     return {
       subject: `Payment received: ${ref}`,
       preheader: `Your payment has been received.`,
-      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Payment Received</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Payment Has Been Received</h1><p>Hello ${esc(first)},</p><p>Thank you. Your payment for <strong>${esc(ref)}</strong> has been received and recorded. Please watch for your appointment confirmation email with the final date, time, link/location, and preparation instructions.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Amount Recorded:</strong> ${money(request.paid_amount || total)}<br><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}</div>${note ? `<p><strong>Note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Payment Status")}`,
+      html: `<p>${greeting}</p><p>Thank you. Your payment for <strong>${esc(ref)}</strong> has been received and recorded. Please watch for your appointment confirmation email with the final date, time, link/location, and preparation instructions.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Amount Recorded:</strong> ${money(request.paid_amount || total)}<br><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}</div>${note ? `<p><strong>Note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Payment Status")}`,
     };
   }
 
@@ -187,7 +190,7 @@ function buildCustomerContent(status: string, request: any, customer: any, items
     return {
       subject: `Final payment received: ${ref}`,
       preheader: `Your final balance payment has been received.`,
-      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Final Payment Received</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Final Balance Payment Received</h1><p>Hello ${esc(first)},</p><p>Thank you. Your final balance payment for <strong>${esc(ref)}</strong> has been received and recorded. Your request is fully paid. Your service summary and receipts are available on your status page. Aligned Print & Scan will close the request once the service record is reviewed.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Amount Recorded:</strong> ${money(total)}<br><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}</div>${button(statusUrl, "View Updated Status")}`,
+      html: `<p>${greeting}</p><p>Thank you. Your final balance payment for <strong>${esc(ref)}</strong> has been received and recorded. Your request is fully paid. Your service summary and receipts are available on your status page. Aligned Print & Scan will close the request once the service record is reviewed.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Amount Recorded:</strong> ${money(total)}<br><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}</div>${button(statusUrl, "View Payment Status")}`,
     };
   }
 
@@ -195,22 +198,22 @@ function buildCustomerContent(status: string, request: any, customer: any, items
     return {
       subject: `Appointment confirmed: ${ref}`,
       preheader: `Your appointment details are confirmed.`,
-      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Appointment Confirmed</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Appointment Is Confirmed</h1><p>Hello ${esc(first)},</p><p>Your ${esc(service)} appointment has been confirmed. Please review the appointment details below and keep this email for reference.</p><p>If additional services are completed on site, a final balance invoice may be issued before the order is marked complete.</p>${appointmentBlock(request)}${note ? `<p><strong>Admin note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Appointment Details")}`,
+      html: `<p>${greeting}</p><p>Your ${esc(service)} appointment has been confirmed. Please review the appointment details below and keep this email for reference.</p><p>If additional services are completed on site, a final balance invoice may be issued before the order is marked complete.</p>${appointmentBlock(request)}${note ? `<p><strong>Admin note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Appointment")}`,
     };
   }
 
   if (status === "completed") {
     return {
       subject: `Service completed: ${ref}`,
-      preheader: `Your Aligned Document Services request is complete.`,
-      html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Service Completed</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Service Is Complete</h1><p>Hello ${esc(first)},</p><p>Thank you for choosing Aligned Document Services. Your request <strong>${esc(ref)}</strong> has been marked complete. Your secure status page remains available for confirmation details, support options, and review links.</p>${note ? `<p><strong>Completion note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Completed Request")}`,
+      preheader: `Your Aligned Print & Scan request is complete.`,
+      html: `<p>${greeting}</p><p>Thank you for choosing Aligned Print & Scan. Your request <strong>${esc(ref)}</strong> has been marked complete. Your secure status page remains available for confirmation details, support options, and review links.</p>${note ? `<p><strong>Completion note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Completed Request")}`,
     };
   }
 
   return {
     subject: `Status update: ${ref}`,
     preheader: `Your request status has been updated.`,
-    html: `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Status Update</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Request Has Been Updated</h1><p>Hello ${esc(first)},</p><p>Your ${esc(service)} request has been updated to <strong>${esc(status.replaceAll("_", " "))}</strong>.</p>${note ? `<p><strong>Note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View Updated Status")}`,
+    html: `<p>${greeting}</p><p>Your ${esc(service)} request has been updated to <strong>${esc(status.replaceAll("_", " "))}</strong>.</p>${note ? `<p><strong>Note:</strong> ${esc(note)}</p>` : ""}${button(statusUrl, "View My Request")}`,
   };
 }
 

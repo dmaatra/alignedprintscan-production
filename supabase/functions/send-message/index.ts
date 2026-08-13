@@ -1,3 +1,5 @@
+import { customerPortalUrl, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
+
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -55,11 +57,12 @@ Deno.serve(async (request) => {
         throw new Error(summary || validationResult?.error || "Completion requirements are not satisfied.");
       }
     }
-    const values = { request_reference: reference, customer_first_name: customer.first_name || "Customer", customer_name: [customer.first_name, customer.last_name].filter(Boolean).join(" ") || "Customer", quote_amount: Number(quote?.amount || serviceRequest.quote_amount || 0).toFixed(2), balance_due: Number(serviceRequest.balance_due || invoice?.balance_due || 0).toFixed(2), invoice_number: invoice?.invoice_number || "", appointment_date: serviceRequest.appointment_date || serviceRequest.preferred_date || "", appointment_time: serviceRequest.appointment_time || serviceRequest.preferred_time_window || "", appointment_location: serviceRequest.appointment_location || "", appointment_link: serviceRequest.appointment_link || serviceRequest.ron_session_url || "", portal_url: `https://alignedprintscan.com/success.html?request_id=${requestId}` };
+    const values = { request_reference: reference, customer_first_name: customer.first_name || "", customer_name: [customer.first_name, customer.last_name].filter(Boolean).join(" ") || "", quote_amount: Number(quote?.amount || serviceRequest.quote_amount || 0).toFixed(2), balance_due: Number(serviceRequest.balance_due || invoice?.balance_due || 0).toFixed(2), invoice_number: invoice?.invoice_number || "", appointment_date: serviceRequest.appointment_date || serviceRequest.preferred_date || "", appointment_time: serviceRequest.appointment_time || serviceRequest.preferred_time_window || "", appointment_location: serviceRequest.appointment_location || "", appointment_link: serviceRequest.appointment_link || serviceRequest.ron_session_url || "", portal_url: customerPortalUrl("https://alignedprintscan.com", requestId, "overview") };
     const recipient = String(body.recipient || customer.email || "").trim();
     const cc = (Array.isArray(body.cc) ? body.cc : String(body.cc || "").split(",")).map((value: unknown) => String(value).trim()).filter(Boolean);
     const subject = String(body.subject || render(template.subject_template, values)).trim();
-    const html = String(body.html || render(template.html_template, values));
+    const renderedBody = String(body.html || render(template.html_template, values));
+    const html = renderCustomerEmailShell({ body: renderedBody, preheader: subject, eyebrow: template.name || "APS Update", title: template.name || "Your Request Update" });
     const text = String(body.text || render(template.text_template || template.html_template.replace(/<[^>]+>/g, " "), values));
     if (!recipient || !subject || !html) throw new Error("Recipient, subject, and message body are required.");
     const inserted = await rest("messages", { method: "POST", body: JSON.stringify({ service_request_id: requestId, template_id: templateId, recipient, cc, subject, rendered_html: html, rendered_text: text, delivery_state: "sending", associated_status: targetStatus || template.associated_status || null, created_by: adminId }) });

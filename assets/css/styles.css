@@ -2055,6 +2055,38 @@ button[disabled],
   font-size: 0.98rem;
   margin-top: 4px;
 }
+.portal-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0;
+  margin: 14px 0 18px;
+  overflow: hidden;
+  border: 1px solid rgba(22, 28, 77, 0.1);
+  border-radius: 18px;
+  background: #fff;
+}
+.portal-summary-grid > div {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 0;
+  border-right: 1px solid rgba(22, 28, 77, 0.08);
+  border-radius: 0;
+}
+.portal-summary-grid strong { overflow-wrap: anywhere; }
+.portal-action-required { border-left: 4px solid var(--aps-gold); }
+.portal-no-action {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  margin: 18px 0;
+  border-radius: 14px;
+  background: rgba(22, 28, 77, 0.05);
+}
+.portal-no-action strong { color: var(--blue); }
+@media (max-width: 560px) {
+  .portal-summary-grid { grid-template-columns: 1fr; }
+  .portal-summary-grid > div { padding: 10px 12px; border-right: 0; border-bottom: 1px solid rgba(22, 28, 77, 0.08); }
+  .portal-summary-grid > div:last-child { border-bottom: 0; }
+}
 .slim-note {
   padding: 18px;
   margin-top: 16px;

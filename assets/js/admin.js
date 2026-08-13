@@ -456,7 +456,7 @@ function renderRequestList() {
         .join(" ")
         .toLowerCase();
       return `
-      <button class="request-row ${selected}" data-id="${r.id}" data-search-index="${escapeHtml(searchIndex)}" type="button">
+      <button class="request-row ${selected}" data-id="${r.id}" data-reference="${escapeHtml(refFromId(r.id))}" data-customer-name="${escapeHtml(name)}" data-customer-email="${escapeHtml(customer?.email || "")}" data-customer-phone="${escapeHtml(customer?.phone || "")}" data-invoice-numbers="${escapeHtml([r.invoice_number, ...(r.search_invoice_numbers || [])].filter(Boolean).join("|"))}" data-service-label="${escapeHtml(serviceLabel(r.service_type))}" data-status-label="${escapeHtml(statusLabel(r.workflow_status || r.status))}" data-search-index="${escapeHtml(searchIndex)}" type="button">
         <span class="request-ref">${refFromId(r.id)}</span>
         <strong>${escapeHtml(name)}</strong>
         <small>${created}</small>
