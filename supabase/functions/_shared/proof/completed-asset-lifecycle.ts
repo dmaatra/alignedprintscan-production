@@ -49,6 +49,20 @@ export class ProofCompletedAssetLifecycle {
         assets: (await this.repository.list(tx.id)).map(completedProjection),
       };
     }
+    if (input.command === "stage_completed_asset") {
+      const asset = await this.asset(input.assetId);
+      const tx = await this.integration(asset.proof_transaction_record_id);
+      this.assertOwned(tx.workflow_category);
+      const requestFileId = await this.repository.stageForReview(
+        asset,
+        tx.service_request_id,
+      );
+      return {
+        kind: "staged_completed_asset",
+        asset: completedProjection(asset),
+        requestFileId,
+      };
+    }
     if (input.command === "retrieve_completed_document") {
       return await this.retrieveDocument(input, admin);
     }

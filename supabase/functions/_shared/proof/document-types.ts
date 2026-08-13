@@ -36,7 +36,7 @@ export interface ProofDocumentFlags {
   notarizationRequired: boolean;
   esignRequired: boolean;
   identityConfirmationRequired: boolean;
-  witnessRequired: false;
+  witnessRequired: boolean;
   signingRequiresMeeting: boolean;
   customerCanAnnotate: boolean;
   bundlePosition: number | null;
@@ -72,7 +72,7 @@ export interface ProofDocumentAssetRecord {
   notarization_required: boolean;
   esign_required: boolean;
   identity_confirmation_required: boolean;
-  witness_required: false;
+  witness_required: boolean;
   signing_requires_meeting: boolean;
   customer_can_annotate: boolean;
   bundle_position: number | null;
@@ -136,7 +136,7 @@ export function projectProofDocument(
       notarizationRequired: row.notarization_required,
       esignRequired: row.esign_required,
       identityConfirmationRequired: row.identity_confirmation_required,
-      witnessRequired: false,
+      witnessRequired: row.witness_required,
       signingRequiresMeeting: row.signing_requires_meeting,
       customerCanAnnotate: row.customer_can_annotate,
       bundlePosition: row.bundle_position,

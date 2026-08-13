@@ -2,6 +2,7 @@ export type CompletedAssetCommand =
   | "list_completed_assets"
   | "retrieve_completed_document"
   | "retrieve_audit_trail"
+  | "stage_completed_asset"
   | "refresh_completed_asset_state"
   | "mark_asset_manual_review";
 export interface CompletedAssetInput {

@@ -19,7 +19,11 @@ import {
 export interface ProofLifecycleService {
   getOrganization(): Promise<ProofOrganization>;
   createDraftTransaction(
-    input: { externalId: string; signerEmail: string },
+    input: {
+      externalId: string;
+      signerEmail: string;
+      transactionName?: string;
+    },
   ): Promise<ProofProviderTransaction>;
   getTransaction(transactionId: string): Promise<ProofProviderTransaction>;
   deleteDraftTransaction(transactionId: string): Promise<{ deleted: true }>;
@@ -204,6 +208,9 @@ export class ProofTransactionLifecycle {
       const provider = await this.service.createDraftTransaction({
         externalId,
         signerEmail,
+        transactionName: `APS-${
+          serviceRequestId.slice(0, 8).toUpperCase()
+        } Remote Online Notary`,
       });
       const updated = await this.syncProvider(existing, provider, adminUserId, {
         creation_state: "created",

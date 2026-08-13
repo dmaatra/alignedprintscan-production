@@ -4,11 +4,13 @@
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "https://sfsdniavqldgbiretply.supabase.co";
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ||
+  "https://sfsdniavqldgbiretply.supabase.co";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
 function json(body: unknown, status = 200) {
@@ -24,7 +26,11 @@ function refFromId(id: string) {
 
 function cleanUuid(value: unknown) {
   const text = String(value || "").trim();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text) ? text : "";
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      text,
+    )
+    ? text
+    : "";
 }
 
 function pick(source: any, keys: string[]) {
@@ -57,7 +63,9 @@ async function readJsonOrEmpty(response: Response) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
   try {
     let body: any = {};
@@ -68,12 +76,18 @@ Deno.serve(async (req) => {
     }
 
     let requestId = cleanUuid(body.request_id || body.id);
-    const referenceNumber = String(body.reference_number || body.ref || "").trim();
+    const referenceNumber = String(body.reference_number || body.ref || "")
+      .trim();
 
     // Allow fallback lookup by APS reference number when the URL has ref but not request_id.
     if (!requestId && referenceNumber.toUpperCase().startsWith("APS-")) {
-      const prefix = referenceNumber.replace(/^APS-/i, "").slice(0, 8).toLowerCase();
-      const lookup = await supabaseFetch(`service_requests?select=id&id=ilike.${encodeURIComponent(prefix)}*&limit=1`);
+      const prefix = referenceNumber.replace(/^APS-/i, "").slice(0, 8)
+        .toLowerCase();
+      const lookup = await supabaseFetch(
+        `service_requests?select=id&id=ilike.${
+          encodeURIComponent(prefix)
+        }*&limit=1`,
+      );
       const rows = await readJsonOrEmpty(lookup);
       requestId = rows?.[0]?.id || "";
     }
@@ -83,7 +97,9 @@ Deno.serve(async (req) => {
     }
 
     // Use broad selects to prevent 400 errors when optional columns are still being migrated.
-    const requestRes = await supabaseFetch(`service_requests?select=*&id=eq.${requestId}&limit=1`);
+    const requestRes = await supabaseFetch(
+      `service_requests?select=*&id=eq.${requestId}&limit=1`,
+    );
     if (!requestRes.ok) throw new Error(await requestRes.text());
 
     const requestRows = await requestRes.json();
@@ -92,7 +108,9 @@ Deno.serve(async (req) => {
 
     let customer = null;
     if (request.customer_id) {
-      const customerRes = await supabaseFetch(`customers?select=*&id=eq.${request.customer_id}&limit=1`);
+      const customerRes = await supabaseFetch(
+        `customers?select=*&id=eq.${request.customer_id}&limit=1`,
+      );
       const customerRows = await readJsonOrEmpty(customerRes);
       customer = customerRows?.[0] || null;
     }
@@ -100,17 +118,43 @@ Deno.serve(async (req) => {
       ? pick(customer, ["id", "first_name", "last_name", "email", "phone"])
       : null;
     const publicRequest = pick(request, [
-      "id", "service_type", "status", "workflow_status", "preferred_date",
-      "preferred_time_window", "appointment_date", "appointment_time",
-      "appointment_location", "appointment_platform", "appointment_link",
-      "appointment_instructions", "appointment_line_items_note",
-      "ron_session_url", "fulfillment_method", "service_method",
-      "service_address", "delivery_address", "print_address", "location",
-      "street_address", "quote_amount", "initial_payment_amount",
-      "estimated_total", "paid_amount", "balance_due", "paid_at",
-      "invoice_number", "quote_notes", "customer_message", "receipt_url",
-      "receipt_pdf_url", "review_link_google", "review_link_yelp",
-      "prep_video_url", "current_quote_id", "document_state",
+      "id",
+      "service_type",
+      "status",
+      "workflow_status",
+      "preferred_date",
+      "preferred_time_window",
+      "appointment_date",
+      "appointment_time",
+      "appointment_location",
+      "appointment_platform",
+      "appointment_link",
+      "appointment_instructions",
+      "appointment_line_items_note",
+      "ron_session_url",
+      "fulfillment_method",
+      "service_method",
+      "service_address",
+      "delivery_address",
+      "print_address",
+      "location",
+      "street_address",
+      "quote_amount",
+      "initial_payment_amount",
+      "estimated_total",
+      "paid_amount",
+      "balance_due",
+      "paid_at",
+      "invoice_number",
+      "quote_notes",
+      "customer_message",
+      "receipt_url",
+      "receipt_pdf_url",
+      "review_link_google",
+      "review_link_yelp",
+      "prep_video_url",
+      "current_quote_id",
+      "document_state",
     ]);
     publicRequest.customers = publicCustomer ? [publicCustomer] : [];
 
@@ -118,11 +162,24 @@ Deno.serve(async (req) => {
       `invoices?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
     );
     const invoices = (await readJsonOrEmpty(invoicesRes)) || [];
-    const publicInvoices = invoices.map((invoice: any) => pick(invoice, [
-      "id", "invoice_number", "invoice_type", "status", "payment_status",
-      "amount_due", "amount_paid", "paid_amount", "balance_due", "paid_at",
-      "receipt_url", "receipt_pdf_url", "note", "created_at",
-    ]));
+    const publicInvoices = invoices.map((invoice: any) =>
+      pick(invoice, [
+        "id",
+        "invoice_number",
+        "invoice_type",
+        "status",
+        "payment_status",
+        "amount_due",
+        "amount_paid",
+        "paid_amount",
+        "balance_due",
+        "paid_at",
+        "receipt_url",
+        "receipt_pdf_url",
+        "note",
+        "created_at",
+      ])
+    );
 
     const allItemsRes = await supabaseFetch(
       `invoice_items?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
@@ -152,10 +209,17 @@ Deno.serve(async (req) => {
         String(item.invoice_id || "") !== String(initialInvoice?.id || "")
       );
     });
-    const publicItem = (item: any) => pick(item, [
-      "id", "invoice_id", "item_type", "description", "quantity",
-      "unit_price", "line_total", "sort_order",
-    ]);
+    const publicItem = (item: any) =>
+      pick(item, [
+        "id",
+        "invoice_id",
+        "item_type",
+        "description",
+        "quantity",
+        "unit_price",
+        "line_total",
+        "sort_order",
+      ]);
 
     const detailTable = request.service_type === "ron"
       ? "ron_requests"
@@ -167,35 +231,161 @@ Deno.serve(async (req) => {
 
     let serviceDetail = null;
     if (detailTable) {
-      const detailRes = await supabaseFetch(`${detailTable}?select=*&service_request_id=eq.${requestId}&limit=1`);
+      const detailRes = await supabaseFetch(
+        `${detailTable}?select=*&service_request_id=eq.${requestId}&limit=1`,
+      );
       const detailRows = await readJsonOrEmpty(detailRes);
       serviceDetail = detailRows?.[0] || null;
     }
     const detailFields = request.service_type === "ron"
-      ? ["document_type", "number_of_signers", "number_of_notarizations", "tech_ready", "valid_id_confirmed", "consent_to_recording", "witness_need", "witness_count", "witness_provider"]
+      ? [
+        "document_type",
+        "number_of_signers",
+        "number_of_notarizations",
+        "tech_ready",
+        "valid_id_confirmed",
+        "consent_to_recording",
+        "witness_need",
+        "witness_count",
+        "witness_provider",
+      ]
       : request.service_type === "mobile"
-      ? ["street_address", "unit", "city", "state", "zip", "number_of_signers", "number_of_notarizations", "witness_need", "witness_count", "witness_provider", "print_add_on", "scan_to_pdf_needed"]
-      : ["fulfillment_type", "delivery_address", "black_white_pages", "color_pages", "paper_size", "print_sides", "paper_type", "scan_pages"];
-    const publicServiceDetail = serviceDetail ? pick(serviceDetail, detailFields) : null;
+      ? [
+        "street_address",
+        "unit",
+        "city",
+        "state",
+        "zip",
+        "number_of_signers",
+        "number_of_notarizations",
+        "witness_need",
+        "witness_count",
+        "witness_provider",
+        "print_add_on",
+        "scan_to_pdf_needed",
+      ]
+      : [
+        "fulfillment_type",
+        "delivery_address",
+        "black_white_pages",
+        "color_pages",
+        "paper_size",
+        "print_sides",
+        "paper_type",
+        "scan_pages",
+      ];
+    const publicServiceDetail = serviceDetail
+      ? pick(serviceDetail, detailFields)
+      : null;
 
-    const filesRes = await supabaseFetch(`request_files?select=id,file_name,file_path,file_type,file_size,document_category,document_classification,customer_visible,eligible_for_delivery,uploaded_by,created_at,is_active&service_request_id=eq.${requestId}&order=created_at.desc`);
+    const filesRes = await supabaseFetch(
+      `request_files?select=id,file_name,file_path,file_type,file_size,document_category,document_classification,customer_visible,eligible_for_delivery,uploaded_by,created_at,is_active&service_request_id=eq.${requestId}&order=created_at.desc`,
+    );
     const files = (await readJsonOrEmpty(filesRes)) || [];
-    const customerDocuments = await Promise.all(files.filter((file: any) => file.is_active !== false && file.customer_visible === true && file.eligible_for_delivery === true && file.document_classification !== "internal_document").map(async (file: any) => {
-      const signResponse = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/service-request-files/${file.file_path}`, { method: "POST", headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ expiresIn: 3600 }) });
-      const signed = await readJsonOrEmpty(signResponse);
-      return { id: file.id, file_name: file.file_name, file_type: file.file_type, file_size: file.file_size, document_classification: file.document_classification, created_at: file.created_at, download_url: signed?.signedURL ? `${SUPABASE_URL}/storage/v1${signed.signedURL}` : null };
-    }));
+    const customerDocuments = await Promise.all(
+      files.filter((file: any) =>
+        file.is_active !== false && file.customer_visible === true &&
+        file.eligible_for_delivery === true &&
+        file.document_classification !== "internal_document"
+      ).map(async (file: any) => {
+        const signResponse = await fetch(
+          `${SUPABASE_URL}/storage/v1/object/sign/service-request-files/${file.file_path}`,
+          {
+            method: "POST",
+            headers: {
+              apikey: SERVICE_ROLE_KEY,
+              Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ expiresIn: 3600 }),
+          },
+        );
+        const signed = await readJsonOrEmpty(signResponse);
+        return {
+          id: file.id,
+          file_name: file.file_name,
+          file_type: file.file_type,
+          file_size: file.file_size,
+          document_classification: file.document_classification,
+          created_at: file.created_at,
+          download_url: signed?.signedURL
+            ? `${SUPABASE_URL}/storage/v1${signed.signedURL}`
+            : null,
+        };
+      }),
+    );
 
-    const actionsRes = await supabaseFetch(`customer_action_requests?select=*&service_request_id=eq.${requestId}&order=created_at.desc`);
+    const actionsRes = await supabaseFetch(
+      `customer_action_requests?select=*&service_request_id=eq.${requestId}&order=created_at.desc`,
+    );
     const customerActions = (await readJsonOrEmpty(actionsRes)) || [];
 
-    const timelineRes = await supabaseFetch(`request_timeline_events?select=*&service_request_id=eq.${requestId}&order=created_at.desc&limit=100`);
+    const timelineRes = await supabaseFetch(
+      `request_timeline_events?select=*&service_request_id=eq.${requestId}&order=created_at.desc&limit=100`,
+    );
     const timelineEvents = (await readJsonOrEmpty(timelineRes)) || [];
 
-    const communicationsRes = await supabaseFetch(`request_communications?select=id,direction,channel,subject,delivery_status,created_at&service_request_id=eq.${requestId}&order=created_at.desc&limit=100`);
+    const communicationsRes = await supabaseFetch(
+      `request_communications?select=id,direction,channel,subject,delivery_status,created_at&service_request_id=eq.${requestId}&order=created_at.desc&limit=100`,
+    );
     const communications = (await readJsonOrEmpty(communicationsRes)) || [];
-    const messagesRes = await supabaseFetch(`messages?select=id,subject,rendered_text,sent_at,created_at&service_request_id=eq.${requestId}&visibility=eq.customer&delivery_state=eq.sent&order=sent_at.desc&limit=100`);
+    const messagesRes = await supabaseFetch(
+      `messages?select=id,subject,rendered_text,sent_at,created_at&service_request_id=eq.${requestId}&visibility=eq.customer&delivery_state=eq.sent&order=sent_at.desc&limit=100`,
+    );
     const messages = (await readJsonOrEmpty(messagesRes)) || [];
+
+    let ronSession = null;
+    if (request.service_type === "ron") {
+      const proofRes = await supabaseFetch(
+        `proof_transactions?select=id,proof_status,aps_status,activation_state,activated_at,completed_at,released_at,completed_assets_available,last_synced_at&service_request_id=eq.${requestId}&is_active=eq.true&order=created_at.desc&limit=1`,
+      );
+      const proof = ((await readJsonOrEmpty(proofRes)) || [])[0];
+      if (proof) {
+        const signerRes = await supabaseFetch(
+          `proof_signers?select=invitation_state,aps_status,proof_status,access_link_present,completed_at&proof_transaction_record_id=eq.${proof.id}&email=eq.${
+            encodeURIComponent(customer?.email || "")
+          }&limit=1`,
+        );
+        const signer = ((await readJsonOrEmpty(signerRes)) || [])[0] || null;
+        const issuedInvoices = invoices.filter((invoice: any) =>
+          !["void", "cancelled", "draft"].includes(
+            String(invoice.status || "").toLowerCase(),
+          )
+        );
+        const paymentRequired = !issuedInvoices.length ||
+          issuedInvoices.some((invoice: any) =>
+            Number(
+              invoice.balance_due ??
+                (Number(invoice.amount_due || 0) -
+                  Number(invoice.amount_paid ?? invoice.paid_amount ?? 0)),
+            ) > 0
+          );
+        const sessionState = paymentRequired
+          ? "payment_required"
+          : !request.appointment_confirmed_at || !request.appointment_date ||
+              !request.appointment_time
+          ? "appointment_pending"
+          : ["completed", "released"].includes(String(proof.proof_status || ""))
+          ? "completed"
+          : proof.activation_state === "activated" &&
+              signer?.access_link_present
+          ? "ready"
+          : proof.activation_state === "activated"
+          ? "invitation_sent"
+          : "preparing";
+        ronSession = {
+          state: sessionState,
+          signer_status: signer?.aps_status || signer?.proof_status || null,
+          invitation_state: signer?.invitation_state || null,
+          access_available: Boolean(signer?.access_link_present),
+          appointment_date: request.appointment_date || null,
+          appointment_time: request.appointment_time || null,
+          completed_at: proof.completed_at || null,
+          released_at: proof.released_at || null,
+          last_synced_at: proof.last_synced_at || null,
+        };
+      }
+    }
 
     return json({
       ok: true,
@@ -204,18 +394,32 @@ Deno.serve(async (req) => {
       invoices: publicInvoices,
       additional_invoice_items: additionalItems.map(publicItem),
       service_detail: publicServiceDetail,
-      file_count: Array.isArray(files) ? files.filter((f: any) => f.is_active !== false).length : 0,
+      file_count: Array.isArray(files)
+        ? files.filter((f: any) => f.is_active !== false).length
+        : 0,
       customer_documents: customerDocuments,
-      customer_actions: customerActions.map((action: any) => pick(action, [
-        "id", "action_type", "status", "created_at", "updated_at",
-      ])),
+      customer_actions: customerActions.map((action: any) =>
+        pick(action, [
+          "id",
+          "action_type",
+          "status",
+          "created_at",
+          "updated_at",
+        ])
+      ),
       messages,
       customer_activity: timelineEvents
         .filter((event: any) => event.visibility === "customer")
-        .map((event: any) => pick(event, ["event_type", "title", "detail", "created_at"])),
+        .map((event: any) =>
+          pick(event, ["event_type", "title", "detail", "created_at"])
+        ),
+      ron_session: ronSession,
       reference_number: refFromId(requestId),
     });
   } catch (err) {
-    return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 400);
+    return json({
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    }, 400);
   }
 });
