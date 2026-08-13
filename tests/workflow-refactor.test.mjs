@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import vm from "node:vm";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -216,4 +217,80 @@ test("customer completion copy is service-specific and hides gate internals", as
   assert.match(portal, /Your Delivery Is Complete/);
   const copy = portal.slice(portal.indexOf("function customerCompletionCopy"), portal.indexOf("function invoiceTotal"));
   assert.doesNotMatch(copy, /completion RPC|service-aware gate|override reason|unresolved review item/i);
+});
+
+test("customer portal initializes a completed existing request", async () => {
+  const portal = await read("assets/js/script.js");
+  const start = portal.indexOf("async function initSuccessPage()");
+  const end = portal.indexOf("\n}\ninitSuccessPage();", start) + 2;
+  assert.ok(start >= 0 && end > start, "initSuccessPage source is available");
+
+  const successBox = { innerHTML: "" };
+  const request = {
+    id: "existing-request-id",
+    status: "completed",
+    service_type: "ron",
+  };
+  const serviceDetail = { ron_session_completed: true };
+  const context = {
+    URLSearchParams,
+    encodeURIComponent,
+    window: { location: { search: "?request_id=existing-request-id&tab=overview" } },
+    location: { search: "?request_id=existing-request-id&tab=overview", reload() {} },
+    localStorage: { getItem() { return null; } },
+    history: { replaceState() {} },
+    qs(selector) {
+      if (selector === "#successDetails") return successBox;
+      if (["#successEyebrow", "#successHeadline", "#successLead"].includes(selector)) return { textContent: "" };
+      return null;
+    },
+    qsa() { return []; },
+    async getPublicStatus() {
+      return {
+        request,
+        service_detail: serviceDetail,
+        reference_number: "APS-EXISTING",
+        items: [],
+        invoices: [],
+        additional_invoice_items: [],
+        customer_actions: [],
+        customer_documents: [],
+        messages: [],
+        customer_activity: [],
+      };
+    },
+    renderSuccessFallback() { throw new Error("existing request should not use fallback"); },
+    refFromPublicId() { return "APS-EXISTING"; },
+    customerCompletionCopy(_request, detail) {
+      assert.equal(detail, serviceDetail);
+      return { eyebrow: "Complete", headline: "Your Notarization Is Complete", title: "Notarization Complete", body: "Complete" };
+    },
+    statusCopy() { throw new Error("completed request should use completion copy"); },
+    serviceLabel() { return "Remote Online Notary"; },
+    formatDateValue() { return "Pending"; },
+    formatTimeWindow() { return "Pending"; },
+    money(value) { return `$${Number(value).toFixed(2)}`; },
+    escapePublic(value) { return String(value ?? ""); },
+    statusTimeline() { return ""; },
+    customerCard() { return ""; },
+    printControls() { return ""; },
+    customerActionPanel() { return ""; },
+    invoiceList() { return ""; },
+    paymentSchedulePanel() { return ""; },
+    receiptPanel() { return ""; },
+    appointmentDetailsPanel() { return ""; },
+    ronNextStepPanel() { return ""; },
+    bindCustomerActionControls() {},
+    findInitialInvoice() { return null; },
+    startEmbeddedPayment() {},
+    startStatusPolling() {},
+    initReveals() {},
+  };
+  context.window.window = context.window;
+  vm.runInNewContext(`${portal.slice(start, end)}\nglobalThis.runInitSuccessPage = initSuccessPage;`, context);
+
+  await context.runInitSuccessPage();
+
+  assert.match(successBox.innerHTML, /Notarization Complete/);
+  assert.match(successBox.innerHTML, /data-portal-panel="documents"/);
 });
