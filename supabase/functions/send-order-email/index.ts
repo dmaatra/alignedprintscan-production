@@ -1,4 +1,5 @@
 import { customerPortalUrl, recipientGreeting, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
+import { deliverCustomerCommunication } from "../_shared/communication-history.mjs";
 
 // Aligned Print & Scan — Branded order-status emails
 // Purpose: Send customer + admin emails for every client workflow phase.
@@ -230,6 +231,18 @@ function buildAdminContent(status: string, request: any, customer: any, note: st
   };
 }
 
+function templateKeyForStatus(status: string) {
+  if (["quote_ready", "awaiting_approval"].includes(status)) return "quote_ready";
+  if (["awaiting_payment", "payment_pending"].includes(status)) return "awaiting_payment_reminder";
+  if (["payment_received", "final_payment_received"].includes(status)) return "payment_received";
+  if (status === "final_balance_due") return "final_invoice";
+  if (status === "appointment_confirmed") return "appointment_confirmed";
+  if (status === "appointment_needs_rescheduling") return "appointment_rescheduled";
+  if (status === "completed") return "order_completed";
+  if (status === "cancelled") return "cancellation";
+  return "general_customer_message";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -271,13 +284,20 @@ Deno.serve(async (req) => {
     const items = (await readJsonOrEmpty(itemsRes)) || [];
 
     const customerContent = buildCustomerContent(status, request, customer, items, note, invoice);
+    const templateKey = templateKeyForStatus(status);
+    const templateRes = await supabaseFetch(`message_templates?select=id&template_key=eq.${templateKey}&active=eq.true&limit=1`);
+    const templateRows = await readJsonOrEmpty(templateRes);
+    const templateId = templateRows?.[0]?.id || null;
 
     // Admin emails are reserved for customer/admin-action events.
     // Do not email admin for statuses the admin manually sets, such as quote_ready.
     const adminEmailStatuses = ["payment_submitted", "quote_approved", "changes_requested", "support_requested"];
     const shouldSendAdmin = adminEmailStatuses.includes(status);
 
-    const customerSend = await sendEmail(customer.email, customerContent.subject, emailShell(customerContent.html, customerContent.preheader));
+    const customerHtml = emailShell(customerContent.html, customerContent.preheader);
+    const customerText = customerContent.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const idempotencyKey = String(body.idempotency_key || `request:${requestId}:${status}:${invoiceId || "current"}`);
+    const customerDelivery = await deliverCustomerCommunication({ supabaseUrl: SUPABASE_URL, serviceRoleKey: SERVICE_ROLE_KEY, requestId, templateId, templateKey, recipient: customer.email, subject: customerContent.subject, renderedHtml: customerHtml, renderedText: customerText, associatedStatus: status, sourceType: String(body.source_type || "workflow"), sourceEvent: String(body.source_event || status), idempotencyKey, metadata: { invoice_id: invoiceId || null, portal_tab: status === "appointment_confirmed" || status === "appointment_needs_rescheduling" ? "fulfillment" : status === "completed" ? "overview" : "quote-payment" } }, () => sendEmail(customer.email, customerContent.subject, customerHtml));
     let adminSend: any = null;
     let adminSubject = "Not sent";
     if (shouldSendAdmin) {
@@ -299,7 +319,7 @@ Deno.serve(async (req) => {
       }),
     });
 
-    return json({ ok: true, customer_email_id: customerSend?.id, admin_email_id: adminSend?.id || null, admin_email_sent: shouldSendAdmin, status });
+    return json({ ok: true, duplicate: customerDelivery.duplicate, customer_email_id: customerDelivery.provider?.id || customerDelivery.message?.provider_message_id || null, admin_email_id: adminSend?.id || null, admin_email_sent: shouldSendAdmin, status });
   } catch (err) {
     return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 400);
   }

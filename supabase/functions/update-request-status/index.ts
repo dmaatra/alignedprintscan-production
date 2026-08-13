@@ -238,6 +238,9 @@ Deno.serve(async (request) => {
             status,
             note,
             invoice_id: body.invoice_id || body.invoiceId || null,
+            source_type: "workflow",
+            source_event: "status_transition",
+            idempotency_key: `status:${requestId}:${status}:${body.invoice_id || body.invoiceId || "current"}`,
           }),
         },
       );

@@ -1,4 +1,5 @@
-import { customerPortalUrl, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
+import { customerPortalUrl, emailButton, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
+import { safeDeliveryError } from "../_shared/communication-history.mjs";
 
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -22,15 +23,24 @@ async function requireAdmin(request: Request) {
 function render(template: string, values: Record<string, unknown>) { return String(template || "").replace(/{{\s*([a-z0-9_]+)\s*}}/gi, (_, key) => String(values[key] ?? "")); }
 function isDeliverable(file: any) { return file?.is_active !== false && file?.customer_visible === true && file?.eligible_for_delivery === true && file?.document_classification !== "internal_document"; }
 function base64(bytes: Uint8Array) { let binary = ""; for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000)); return btoa(binary); }
+function customerDate(value: unknown) { if (!value) return ""; const date = new Date(String(value).length === 10 ? `${value}T12:00:00-05:00` : String(value)); return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "America/Chicago" }).format(date); }
+function templateAction(key: string, serviceRequest: any, releasedFiles: any[]) {
+  const actions: Record<string, [string,string]> = {
+    request_received: ["View My Request", "overview"], quote_ready: ["Review Quote", "quote-payment"], awaiting_payment_reminder: ["Make Payment", "quote-payment"], payment_received: ["View Payment Status", "quote-payment"], final_invoice: ["Review & Pay Balance", "quote-payment"], appointment_confirmed: ["View Appointment", "fulfillment"], appointment_reminder: ["View Appointment", "fulfillment"], appointment_rescheduled: ["View Updated Appointment", "fulfillment"], ron_session_ready: ["View Appointment", "fulfillment"], mobile_appointment_confirmation: ["View Appointment", "fulfillment"], completed_scan_delivery: ["View Documents", "documents"], document_delivery: ["View Documents", "documents"], cancellation: ["View My Request", "overview"], general_customer_message: ["View My Request", "overview"],
+  };
+  if (key === "order_completed") return releasedFiles.length ? ["View Documents", "documents"] : ["View Completed Request", "overview"];
+  return actions[key] || ["View My Request", "overview"];
+}
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   let messageId = "";
+  let requestId = "";
   let providerAccepted = false;
   try {
     const adminId = await requireAdmin(request);
     const body = await request.json();
-    const requestId = cleanUuid(body.request_id), templateId = cleanUuid(body.template_id), targetStatus = String(body.status || "").trim();
+    requestId = cleanUuid(body.request_id); const templateId = cleanUuid(body.template_id), targetStatus = String(body.status || "").trim();
     if (!requestId || !templateId) throw new Error("A request and message template are required.");
     const [requestRows, templateRows, quotes, invoices, files] = await Promise.all([
       rows(`service_requests?select=*&id=eq.${requestId}&limit=1`), rows(`message_templates?select=*&id=eq.${templateId}&active=eq.true&limit=1`),
@@ -57,15 +67,17 @@ Deno.serve(async (request) => {
         throw new Error(summary || validationResult?.error || "Completion requirements are not satisfied.");
       }
     }
-    const values = { request_reference: reference, customer_first_name: customer.first_name || "", customer_name: [customer.first_name, customer.last_name].filter(Boolean).join(" ") || "", quote_amount: Number(quote?.amount || serviceRequest.quote_amount || 0).toFixed(2), balance_due: Number(serviceRequest.balance_due || invoice?.balance_due || 0).toFixed(2), invoice_number: invoice?.invoice_number || "", appointment_date: serviceRequest.appointment_date || serviceRequest.preferred_date || "", appointment_time: serviceRequest.appointment_time || serviceRequest.preferred_time_window || "", appointment_location: serviceRequest.appointment_location || "", appointment_link: serviceRequest.appointment_link || serviceRequest.ron_session_url || "", portal_url: customerPortalUrl("https://alignedprintscan.com", requestId, "overview") };
+    const releasedFiles = files.filter(isDeliverable);
+    const [actionLabel, actionTab] = templateAction(template.template_key, serviceRequest, releasedFiles);
+    const values = { request_reference: reference, customer_first_name: customer.first_name || "", customer_name: [customer.first_name, customer.last_name].filter(Boolean).join(" ") || "", service_name: ({ ron: "Remote Online Notary", mobile: "Mobile Notary", print: "Print & Scan" } as Record<string,string>)[serviceRequest.service_type] || "Service Request", requested_date: customerDate(serviceRequest.preferred_date), requested_time: serviceRequest.preferred_time_window || "", quote_number: quote?.quote_number || "", quote_amount: Number(quote?.amount || serviceRequest.quote_amount || 0).toFixed(2), balance_due: Number(serviceRequest.balance_due || invoice?.balance_due || 0).toFixed(2), amount_paid: Number(serviceRequest.paid_amount || invoice?.amount_paid || 0).toFixed(2), invoice_number: invoice?.invoice_number || "", appointment_date: customerDate(serviceRequest.appointment_date), appointment_time: serviceRequest.appointment_time || "", appointment_location: serviceRequest.appointment_location || "", appointment_link: serviceRequest.appointment_link || serviceRequest.ron_session_url || "", completion_date: customerDate(serviceRequest.completed_at), released_document_names: releasedFiles.map((file:any) => file.file_name).join(", "), portal_url: customerPortalUrl("https://alignedprintscan.com", requestId, actionTab) };
     const recipient = String(body.recipient || customer.email || "").trim();
     const cc = (Array.isArray(body.cc) ? body.cc : String(body.cc || "").split(",")).map((value: unknown) => String(value).trim()).filter(Boolean);
     const subject = String(body.subject || render(template.subject_template, values)).trim();
-    const renderedBody = String(body.html || render(template.html_template, values));
+    const renderedBody = `${String(body.html || render(template.html_template, values))}${emailButton(values.portal_url, actionLabel)}`;
     const html = renderCustomerEmailShell({ body: renderedBody, preheader: subject, eyebrow: template.name || "APS Update", title: template.name || "Your Request Update" });
     const text = String(body.text || render(template.text_template || template.html_template.replace(/<[^>]+>/g, " "), values));
     if (!recipient || !subject || !html) throw new Error("Recipient, subject, and message body are required.");
-    const inserted = await rest("messages", { method: "POST", body: JSON.stringify({ service_request_id: requestId, template_id: templateId, recipient, cc, subject, rendered_html: html, rendered_text: text, delivery_state: "sending", associated_status: targetStatus || template.associated_status || null, created_by: adminId }) });
+    const inserted = await rest("messages", { method: "POST", body: JSON.stringify({ service_request_id: requestId, template_id: templateId, template_key: template.template_key || null, channel: "email", recipient, cc, subject, rendered_html: html, rendered_text: text, delivery_state: "sending", associated_status: targetStatus || template.associated_status || null, source_type: "admin", source_event: "admin_composed", attempted_at: new Date().toISOString(), created_by: adminId }) });
     if (!inserted.ok) throw new Error(await inserted.text());
     messageId = (await inserted.json())[0].id;
     const attachments: any[] = [];
@@ -87,7 +99,7 @@ Deno.serve(async (request) => {
     if (!sent.ok) throw new Error(provider.message || "Email provider rejected the message.");
     providerAccepted = true;
     await rest(`messages?id=eq.${messageId}`, { method: "PATCH", body: JSON.stringify({ delivery_state: "sent", provider_message_id: provider.id || null, sent_at: new Date().toISOString() }) });
-    await rest("request_timeline_events", { method: "POST", body: JSON.stringify({ service_request_id: requestId, event_type: "message_sent", title: "Customer message sent", detail: subject, actor_type: "admin", visibility: "customer" }) }).catch(() => null);
+    await rest("request_timeline_events", { method: "POST", body: JSON.stringify({ service_request_id: requestId, event_type: "message_sent", title: "Customer message sent", detail: subject, actor_type: "admin", visibility: "internal", metadata: { message_id: messageId, source_type: "admin" } }) }).catch(() => null);
     if (targetStatus) {
       if (targetStatus === "completed") {
         const completion = await fetch(`${SUPABASE_URL}/functions/v1/update-request-status`, { method: "POST", headers: { Authorization: request.headers.get("Authorization") || "", "Content-Type": "application/json" }, body: JSON.stringify({ request_id: requestId, status: "completed", send_message: false }) });
@@ -100,8 +112,8 @@ Deno.serve(async (request) => {
     if (targetStatus) await rest("request_timeline_events", { method: "POST", body: JSON.stringify({ service_request_id: requestId, event_type: "status_changed", title: "Request status updated", detail: targetStatus, actor_type: "admin", visibility: "customer" }) }).catch(() => null);
     return json({ ok: true, message_id: messageId, provider_message_id: provider.id || null, status: targetStatus || serviceRequest.status });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    if (messageId && !providerAccepted) await rest(`messages?id=eq.${messageId}`, { method: "PATCH", body: JSON.stringify({ delivery_state: "failed", error_message: errorMessage }) }).catch(() => null);
+    const errorMessage = safeDeliveryError(error);
+    if (messageId && !providerAccepted) { await rest(`messages?id=eq.${messageId}`, { method: "PATCH", body: JSON.stringify({ delivery_state: "failed", error_message: errorMessage.slice(0, 500), failed_at: new Date().toISOString() }) }).catch(() => null); await rest("request_timeline_events", { method: "POST", body: JSON.stringify({ service_request_id: requestId, event_type: "message_failed", title: "Customer message failed", detail: "Customer communication failed. Review the Messages tab for details.", actor_type: "admin", visibility: "internal", metadata: { message_id: messageId, source_type: "admin" } }) }).catch(() => null); }
     if (messageId && providerAccepted) await rest(`messages?id=eq.${messageId}`, { method: "PATCH", body: JSON.stringify({ error_message: `Message sent, but follow-up state failed: ${errorMessage}` }) }).catch(() => null);
     return json({ ok: false, error: providerAccepted ? `Message was sent, but the status update failed: ${errorMessage}` : errorMessage, message_sent: providerAccepted, status_updated: false }, providerAccepted ? 409 : 400);
   }

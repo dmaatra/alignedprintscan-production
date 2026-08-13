@@ -2029,3 +2029,10 @@ body.admin-v3-body {
     transition-duration: 0.01ms !important;
   }
 }
+.communication-history-list li { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: start; }
+.communication-history-list details { max-width: 340px; }
+.communication-history-list summary { cursor: pointer; color: var(--navy, #161c4d); font-weight: 700; }
+.communication-rendered-preview { margin-top: 10px; max-height: 360px; overflow: auto; border: 1px solid rgba(22,28,77,.12); background: #fff; }
+.communication-rendered-preview > * { max-width: 100% !important; }
+.communication-error { display: block; color: #9b2c2c; }
+@media (max-width: 760px) { .communication-history-list li { grid-template-columns: 1fr; } .communication-history-list details { max-width: none; } }

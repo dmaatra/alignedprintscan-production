@@ -1,0 +1,97 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+import { deliverCustomerCommunication } from "../supabase/functions/_shared/communication-history.mjs";
+
+const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
+const response = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+function historyHarness({ existing = null } = {}) {
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url, method: init.method || "GET", body: init.body ? JSON.parse(init.body) : null });
+    if (url.includes("request_timeline_events?") ) return response([]);
+    if (url.endsWith("/request_timeline_events")) return response([{ id: "timeline-1" }], 201);
+    if (url.includes("/messages?select=*&idempotency_key")) return response(existing ? [existing] : []);
+    if (url.includes("/messages?on_conflict")) return response(existing ? [] : [{ id: "message-1", delivery_state: "sending" }], 201);
+    if (url.includes("/messages?id=eq.message-1")) return response([{ id: "message-1" }]);
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+  return { calls, fetchImpl };
+}
+
+const options = { supabaseUrl: "https://example.supabase.co", serviceRoleKey: "service-key", requestId: "request-a", templateId: "template-a", templateKey: "request_received", recipient: "jordan@example.com", subject: "Request received: APS-A", renderedHtml: "<html>APS-A</html>", renderedText: "APS-A", sourceType: "automatic", sourceEvent: "request_created", idempotencyKey: "request:request-a:received" };
+
+test("successful automatic delivery stores rendered evidence, provider ID, and one timeline event", async () => {
+  const harness = historyHarness();
+  const result = await deliverCustomerCommunication({ ...options, fetchImpl: harness.fetchImpl }, async () => ({ id: "provider-1" }));
+  assert.equal(result.duplicate, false);
+  const insert = harness.calls.find((call) => call.url.includes("messages?on_conflict"));
+  assert.equal(insert.body.source_type, "automatic");
+  assert.equal(insert.body.rendered_html, "<html>APS-A</html>");
+  const update = harness.calls.find((call) => call.url.includes("messages?id=eq.message-1"));
+  assert.equal(update.body.delivery_state, "sent");
+  assert.equal(update.body.provider_message_id, "provider-1");
+  assert.equal(harness.calls.filter((call) => call.url.endsWith("request_timeline_events")).length, 1);
+});
+
+test("failed automatic delivery remains durable and records a safe failure timeline event", async () => {
+  const harness = historyHarness();
+  await assert.rejects(() => deliverCustomerCommunication({ ...options, fetchImpl: harness.fetchImpl }, async () => { throw new Error("provider rejected bearer secret-token"); }));
+  const update = harness.calls.find((call) => call.url.includes("messages?id=eq.message-1"));
+  assert.equal(update.body.delivery_state, "failed");
+  assert.match(update.body.error_message, /\[redacted\]/);
+  assert.doesNotMatch(update.body.error_message, /secret-token/);
+  assert.equal(harness.calls.filter((call) => call.url.endsWith("request_timeline_events")).length, 1);
+});
+
+test("idempotent retry reuses history and never calls the provider again", async () => {
+  const existing = { id: "message-existing", delivery_state: "sent", provider_message_id: "provider-existing" };
+  const harness = historyHarness({ existing });
+  let sends = 0;
+  const result = await deliverCustomerCommunication({ ...options, fetchImpl: harness.fetchImpl }, async () => { sends += 1; return { id: "should-not-send" }; });
+  assert.equal(result.duplicate, true);
+  assert.equal(sends, 0);
+});
+
+test("request acknowledgment preserves customer success independently of admin alert", async () => {
+  const source = await read("supabase/functions/send-request-email/index.ts");
+  const customerAt = source.indexOf("deliverCustomerCommunication");
+  const adminAt = source.indexOf("try { adminSend = await sendEmail");
+  assert.ok(customerAt > 0 && adminAt > customerAt);
+  assert.match(source, /admin_alert_sent: !adminAlertError/);
+  assert.match(source, /Customer acknowledgment sent; administrator alert failed/);
+});
+
+test("workflow, payment, invoice, action, and admin paths use unified history", async () => {
+  const paths = ["supabase/functions/send-order-email/index.ts","supabase/functions/send-request-email/index.ts","supabase/functions/customer-request-action/index.ts","supabase/functions/admin-resolve-customer-action/index.ts"];
+  for (const path of paths) assert.match(await read(path), /deliverCustomerCommunication/);
+  assert.match(await read("supabase/functions/stripe-webhook/index.ts"), /stripe:\$\{session\.id\}:payment_confirmation/);
+  assert.match(await read("supabase/functions/create-additional-invoice/index.ts"), /invoice:\$\{invoice\.id\}:final_balance_due/);
+  assert.match(await read("supabase/functions/send-message/index.ts"), /source_type: "admin"/);
+});
+
+test("portal response continues to exclude internal message metadata and unreleased files", async () => {
+  const source = await read("supabase/functions/get-request-status/index.ts");
+  assert.match(source, /file\.customer_visible === true/);
+  assert.match(source, /file\.eligible_for_delivery === true/);
+  const responseBlock = source.slice(source.indexOf("return json({\n      ok: true"));
+  assert.doesNotMatch(responseBlock, /provider_message_id|error_message|source_type|idempotency_key/);
+});
+
+test("all fifteen synthetic previews use the canonical shell and request-scoped CTA", async () => {
+  const generator = await read("scripts/generate-email-previews.mjs");
+  assert.match(generator, /renderCustomerEmailShell/);
+  assert.match(generator, /customerPortalUrl/);
+  assert.match(generator, /const specs = \[/);
+  const keys = [...generator.matchAll(/^\s*\["([a-z_]+)"/gm)].map((match) => match[1]);
+  assert.equal(keys.length, 15);
+  assert.equal(new Set(keys).size, 15);
+});
+
+test("requested, appointment, payment, and completion dates remain distinct in previews", async () => {
+  const generator = await read("scripts/generate-email-previews.mjs");
+  for (const field of ["requestedDate", "appointmentDate", "paymentDate", "completionDate"]) assert.match(generator, new RegExp(field));
+  assert.match(generator, /Remaining Balance/);
+  assert.doesNotMatch(generator, /paid in full/i);
+});

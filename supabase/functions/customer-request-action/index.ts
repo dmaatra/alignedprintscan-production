@@ -6,6 +6,7 @@
  * communication records, and sends confirmation/administrator notifications.
  */
 import { customerPortalUrl, emailButton, recipientGreeting, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
+import { deliverCustomerCommunication } from "../_shared/communication-history.mjs";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -66,8 +67,12 @@ Deno.serve(async (req) => {
     const statusUrl = customerPortalUrl(SITE_URL, requestId, "fulfillment");
     const customerSubject = `${actionType === "cancel" ? "Cancellation" : "Reschedule"} request received: ${reference}`;
     const customerHtml = renderCustomerEmailShell({ title: `We received your ${actionLabel} request`, preheader: customerSubject, body: `<p>${recipientGreeting(customer)}</p><p>Your request for <strong>${esc(reference)}</strong> has been submitted for review. Paid services are not cancelled automatically.</p>${proposed ? `<p><strong>Proposed date/time:</strong> ${esc(new Date(proposed).toLocaleString("en-US", { timeZone: "America/Chicago" }))}</p>` : ""}${emailButton(statusUrl, "View Request Status")}`, siteUrl: SITE_URL });
-    const customerSend = await send(email, customerSubject, customerHtml).catch(() => ({ id: null, failed: true }));
-    await logCommunication(requestId, "outbound", customerSubject, `Customer ${actionLabel} confirmation.`, customerSend.failed ? "failed" : (customerSend.skipped ? "skipped" : "sent"), customerSend.id || null);
+    let customerDelivery: any = null;
+    try {
+      customerDelivery = await deliverCustomerCommunication({ supabaseUrl: SUPABASE_URL, serviceRoleKey: SERVICE_ROLE_KEY, requestId, recipient: email, subject: customerSubject, renderedHtml: customerHtml, renderedText: `We received your ${actionLabel} request for ${reference}.`, sourceType: "customer_action", sourceEvent: `${actionType}_requested`, idempotencyKey: `customer-action:${action.id}:acknowledgment`, metadata: { customer_action_request_id: action.id, action_type: actionType, portal_tab: "fulfillment" } }, () => send(email, customerSubject, customerHtml));
+    } catch (_) {}
+    const customerMessage = customerDelivery?.message;
+    await logCommunication(requestId, "outbound", customerSubject, `Customer ${actionLabel} confirmation.`, customerMessage?.delivery_state || "failed", customerMessage?.provider_message_id || null);
 
     const adminSubject = `${actionType === "cancel" ? "Cancellation" : "Reschedule"} review required: ${reference}`;
     const adminHtml = `<h1>Customer action requires review</h1><p><strong>Reference:</strong> ${esc(reference)}</p><p><strong>Customer:</strong> ${esc(customer?.first_name)} ${esc(customer?.last_name)} (${esc(email)})</p><p><strong>Action:</strong> ${esc(actionType)}</p><p><strong>Reason:</strong> ${esc(reason || "Not provided")}</p>${proposed ? `<p><strong>Proposed date/time:</strong> ${esc(proposed)}</p>` : ""}<p><strong>Payment recorded:</strong> $${Number(request.paid_amount || 0).toFixed(2)}</p>`;
