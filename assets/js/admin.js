@@ -466,9 +466,6 @@ function renderRequestList() {
     `;
     })
     .join("");
-  $$(".request-row", list).forEach((btn) =>
-    btn.addEventListener("click", () => selectRequest(btn.dataset.id)),
-  );
   const activeSearchTerm =
     $("#requestSearch")?.value || $("#globalAdminSearch")?.value || "";
   window.AdminV3?.filterVisibleRequestCards(activeSearchTerm);
@@ -2631,6 +2628,10 @@ async function initDashboard() {
   $("#requestFilter")?.addEventListener("change", renderRequestList);
   $("#statusFilter")?.addEventListener("change", renderRequestList);
   $("#archiveFilter")?.addEventListener("change", renderRequestList);
+  window.APSAdminInteractions?.bindRequestSelection(
+    $("#requestList"),
+    selectRequest,
+  );
   await loadRequests();
   await loadSupportTickets();
   subscribeRealtime();
