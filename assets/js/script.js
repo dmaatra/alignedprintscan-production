@@ -847,19 +847,11 @@ async function submitRequestToSupabase(e) {
   setSubmitState(true, "Securely submitting your request…");
   try {
     const f = wizard.elements;
+    const { normalizePersonInput, normalizeEmail } = await import("./aps-data-standard.mjs");
     const customerPayload = {
-      first_name: f.firstName.value.trim(),
-      last_name: f.lastName.value.trim(),
-      email: f.email.value.trim(),
-      phone: f.phone.value.trim(),
+      ...normalizePersonInput({ first_name: f.firstName.value, last_name: f.lastName.value, email: f.email.value, phone: f.phone.value }),
       preferred_contact: f.contactMethod?.value || null,
     };
-    const { data: customer, error: customerError } = await supabaseClient
-      .from("customers")
-      .insert(customerPayload)
-      .select("id")
-      .single();
-    if (customerError) throw customerError;
     const detectedPdfPageCount = await detectUploadedPdfPageCount([
       "ronFiles",
       "mobilePrintFiles",
@@ -883,20 +875,19 @@ async function submitRequestToSupabase(e) {
       detected_pdf_page_count: detectedPdfPageCount,
       ...urgencyFlags,
     };
-    const { data: request, error: requestError } = await supabaseClient
-      .from("service_requests")
-      .insert(servicePayload)
-      .select("id")
-      .single();
+    const { data: resolution, error: requestError } = await supabaseClient.rpc(
+      "aps_create_request_with_customer",
+      { p_customer: customerPayload, p_request: servicePayload },
+    );
     if (requestError) throw requestError;
-    const requestId = request.id;
+    const requestId = resolution.request_id;
     if (["ron", "mobile"].includes(activeService)) {
       const signerCount = Math.max(1, numericValue("signerCount"));
       const participants = Array.from({ length: signerCount }, (_, index) => ({
         service_request_id: requestId,
         participant_type: "signer",
         full_legal_name: f[`signerLegalName${index}`]?.value?.trim() || null,
-        email: f[`signerEmail${index}`]?.value?.trim() || null,
+        email: normalizeEmail(f[`signerEmail${index}`]?.value) || null,
         identity_name_confirmed: true,
         sort_order: index,
       }));
@@ -915,7 +906,7 @@ async function submitRequestToSupabase(e) {
         participant_type: "witness",
         witness_source: "customer",
         full_legal_name: f[`${activeService}WitnessLegalName${index}`]?.value?.trim() || null,
-        email: f[`${activeService}WitnessEmail${index}`]?.value?.trim() || null,
+        email: normalizeEmail(f[`${activeService}WitnessEmail${index}`]?.value) || null,
         identity_name_confirmed: true,
         sort_order: signerCount + index,
       }));

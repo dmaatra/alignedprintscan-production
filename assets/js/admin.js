@@ -456,7 +456,7 @@ function renderRequestList() {
         .join(" ")
         .toLowerCase();
       return `
-      <button class="request-row ${selected}" data-id="${r.id}" data-reference="${escapeHtml(refFromId(r.id))}" data-customer-name="${escapeHtml(name)}" data-customer-email="${escapeHtml(customer?.email || "")}" data-customer-phone="${escapeHtml(customer?.phone || "")}" data-invoice-numbers="${escapeHtml([r.invoice_number, ...(r.search_invoice_numbers || [])].filter(Boolean).join("|"))}" data-service-label="${escapeHtml(serviceLabel(r.service_type))}" data-status-label="${escapeHtml(statusLabel(r.workflow_status || r.status))}" data-search-index="${escapeHtml(searchIndex)}" type="button">
+      <button class="request-row ${selected}" data-id="${r.id}" data-archived="${String(isArchived(r))}" data-reference="${escapeHtml(refFromId(r.id))}" data-customer-name="${escapeHtml(name)}" data-customer-email="${escapeHtml(customer?.email || "")}" data-customer-phone="${escapeHtml(customer?.phone || "")}" data-invoice-numbers="${escapeHtml([r.invoice_number, ...(r.search_invoice_numbers || [])].filter(Boolean).join("|"))}" data-service-label="${escapeHtml(serviceLabel(r.service_type))}" data-status-label="${escapeHtml(statusLabel(r.workflow_status || r.status))}" data-search-index="${escapeHtml(searchIndex)}" type="button">
         <span class="request-ref">${refFromId(r.id)}</span>
         <strong>${escapeHtml(name)}</strong>
         <small>${created}</small>
@@ -1275,7 +1275,7 @@ async function selectRequest(id) {
       : selectedRequest.service_type === "mobile"
         ? "mobile_notary_requests"
         : "print_scan_requests";
-  const [files, serviceDetails, invoices, patch32Records, participantResult, actResult, templateResult, messageResult, completionResult] = await Promise.all([
+  const [files, serviceDetails, invoices, patch32Records, participantResult, actResult, templateResult, messageResult, completionResult, identityReviewResult] = await Promise.all([
     getFiles(id),
     getDetailRows(table, id),
     getInvoices(id),
@@ -1285,12 +1285,15 @@ async function selectRequest(id) {
     adminClient.from("message_templates").select("*").eq("active", true).order("name"),
     adminClient.from("messages").select("*").eq("service_request_id", id).order("created_at", { ascending: false }),
     adminClient.from("request_completion_facts").select("*").eq("service_request_id", id).maybeSingle(),
+    adminClient.from("review_queue_items").select("id,blocker_key,title,detail,state").eq("service_request_id", id).eq("blocker_key", "possible_existing_customer").eq("state", "open").maybeSingle(),
   ]);
   const participants = participantResult.data || [];
   const notarialActs = actResult.data || [];
   const messageTemplates = templateResult.data || [];
   const requestMessages = messageResult.data || [];
   const completionFacts = completionResult.data || {};
+  const identityReview = identityReviewResult.data || null;
+  const identityCandidates = identityReview ? [...new Map(requests.map(request => Array.isArray(request.customers) ? request.customers[0] : request.customers).filter(candidate => candidate?.id && candidate.id !== customer?.id && ((customer?.normalized_email && candidate.normalized_email === customer.normalized_email) || (customer?.normalized_phone && candidate.normalized_phone === customer.normalized_phone))).map(candidate => [candidate.id, candidate])).values()] : [];
   const invoiceItems = await getInvoiceItems(id, invoices);
   const currentInvoice = invoices.find(invoice => !["void", "cancelled"].includes(String(invoice.status || "").toLowerCase())) || invoices[0] || {};
   currentMessagePreviewContext = {
@@ -1460,6 +1463,8 @@ async function selectRequest(id) {
       </div>
     </section>
 
+    ${identityReview ? `<section class="admin-detail-section identity-review-card" data-v3-tab-target="customer"><div class="admin-v3-section-heading"><span class="small-label">Possible Existing Customer</span><h3>Administrator identity review required</h3></div><p>${escapeHtml(identityReview.detail || "Contact information matches another profile but identity data conflicts.")}</p>${identityCandidates.length ? `<label>Existing customer<select id="identityCandidateCustomer">${identityCandidates.map(candidate=>`<option value="${escapeHtml(candidate.id)}">${escapeHtml(`${candidate.first_name||""} ${candidate.last_name||""}`.trim())} · ${escapeHtml(candidate.email||candidate.phone||"")}</option>`).join("")}</select></label><div class="status-actions"><button id="linkExistingCustomerBtn" class="btn primary" type="button">Link to Existing Customer</button><button id="keepNewCustomerBtn" class="btn secondary" type="button">Keep as New Customer</button></div>`:`<p class="admin-muted">No active candidate is available in the loaded directory. Keep this profile separate or review Customers.</p><button id="keepNewCustomerBtn" class="btn secondary" type="button">Keep as New Customer</button>`}</section>` : ""}
+
     <section class="admin-detail-section" data-v3-tab-target="customer">
       <div class="admin-v3-section-heading"><span class="small-label">Transaction Participants</span><h3>Signers &amp; Witnesses</h3></div>
       ${participants.length ? `<ul class="admin-file-list">${participants.map(person=>`<li><strong>${escapeHtml(person.full_legal_name || (person.witness_source === "aps" ? `APS-provided witness × ${person.quantity || 1}` : "Identity pending"))}</strong><small>${escapeHtml(statusLabel(person.participant_type))}${person.email ? ` · ${escapeHtml(person.email)}` : ""}</small></li>`).join("")}</ul>` : '<p class="admin-muted">No structured participants are stored for this legacy request.</p>'}
@@ -1566,8 +1571,9 @@ async function selectRequest(id) {
       <div class="admin-v3-section-heading"><span class="small-label">Request Administration</span><h3>Request Visibility</h3></div>
       <div class="status-actions archive-actions">
         <button id="archiveRequestBtn" class="btn dark" type="button">${isArchived(selectedRequest) ? "Restore Request" : "Archive Request"}</button>
+        <button id="permanentDeleteRequestBtn" class="btn danger" type="button">Permanently Delete Request</button>
       </div>
-      <p class="admin-muted small-admin-note">Archiving hides the request from the active dashboard. It does not delete client files, invoice items, or history.</p>
+      <p class="admin-muted small-admin-note">Archiving hides the request from active operations without deleting history. Permanent deletion is server-gated and limited to eligible test/junk records.</p>
     </section>
   `;
   renderInvoiceRows(rows);
@@ -1606,6 +1612,9 @@ async function selectRequest(id) {
   );
   $("#saveAppointmentBtn")?.addEventListener("click", saveAppointmentDetails);
   $("#archiveRequestBtn")?.addEventListener("click", toggleArchiveRequest);
+  $("#permanentDeleteRequestBtn")?.addEventListener("click", openPermanentDeleteDialog);
+  $("#linkExistingCustomerBtn")?.addEventListener("click", async()=>{const customerId=$("#identityCandidateCustomer")?.value;if(!customerId)return;const {data,error}=await adminClient.functions.invoke("admin-customer-lifecycle",{body:{command:"link_request",request_id:selectedRequest.id,customer_id:customerId}});if(error||!data?.ok){alert(data?.error||error?.message||"Customer link failed.");return;}await loadRequests();await selectRequest(id);showToast("Request linked to the existing customer.");});
+  $("#keepNewCustomerBtn")?.addEventListener("click", async()=>{const {data,error}=await adminClient.functions.invoke("admin-customer-lifecycle",{body:{command:"keep_new_customer",request_id:selectedRequest.id}});if(error||!data?.ok){alert(data?.error||error?.message||"Identity review could not be resolved.");return;}await selectRequest(id);showToast("Customer profile kept separate.");});
   $$('[data-open-workspace-tab]', detail).forEach((button) => {
     button.addEventListener("click", () =>
       window.AdminV3?.activateTab(button.dataset.openWorkspaceTab),
@@ -2378,35 +2387,23 @@ async function sendInvoiceEmail() {
 async function toggleArchiveRequest() {
   if (!selectedRequest) return;
   const archived = isArchived(selectedRequest);
-  const update = {
-    archived_at: archived ? null : new Date().toISOString(),
-  };
-  const { error } = await adminClient
-    .from("service_requests")
-    .update(update)
-    .eq("id", selectedRequest.id);
-  if (error) {
-    alert(error.message);
-    return;
-  }
-  Object.assign(selectedRequest, update);
-  await adminClient.from("request_status_updates").insert({
-    service_request_id: selectedRequest.id,
-    status: archived ? selectedRequest.status || "under_review" : "archived",
-    message: archived
-      ? "Request restored to active dashboard."
-      : "Request archived from active dashboard. Files retained.",
-    sent_email: false,
-    sent_sms: false,
-  });
-  renderStats();
-  renderRequestList();
+  const { data, error } = await adminClient.functions.invoke("admin-customer-lifecycle", { body: { command: archived ? "restore" : "archive", request_id: selectedRequest.id, reason: archived ? "Restored to active operations." : "Removed from active operations; history retained." } });
+  if (error || !data?.ok) { alert(data?.error || error?.message || "Request lifecycle update failed."); return; }
+  await loadRequests();
   await selectRequest(selectedRequest.id);
-  showToast(
-    archived
-      ? "Request restored."
-      : "Request archived. Files were not deleted.",
-  );
+  showToast(archived ? "Request restored." : "Request archived. All history was retained.");
+}
+
+async function openPermanentDeleteDialog() {
+  if (!selectedRequest) return;
+  const { data, error } = await adminClient.functions.invoke("admin-customer-lifecycle", { body: { command: "delete_eligibility", request_id: selectedRequest.id } });
+  const eligibility = Array.isArray(data?.result) ? data.result[0] : data?.result;
+  if (error || !data?.ok || !eligibility) { alert(data?.error || error?.message || "Deletion eligibility could not be checked."); return; }
+  const dialog = document.createElement("dialog");
+  dialog.className = "admin-v3-danger-dialog";
+  dialog.innerHTML = `<form method="dialog"><button class="dialog-close" value="cancel" aria-label="Close">×</button><span class="small-label">Permanent deletion</span><h2>Permanently delete ${escapeHtml(refFromId(selectedRequest.id))}?</h2>${eligibility.eligible?`<p>This eligible test/junk request and safely deletable dependent test data will be permanently removed. This cannot be undone.</p><label>Reason<input name="reason" required minlength="3" placeholder="Test, junk, spam, or accidental submission"></label><label>Type DELETE to continue<input name="confirmation" required autocomplete="off"></label><div class="status-actions"><button value="cancel" class="btn secondary">Cancel</button><button type="button" class="btn danger confirm-permanent-delete">Permanently Delete</button></div>`:`<p>This request is protected and cannot be permanently deleted. Archive it instead.</p><ul>${(eligibility.blockers||[]).map(item=>`<li>${escapeHtml(item)}</li>`).join("")}</ul><button value="cancel" class="btn dark">Close</button>`}</form>`;
+  document.body.append(dialog);dialog.addEventListener("close",()=>dialog.remove());dialog.showModal();
+  dialog.querySelector(".confirm-permanent-delete")?.addEventListener("click",async(event)=>{const form=dialog.querySelector("form");if(!form.reportValidity())return;event.currentTarget.disabled=true;const confirmation=form.elements.confirmation.value;const reason=form.elements.reason.value;if(confirmation!=="DELETE"){form.elements.confirmation.setCustomValidity("Type DELETE exactly.");form.elements.confirmation.reportValidity();event.currentTarget.disabled=false;return;}const result=await adminClient.functions.invoke("admin-customer-lifecycle",{body:{command:"delete",request_id:selectedRequest.id,confirmation,reason}});if(result.error||!result.data?.ok){alert(result.data?.error||result.error?.message||"Deletion failed.");event.currentTarget.disabled=false;return;}dialog.close();selectedRequest=null;await loadRequests();showToast(`${eligibility.reference} permanently deleted.`);});
 }
 async function loadRequests() {
   setText("adminLiveStatus", "Loading requests…");
@@ -2414,7 +2411,7 @@ async function loadRequests() {
   const { data, error } = await adminClient
     .from("service_requests")
     .select(
-      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(id,first_name,last_name,email,phone,preferred_contact),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
+      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(id,first_name,last_name,email,phone,preferred_contact,created_at,normalized_email,normalized_phone,normalized_name,merged_at),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
     )
     .order("created_at", {
       ascending: false,
