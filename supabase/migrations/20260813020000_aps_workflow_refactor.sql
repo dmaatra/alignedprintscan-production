@@ -132,6 +132,7 @@ alter table public.service_requests add column if not exists fulfillment_state t
 alter table public.service_requests add column if not exists document_upload_exception_reason text;
 alter table public.service_requests add column if not exists document_upload_exception_detail text;
 alter table public.service_requests add column if not exists current_quote_id uuid references public.quotes(id) on delete set null;
+alter table public.request_timeline_events add column if not exists visibility text not null default 'internal' check (visibility in ('customer','internal'));
 
 alter table public.request_files add column if not exists document_classification text not null default 'customer_document';
 alter table public.request_files add column if not exists customer_visible boolean not null default false;

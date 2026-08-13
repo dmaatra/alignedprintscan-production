@@ -140,8 +140,13 @@ Deno.serve(async (req) => {
       serviceDetail = detailRows?.[0] || null;
     }
 
-    const filesRes = await supabaseFetch(`request_files?select=id,file_name,file_type,file_size,document_category,uploaded_by,created_at,is_active&service_request_id=eq.${requestId}&order=created_at.desc`);
+    const filesRes = await supabaseFetch(`request_files?select=id,file_name,file_path,file_type,file_size,document_category,document_classification,customer_visible,eligible_for_delivery,uploaded_by,created_at,is_active&service_request_id=eq.${requestId}&order=created_at.desc`);
     const files = (await readJsonOrEmpty(filesRes)) || [];
+    const customerDocuments = await Promise.all(files.filter((file: any) => file.is_active !== false && file.customer_visible === true && file.eligible_for_delivery === true && file.document_classification !== "internal_document").map(async (file: any) => {
+      const signResponse = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/service-request-files/${file.file_path}`, { method: "POST", headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ expiresIn: 3600 }) });
+      const signed = await readJsonOrEmpty(signResponse);
+      return { id: file.id, file_name: file.file_name, file_type: file.file_type, file_size: file.file_size, document_classification: file.document_classification, created_at: file.created_at, download_url: signed?.signedURL ? `${SUPABASE_URL}/storage/v1${signed.signedURL}` : null };
+    }));
 
     const actionsRes = await supabaseFetch(`customer_action_requests?select=*&service_request_id=eq.${requestId}&order=created_at.desc`);
     const customerActions = (await readJsonOrEmpty(actionsRes)) || [];
@@ -151,6 +156,8 @@ Deno.serve(async (req) => {
 
     const communicationsRes = await supabaseFetch(`request_communications?select=id,direction,channel,subject,delivery_status,created_at&service_request_id=eq.${requestId}&order=created_at.desc&limit=100`);
     const communications = (await readJsonOrEmpty(communicationsRes)) || [];
+    const messagesRes = await supabaseFetch(`messages?select=id,subject,rendered_text,sent_at,created_at&service_request_id=eq.${requestId}&visibility=eq.customer&delivery_state=eq.sent&order=sent_at.desc&limit=100`);
+    const messages = (await readJsonOrEmpty(messagesRes)) || [];
 
     return json({
       ok: true,
@@ -161,9 +168,12 @@ Deno.serve(async (req) => {
       service_detail: serviceDetail,
       file_count: Array.isArray(files) ? files.filter((f: any) => f.is_active !== false).length : 0,
       files,
+      customer_documents: customerDocuments,
       customer_actions: customerActions,
       timeline_events: timelineEvents,
       communications,
+      messages,
+      customer_activity: timelineEvents.filter((event: any) => event.visibility === "customer" || ["request_received","message_sent","status_changed","document_released","payment_received","appointment_confirmed","completed"].includes(event.event_type)),
       reference_number: refFromId(requestId),
     });
   } catch (err) {

@@ -84,3 +84,47 @@ test("customer portal prioritizes one action-required card", async () => {
   assert.match(script, /Payment required/);
   assert.match(script, /Document needed/);
 });
+
+test("message composer uses centralized templates and status-after-send", async () => {
+  const admin = await read("assets/js/admin.js");
+  assert.match(admin, /Message Composer/);
+  assert.match(admin, /messageTemplateSelect/);
+  assert.match(admin, /sendAndUpdateStatusBtn/);
+  assert.match(admin, /functions\.invoke\("send-message"/);
+  assert.match(admin, /message-file-attachment/);
+});
+
+test("message delivery validates attachments and releases status only after send", async () => {
+  const source = await read("supabase/functions/send-message/index.ts");
+  const sendAt = source.indexOf('fetch("https://api.resend.com/emails"');
+  const statusAt = source.indexOf('rest(`service_requests?id=eq.${requestId}`');
+  assert.ok(sendAt > 0 && statusAt > sendAt);
+  assert.match(source, /requires at least one released customer deliverable/);
+  assert.match(source, /Only intentionally released customer deliverables/);
+  assert.match(source, /Completion is blocked by an outstanding balance/);
+  assert.match(source, /providerAttachments/);
+});
+
+test("customer portal exposes all six deep-linkable sections", async () => {
+  const script = await read("assets/js/script.js");
+  for (const tab of ["overview", "documents", "quote-payment", "fulfillment", "messages", "activity"]) {
+    assert.match(script, new RegExp(`data-portal-panel=\\"${tab}\\"`));
+  }
+  assert.match(script, /params\.get\("tab"\)/);
+  assert.match(script, /customer_documents/);
+  assert.match(script, /customer_activity/);
+});
+
+test("public status reader excludes unreleased and internal documents", async () => {
+  const source = await read("supabase/functions/get-request-status/index.ts");
+  assert.match(source, /file\.customer_visible === true/);
+  assert.match(source, /file\.eligible_for_delivery === true/);
+  assert.match(source, /file\.document_classification !== "internal_document"/);
+  assert.match(source, /delivery_state=eq\.sent/);
+});
+
+test("intake confirmation reads the centralized branded template", async () => {
+  const source = await read("supabase/functions/send-request-email/index.ts");
+  assert.match(source, /message_templates\?select=\*&template_key=eq\.request_received/);
+  assert.match(source, /template_id: template\.id/);
+});

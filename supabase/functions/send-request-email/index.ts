@@ -37,6 +37,7 @@ async function sendEmail(to: string, subject: string, html: string) {
   if (!res.ok) throw new Error(data?.message || "Resend email failed.");
   return data;
 }
+function renderTemplate(value: string, values: Record<string, string>) { return String(value || "").replace(/{{\s*([a-z0-9_]+)\s*}}/gi, (_, key) => values[key] || ""); }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -70,14 +71,20 @@ Deno.serve(async (req) => {
 
     if (!customer.email) throw new Error("Customer email missing.");
 
-    const customerHtml = emailShell(`<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Request Received</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Your Request Was Received</h1><p>Hello ${esc(customer.first_name || "there")},</p><p>Thank you for choosing Aligned Print & Scan. Your request has been securely received and is now under review.</p><div style="display:inline-block;background:#f6f3ee;border-radius:999px;padding:8px 14px;color:#161c4d;font-weight:800;margin:8px 0">${esc(ref)}</div><p>We will review the service details, documents, availability, and preparation requirements before sending your next step.</p><p><a href="${statusUrl}" style="display:inline-block;background:#c8a96b;color:#111522;padding:14px 22px;border-radius:999px;text-decoration:none;font-weight:bold">View Request Status</a></p>`, `Request received: ${ref}`);
+    const templateResponse = await supabaseFetch("message_templates?select=*&template_key=eq.request_received&active=eq.true&limit=1");
+    const template = templateResponse.ok ? (await templateResponse.json())?.[0] : null;
+    if (!template) throw new Error("The centralized request_received message template is unavailable.");
+    const templateValues = { request_reference: ref, customer_first_name: customer.first_name || "there", portal_url: statusUrl };
+    const customerSubject = renderTemplate(template.subject_template, templateValues);
+    const customerHtml = emailShell(`${renderTemplate(template.html_template, templateValues)}<p><a href="${statusUrl}" style="display:inline-block;background:#c8a96b;color:#111522;padding:14px 22px;border-radius:999px;text-decoration:none;font-weight:bold">View Request Status</a></p>`, customerSubject);
 
     const adminHtml = emailShell(`<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">New Request</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">New Client Request Received</h1><p>A new request was submitted and needs admin review.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}<br><strong style="color:#161c4d">Client:</strong> ${esc([customer.first_name, customer.last_name].filter(Boolean).join(" ") || "Client")}<br><strong style="color:#161c4d">Email:</strong> ${esc(customer.email)}<br><strong style="color:#161c4d">Phone:</strong> ${esc(customer.phone || "Not provided")}<br><strong style="color:#161c4d">Preferred Contact:</strong> ${esc(customer.preferred_contact || "Not provided")}<br><strong style="color:#161c4d">Service:</strong> ${esc(serviceLabel(request?.service_type))}</div><p><a href="${SITE_URL}/admin-dashboard.html" style="display:inline-block;background:#c8a96b;color:#111522;padding:14px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Open Admin Dashboard</a></p>`, `New request: ${ref}`);
 
-    const customerSend = await sendEmail(customer.email, `Request received: ${ref}`, customerHtml);
+    const customerSend = await sendEmail(customer.email, customerSubject, customerHtml);
     const adminSend = await sendEmail(ADMIN_EMAIL, `New request received: ${ref}`, adminHtml);
 
     if (requestId) {
+      await supabaseFetch("messages", { method:"POST", body: JSON.stringify({ service_request_id: requestId, template_id: template.id, recipient: customer.email, subject: customerSubject, rendered_html: customerHtml, rendered_text: renderTemplate(template.text_template || "", templateValues), delivery_state:"sent", provider_message_id: customerSend?.id || null, sent_at:new Date().toISOString() }) });
       await supabaseFetch("request_status_updates", { method:"POST", body: JSON.stringify({ service_request_id: requestId, status:"under_review", message:"New request confirmation and admin alert sent.", sent_email:true, sent_sms:false }) });
     }
 

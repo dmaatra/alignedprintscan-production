@@ -2302,6 +2302,58 @@ async function initSuccessPage() {
   const customer = Array.isArray(request.customers)
     ? request.customers[0]
     : request.customers || {};
+  const documents = result.customer_documents || [];
+  const messages = result.messages || [];
+  const activity = result.customer_activity || [];
+  const portalTab = params.get("tab") || "overview";
+  const tabLink = (tab) => `success.html?request_id=${encodeURIComponent(request.id || requestId || "")}&tab=${tab}`;
+  successBox.innerHTML = `
+    <div class="success-ref reveal">${escapePublic(reference)}</div>
+    <nav class="customer-portal-tabs" aria-label="Request sections">
+      ${[["overview","Overview / Next Action"],["documents","Documents"],["quote-payment","Quote & Payment"],["fulfillment","Appointment/Fulfillment"],["messages","Messages"],["activity","Activity"]].map(([key,label]) => `<a href="${tabLink(key)}" data-portal-tab="${key}" class="${portalTab === key ? "is-active" : ""}">${label}</a>`).join("")}
+    </nav>
+    <section data-portal-panel="overview" ${portalTab !== "overview" ? "hidden" : ""}>
+      ${actionRequired}
+      ${statusTimeline(displayStatus, request.service_type)}
+      <div class="success-grid reveal"><div><span class="small-label">Service</span><strong>${escapePublic(serviceName)}</strong></div><div><span class="small-label">Current Status</span><strong>${escapePublic(copy.title)}</strong></div><div><span class="small-label">Next Action</span><strong>${canApprove ? "Approve quote" : canPay ? "Make payment" : !fileCount ? "Upload requested document" : "APS is handling the next step"}</strong></div></div>
+      <div class="email-notice status-${statusClass} reveal"><h3>${escapePublic(copy.title)}</h3><p>${escapePublic(copy.body)}</p></div>
+      ${customerCard(customer)}${printControls(reference)}
+    </section>
+    <section data-portal-panel="documents" ${portalTab !== "documents" ? "hidden" : ""}>
+      <div class="next-panel reveal"><h3>Documents</h3><p>Only files intentionally released by APS appear here.</p>${documents.length ? `<ul class="portal-document-list">${documents.map(file => `<li><strong>${escapePublic(file.file_name)}</strong><span>${escapePublic(file.document_classification || "Customer document")}</span>${file.download_url ? `<a class="btn dark" href="${escapePublic(file.download_url)}" target="_blank" rel="noopener">Download</a>` : ""}</li>`).join("")}</ul>` : "<p>No completed documents have been released yet.</p>"}</div>
+      <div id="customerActionsPanel">${customerActionPanel(request, reference, customerActions)}</div>
+    </section>
+    <section data-portal-panel="quote-payment" ${portalTab !== "quote-payment" ? "hidden" : ""}>
+      ${hasQuote ? `<div class="next-panel invoice-panel reveal"><h3>Prepared Service Quote</h3>${invoiceList(items)}${quoteNote ? `<div class="email-notice slim-note"><h3>APS Note</h3><p>${escapePublic(quoteNote)}</p></div>` : ""}</div><div id="paymentSchedule">${paymentSchedulePanel({ request, invoices, quoteItems: items, additionalItems, quoteAmount })}</div>` : '<div class="next-panel"><h3>Quote &amp; Payment</h3><p>Your quote is being prepared.</p></div>'}
+      ${canApprove ? `<div class="next-panel" id="quoteActionPanel"><h3>Review Quote</h3><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" role="status"></div></div>` : ""}
+      ${receiptPanel({ ...request, status: displayStatus }, reference)}
+    </section>
+    <section data-portal-panel="fulfillment" ${portalTab !== "fulfillment" ? "hidden" : ""}>
+      ${appointmentDetailsPanel({ ...request, status: displayStatus })}${ronNextStepPanel(request, detail)}${prepVideo || '<div class="next-panel"><h3>Appointment / Fulfillment</h3><p>Confirmed details and delivery instructions will appear here.</p></div>'}
+    </section>
+    <section data-portal-panel="messages" ${portalTab !== "messages" ? "hidden" : ""}>
+      <div class="next-panel"><h3>Messages</h3>${messages.length ? `<ul class="portal-message-list">${messages.map(message => `<li><strong>${escapePublic(message.subject)}</strong><p>${escapePublic(message.rendered_text || "")}</p><small>${formatDateValue(message.sent_at || message.created_at)}</small></li>`).join("")}</ul>` : "<p>No customer messages have been sent yet.</p>"}</div>
+    </section>
+    <section data-portal-panel="activity" ${portalTab !== "activity" ? "hidden" : ""}>
+      <div class="next-panel"><h3>Activity</h3>${activity.length ? `<ol class="portal-activity-list">${activity.map(event => `<li><strong>${escapePublic(event.title || event.event_type || "Request updated")}</strong><p>${escapePublic(event.detail || event.description || "")}</p><small>${formatDateValue(event.created_at)}</small></li>`).join("")}</ol>` : "<p>Your request activity will appear here.</p>"}</div>
+    </section>
+    <div class="next-panel support-panel"><h3>Need Help?</h3><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Contact Customer Support</a></div>`;
+
+  qsa("[data-portal-tab]").forEach(link => link.addEventListener("click", event => {
+    event.preventDefault();
+    const tab = link.dataset.portalTab;
+    qsa("[data-portal-tab]").forEach(item => item.classList.toggle("is-active", item.dataset.portalTab === tab));
+    qsa("[data-portal-panel]").forEach(panel => panel.hidden = panel.dataset.portalPanel !== tab);
+    history.replaceState(null, "", tabLink(tab));
+  }));
+  qs("#approveQuoteBtn")?.addEventListener("click", async () => { const box = qs("#quoteActionStatus"); try { if (box) box.textContent = "Approving your quote…"; await submitQuoteDecision(request.id, reference, "approve"); location.reload(); } catch (_) { if (box) box.textContent = "Approval failed. Please contact APS."; } });
+  bindCustomerActionControls(request.id || requestId);
+  const portalInitialInvoice = findInitialInvoice(invoices);
+  qs("#startPaymentBtn")?.addEventListener("click", event => startEmbeddedPayment(request.id || requestId, event.currentTarget?.dataset?.invoiceId || portalInitialInvoice?.id || null));
+  qsa(".payAdditionalInvoice").forEach(button => button.addEventListener("click", () => startEmbeddedPayment(request.id || requestId, button.dataset.invoiceId)));
+  if (sessionId || ["awaiting_payment", "payment_pending"].includes(status)) startStatusPolling(request.id, status);
+  initReveals(successBox);
+  return;
   if (
     ["payment_received", "paid_confirmed", "scheduling"].includes(displayStatus)
   ) {
