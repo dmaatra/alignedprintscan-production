@@ -44,7 +44,7 @@ entrypoint = "./functions/create-embedded-checkout/index.ts"
 
 [functions.send-invoice-email]
 enabled = true
-verify_jwt = false
+verify_jwt = true
 entrypoint = "./functions/send-invoice-email/index.ts"
 
 [functions.stripe-webhook]
@@ -59,7 +59,7 @@ entrypoint = "./functions/send-order-email/index.ts"
 
 [functions.update-request-status]
 enabled = true
-verify_jwt = false
+verify_jwt = true
 entrypoint = "./functions/update-request-status/index.ts"
 
 [functions.send-message]
@@ -74,7 +74,7 @@ entrypoint = "./functions/client-quote-action/index.ts"
 
 [functions.create-additional-invoice]
 enabled = true
-verify_jwt = false
+verify_jwt = true
 entrypoint = "./functions/create-additional-invoice/index.ts"
 
 # Phase 4.2 admin endpoints require a Supabase user JWT at the gateway and then

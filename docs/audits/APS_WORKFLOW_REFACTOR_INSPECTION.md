@@ -1,7 +1,7 @@
 # APS Workflow Refactor — Phase 0 Inspection
 
-Inspection date: 2026-08-12  
-Branch: `codex/aps-workflow-refactor`  
+Inspection date: 2026-08-12
+Branch: `codex/aps-workflow-refactor`
 Base verified: local `main` and `origin/main` both `d2aaf9ead7d0bb5a278d7f5d94a8009ee1a11236`
 
 ## Architecture findings

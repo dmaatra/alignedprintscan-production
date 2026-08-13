@@ -108,8 +108,9 @@ async function receiptUrlForSession(session: any) {
 
 function isFinalInvoice(invoice: Record<string, unknown>) {
   return (
-    String(invoice.invoice_type || "").includes("final") ||
-    String(invoice.invoice_number || "").endsWith("-02")
+    ["final", "final_balance", "supplemental", "additional"].some((kind) =>
+      String(invoice.invoice_type || "").includes(kind)
+    ) || /-0*[2-9]\d*$/.test(String(invoice.invoice_number || ""))
   );
 }
 
@@ -187,6 +188,9 @@ Deno.serve(async (request) => {
     }
 
     const amount = Number(session.amount_total || 0) / 100;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error("Stripe reported an invalid payment amount.");
+    }
     const receiptUrl = await receiptUrlForSession(session);
     const finalInvoice = isFinalInvoice(invoice);
     const invoiceStatus = finalInvoice
@@ -207,7 +211,7 @@ Deno.serve(async (request) => {
       });
     }
 
-    await supabaseFetch("request_payments", {
+    const paymentResponse = await supabaseFetch("request_payments", {
       method: "POST",
       body: JSON.stringify({
         service_request_id: requestId,
@@ -220,26 +224,42 @@ Deno.serve(async (request) => {
         is_test: Boolean(session.livemode === false),
       }),
     });
+    if (!paymentResponse.ok) {
+      // A concurrent retry may have won the uniqueness race.
+      if (paymentResponse.status === 409) {
+        return new Response(JSON.stringify({ received: true, duplicate: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(await paymentResponse.text());
+    }
 
-    await supabaseFetch(`invoices?id=eq.${invoiceId}`, {
+    const amountDue = Number(invoice.amount_due || 0);
+    const currentPaid = Number(invoice.amount_paid || invoice.paid_amount || 0);
+    const newPaid = currentPaid + amount;
+    const remaining = Math.max(0, amountDue - newPaid);
+    const paidInFull = amountDue > 0 && remaining <= 0.009;
+
+    const invoiceUpdateResponse = await supabaseFetch(`invoices?id=eq.${invoiceId}`, {
       method: "PATCH",
       body: JSON.stringify({
-        status: invoiceStatus,
-        payment_status: "paid",
-        amount_paid: amount,
-        paid_amount: amount,
-        balance_due: 0,
-        paid_at: new Date().toISOString(),
+        status: paidInFull ? invoiceStatus : "partially_paid",
+        payment_status: paidInFull ? "paid" : "partially_paid",
+        amount_paid: newPaid,
+        paid_amount: newPaid,
+        balance_due: remaining,
+        paid_at: paidInFull ? new Date().toISOString() : null,
         stripe_checkout_session_id: session.id,
         stripe_payment_intent_id: session.payment_intent || null,
         receipt_url: receiptUrl,
       }),
     });
+    if (!invoiceUpdateResponse.ok) throw new Error(await invoiceUpdateResponse.text());
 
     const financials = await recalculateRequest(requestId);
-    const requestStatus = finalInvoice
-      ? "final_payment_received"
-      : "payment_received";
+    const requestStatus = paidInFull && financials.paidInFull
+      ? finalInvoice ? "final_payment_received" : "payment_received"
+      : "awaiting_payment";
 
     await supabaseFetch(`service_requests?id=eq.${requestId}`, {
       method: "PATCH",

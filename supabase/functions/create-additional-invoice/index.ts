@@ -12,6 +12,29 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ||
   "https://sfsdniavqldgbiretply.supabase.co";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
+async function requireAdmin(request: Request) {
+  const authorization = request.headers.get("Authorization") || "";
+  if (!authorization.startsWith("Bearer ")) {
+    throw new Error("Administrator authentication is required.");
+  }
+  const userResponse = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: { apikey: SERVICE_ROLE_KEY, Authorization: authorization },
+  });
+  if (!userResponse.ok) throw new Error("Administrator authentication is required.");
+  const adminResponse = await fetch(`${SUPABASE_URL}/rest/v1/rpc/is_admin`, {
+    method: "POST",
+    headers: {
+      apikey: SERVICE_ROLE_KEY,
+      Authorization: authorization,
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
+  if (!adminResponse.ok || await adminResponse.json() !== true) {
+    throw new Error("Administrator access is required.");
+  }
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -84,6 +107,7 @@ Deno.serve(async (req) => {
   }
 
   try {
+    await requireAdmin(req);
     const body = await readBody(req);
     const requestId = String(body.request_id || "").trim();
     const note = String(
@@ -104,13 +128,16 @@ Deno.serve(async (req) => {
     if (!requestRows?.[0]) throw new Error("Request not found.");
 
     const invoiceRowsRes = await supabaseFetch(
-      `invoices?select=id,invoice_number,status&service_request_id=eq.${requestId}&order=created_at.asc`,
+      `invoices?select=id,invoice_number,invoice_type,status,amount_due,amount_paid,paid_amount,balance_due&service_request_id=eq.${requestId}&order=created_at.asc`,
     );
     const existing = (await readJsonOrEmpty(invoiceRowsRes)) || [];
     const openFinal = existing.find((row: any) => {
       const status = String(row.status || "").toLowerCase();
-      const number = String(row.invoice_number || "");
-      return number.endsWith("-02") &&
+      const supplemental = ["supplemental", "final", "final_balance", "additional"].some((kind) =>
+        String(row.invoice_type || "").includes(kind)
+      ) || /-0*[2-9]\d*$/.test(String(row.invoice_number || ""));
+      const paidAmount = Number(row.amount_paid || row.paid_amount || 0);
+      return supplemental && paidAmount <= 0 &&
         ![
           "paid",
           "payment_received",
@@ -200,14 +227,24 @@ Deno.serve(async (req) => {
     });
     if (!itemsRes.ok) throw new Error(await itemsRes.text());
 
+    const activeInvoices = openFinal?.id
+      ? existing.map((row: any) => row.id === invoice.id ? invoice : row)
+      : [...existing, invoice];
+    const requestBalance = activeInvoices.reduce((sum: number, row: any) => {
+      if (["void", "cancelled"].includes(String(row.status || "").toLowerCase())) return sum;
+      const due = Number(row.amount_due || 0);
+      const paid = Number(row.amount_paid || row.paid_amount || 0);
+      return sum + Math.max(0, Number(row.balance_due ?? (due - paid)));
+    }, 0);
+
     await supabaseFetch(`service_requests?id=eq.${requestId}`, {
       method: "PATCH",
       body: JSON.stringify({
         status: "final_balance_due",
         workflow_status: "final_balance_due",
         payment_state: "final_invoice_due",
-        balance_due: total,
-        balance_due_at_appointment: total,
+        balance_due: requestBalance,
+        balance_due_at_appointment: requestBalance,
       }),
     });
 

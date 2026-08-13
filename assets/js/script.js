@@ -2035,7 +2035,7 @@ function ronNextStepPanel(request = {}, detail = {}) {
   if (!link) return "";
   return `<div class="next-panel reveal"><h3>Secure Online Session</h3><p>Your RON session link is available below.</p><a class="btn primary" href="${escapePublic(link)}" target="_blank" rel="noopener">Open Secure Session</a></div>`;
 }
-async function submitQuoteDecision(requestId, reference, decision) {
+async function submitQuoteDecision(requestId, reference, decision, quoteId = "") {
   if (!supabaseClient || !requestId)
     throw new Error("Missing request information.");
   const { data, error } = await supabaseClient.functions.invoke(
@@ -2045,6 +2045,7 @@ async function submitQuoteDecision(requestId, reference, decision) {
         request_id: requestId,
         reference_number: reference,
         action: decision,
+        quote_id: quoteId,
       },
     },
   );
@@ -2346,7 +2347,7 @@ async function initSuccessPage() {
     qsa("[data-portal-panel]").forEach(panel => panel.hidden = panel.dataset.portalPanel !== tab);
     history.replaceState(null, "", tabLink(tab));
   }));
-  qs("#approveQuoteBtn")?.addEventListener("click", async () => { const box = qs("#quoteActionStatus"); try { if (box) box.textContent = "Approving your quote…"; await submitQuoteDecision(request.id, reference, "approve"); location.reload(); } catch (_) { if (box) box.textContent = "Approval failed. Please contact APS."; } });
+  qs("#approveQuoteBtn")?.addEventListener("click", async () => { const box = qs("#quoteActionStatus"); try { if (box) box.textContent = "Approving your quote…"; await submitQuoteDecision(request.id, reference, "approve", request.current_quote_id || ""); location.reload(); } catch (_) { if (box) box.textContent = "Approval failed. Refresh this page or contact APS."; } });
   bindCustomerActionControls(request.id || requestId);
   const portalInitialInvoice = findInitialInvoice(invoices);
   qs("#startPaymentBtn")?.addEventListener("click", event => startEmbeddedPayment(request.id || requestId, event.currentTarget?.dataset?.invoiceId || portalInitialInvoice?.id || null));

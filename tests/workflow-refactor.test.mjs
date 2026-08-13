@@ -24,6 +24,33 @@ test("Stripe webhook verifies signatures and deduplicates sessions", async () =>
   assert.match(source, /verifyStripeSignature/);
   assert.match(source, /external_reference=eq/);
   assert.match(source, /duplicate: true/);
+  assert.match(source, /const newPaid = currentPaid \+ amount/);
+  assert.match(source, /paidInFull \? invoiceStatus : "partially_paid"/);
+  assert.match(source, /paymentResponse\.status === 409/);
+});
+
+test("admin service-role mutations require administrator authorization", async () => {
+  const config = await read("supabase/config.toml");
+  const status = await read("supabase/functions/update-request-status/index.ts");
+  const supplemental = await read("supabase/functions/create-additional-invoice/index.ts");
+  const invoiceEmail = await read("supabase/functions/send-invoice-email/index.ts");
+  assert.match(config, /\[functions\.update-request-status\][\s\S]*?verify_jwt = true/);
+  assert.match(config, /\[functions\.create-additional-invoice\][\s\S]*?verify_jwt = true/);
+  assert.match(config, /\[functions\.send-invoice-email\][\s\S]*?verify_jwt = true/);
+  for (const source of [status, supplemental, invoiceEmail]) {
+    assert.match(source, /requireAdmin/);
+    assert.match(source, /rpc\/is_admin/);
+  }
+});
+
+test("quote approval is stale-safe and preserves partial payments", async () => {
+  const source = await read("supabase/functions/client-quote-action/index.ts");
+  const portal = await read("assets/js/script.js");
+  assert.match(source, /This quote is no longer current/);
+  assert.match(source, /hasRecordedPayment/);
+  assert.match(source, /alreadyApproved/);
+  assert.match(source, /insertResponse\.status === 409/);
+  assert.match(portal, /quote_id: quoteId/);
 });
 
 test("quote save is financially side-effect free", async () => {
@@ -103,6 +130,17 @@ test("message delivery validates attachments and releases status only after send
   assert.match(source, /Only intentionally released customer deliverables/);
   assert.match(source, /Completion is blocked by an outstanding balance/);
   assert.match(source, /providerAttachments/);
+  assert.match(source, /providerAccepted/);
+  assert.match(source, /Message was sent, but the status update failed/);
+  assert.match(source, /message_sent: providerAccepted/);
+});
+
+test("admin upload never releases a document implicitly", async () => {
+  const admin = await read("assets/js/admin.js");
+  const upload = admin.slice(admin.indexOf("async function uploadAdminDocuments"), admin.indexOf("async function selectRequest"));
+  assert.match(upload, /customer_visible: false/);
+  assert.match(upload, /eligible_for_delivery: false/);
+  assert.doesNotMatch(upload, /const customerVisible/);
 });
 
 test("customer portal exposes all six deep-linkable sections", async () => {
@@ -121,6 +159,25 @@ test("public status reader excludes unreleased and internal documents", async ()
   assert.match(source, /file\.eligible_for_delivery === true/);
   assert.match(source, /file\.document_classification !== "internal_document"/);
   assert.match(source, /delivery_state=eq\.sent/);
+  const response = source.slice(source.indexOf("return json({\n      ok: true"));
+  assert.doesNotMatch(response, /\n\s*files,/);
+  assert.doesNotMatch(response, /\n\s*timeline_events:/);
+  assert.doesNotMatch(response, /\n\s*communications,/);
+  assert.match(response, /visibility === "customer"/);
+  assert.match(source, /const publicRequest = pick/);
+  assert.match(source, /const publicInvoices = invoices\.map/);
+  assert.match(source, /const publicServiceDetail = serviceDetail \? pick/);
+  assert.doesNotMatch(response, /service_detail: serviceDetail/);
+});
+
+test("supplemental invoices preserve earlier balances and support invoice three plus", async () => {
+  const source = await read("supabase/functions/create-additional-invoice/index.ts");
+  const checkout = await read("supabase/functions/create-embedded-checkout/index.ts");
+  assert.match(source, /requestBalance = activeInvoices\.reduce/);
+  assert.match(source, /paidAmount <= 0/);
+  assert.match(source, /invoice_type/);
+  assert.match(checkout, /supplemental/);
+  assert.match(checkout, /-0\*\[2-9\]/);
 });
 
 test("intake confirmation reads the centralized branded template", async () => {

@@ -194,7 +194,7 @@ async function findRequestId(
   return id;
 }
 
-async function materializeInitialInvoice(requestId: string) {
+async function materializeInitialInvoice(requestId: string, expectedQuoteId = "") {
   const requestResponse = await supabaseFetch(
     `service_requests?select=id,quote_amount,initial_payment_amount,estimated_total,invoice_number,current_quote_id&id=eq.${requestId}&limit=1`,
   );
@@ -216,6 +216,9 @@ async function materializeInitialInvoice(requestId: string) {
     throw new Error("The approved quote does not have a payable amount.");
   }
   const sourceQuoteId = String(request.current_quote_id || "").trim() || null;
+  if (sourceQuoteId && expectedQuoteId !== sourceQuoteId) {
+    throw new Error("This quote is no longer current. Refresh before approving.");
+  }
   if (sourceQuoteId) {
     const quoteResponse = await supabaseFetch(
       `quotes?id=eq.${sourceQuoteId}&service_request_id=eq.${requestId}`,
@@ -254,7 +257,14 @@ async function materializeInitialInvoice(requestId: string) {
         Number(
             existingInvoice.amount_paid || existingInvoice.paid_amount || 0,
           ) > 0;
-    if (paid) return existingInvoice;
+    const alreadyApproved = sourceQuoteId &&
+      String(existingInvoice.source_quote_id || "") === sourceQuoteId;
+    const hasRecordedPayment = Number(
+      existingInvoice.amount_paid || existingInvoice.paid_amount || 0,
+    ) > 0;
+    // Approval is idempotent. Never reset a paid or partially paid primary
+    // invoice when the customer double-clicks or revisits an old portal page.
+    if (paid || alreadyApproved || hasRecordedPayment) return existingInvoice;
   }
 
   let invoice;
@@ -296,8 +306,16 @@ async function materializeInitialInvoice(requestId: string) {
         note: "Approved initial service invoice.",
       }),
     });
-    const insertedRows = await readJson(insertResponse);
-    invoice = insertedRows?.[0];
+    if (insertResponse.status === 409 && sourceQuoteId) {
+      const racedResponse = await supabaseFetch(
+        `invoices?select=*&source_quote_id=eq.${sourceQuoteId}&invoice_type=eq.primary&limit=1`,
+      );
+      const racedRows = await readJson(racedResponse);
+      invoice = racedRows?.[0];
+    } else {
+      const insertedRows = await readJson(insertResponse);
+      invoice = insertedRows?.[0];
+    }
   }
 
   if (!invoice?.id) {
@@ -351,7 +369,10 @@ Deno.serve(async (request) => {
     const reference = refFromId(requestId);
 
     if (action === "approve") {
-      const invoice = await materializeInitialInvoice(requestId);
+      const invoice = await materializeInitialInvoice(
+        requestId,
+        String(body.quote_id || "").trim(),
+      );
 
       await supabaseFetch("request_status_updates", {
         method: "POST",

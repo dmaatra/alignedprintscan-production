@@ -24,6 +24,7 @@ function base64(bytes: Uint8Array) { let binary = ""; for (let index = 0; index 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   let messageId = "";
+  let providerAccepted = false;
   try {
     const adminId = await requireAdmin(request);
     const body = await request.json();
@@ -77,18 +78,20 @@ Deno.serve(async (request) => {
     const sent = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ from: FROM_EMAIL, to: [recipient], cc, subject, html, text, attachments: providerAttachments }) });
     const provider = await sent.json().catch(() => ({}));
     if (!sent.ok) throw new Error(provider.message || "Email provider rejected the message.");
+    providerAccepted = true;
     await rest(`messages?id=eq.${messageId}`, { method: "PATCH", body: JSON.stringify({ delivery_state: "sent", provider_message_id: provider.id || null, sent_at: new Date().toISOString() }) });
+    await rest("request_timeline_events", { method: "POST", body: JSON.stringify({ service_request_id: requestId, event_type: "message_sent", title: "Customer message sent", detail: subject, actor_type: "admin", visibility: "customer" }) }).catch(() => null);
     if (targetStatus) {
       const update: Record<string, unknown> = { status: targetStatus, workflow_status: targetStatus };
       if (targetStatus === "completed") update.fulfillment_state = "completed";
       const response = await rest(`service_requests?id=eq.${requestId}`, { method: "PATCH", body: JSON.stringify(update) }); if (!response.ok) throw new Error(await response.text());
     }
-    const events = [{ service_request_id: requestId, event_type: "message_sent", title: "Customer message sent", detail: subject, actor_type: "admin", visibility: "customer" }];
-    if (targetStatus) events.push({ service_request_id: requestId, event_type: "status_changed", title: "Request status updated", detail: targetStatus, actor_type: "admin", visibility: "customer" });
-    await rest("request_timeline_events", { method: "POST", body: JSON.stringify(events) }).catch(() => null);
+    if (targetStatus) await rest("request_timeline_events", { method: "POST", body: JSON.stringify({ service_request_id: requestId, event_type: "status_changed", title: "Request status updated", detail: targetStatus, actor_type: "admin", visibility: "customer" }) }).catch(() => null);
     return json({ ok: true, message_id: messageId, provider_message_id: provider.id || null, status: targetStatus || serviceRequest.status });
   } catch (error) {
-    if (messageId) await rest(`messages?id=eq.${messageId}`, { method: "PATCH", body: JSON.stringify({ delivery_state: "failed", error_message: error instanceof Error ? error.message : String(error) }) }).catch(() => null);
-    return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 400);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (messageId && !providerAccepted) await rest(`messages?id=eq.${messageId}`, { method: "PATCH", body: JSON.stringify({ delivery_state: "failed", error_message: errorMessage }) }).catch(() => null);
+    if (messageId && providerAccepted) await rest(`messages?id=eq.${messageId}`, { method: "PATCH", body: JSON.stringify({ error_message: `Message sent, but follow-up state failed: ${errorMessage}` }) }).catch(() => null);
+    return json({ ok: false, error: providerAccepted ? `Message was sent, but the status update failed: ${errorMessage}` : errorMessage, message_sent: providerAccepted, status_updated: false }, providerAccepted ? 409 : 400);
   }
 });

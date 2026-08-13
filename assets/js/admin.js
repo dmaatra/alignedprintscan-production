@@ -1144,8 +1144,9 @@ async function uploadAdminDocuments(requestId) {
     const { error: uploadError } = await adminClient.storage.from("service-request-files").upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
     if (uploadError) throw uploadError;
     const classification = document.querySelector("#adminDocumentClassification")?.value || "internal_document";
-    const customerVisible = classification === "customer_deliverable" || classification === "completed_scan" || classification === "completed_notarized_document";
-    const { error: recordError } = await adminClient.from("request_files").insert({ service_request_id: requestId, file_name: file.name, file_path: path, file_type: file.type, file_size: file.size, uploaded_by: "admin", document_category: "admin-additional", document_classification: classification, customer_visible: customerVisible, eligible_for_delivery: customerVisible, is_active: true });
+    // Classification describes the file; it never releases the file. Customer
+    // access requires the separate, explicit Release to Customer action.
+    const { error: recordError } = await adminClient.from("request_files").insert({ service_request_id: requestId, file_name: file.name, file_path: path, file_type: file.type, file_size: file.size, uploaded_by: "admin", document_category: "admin-additional", document_classification: classification, customer_visible: false, eligible_for_delivery: false, is_active: true });
     if (recordError) throw recordError;
   }
   await adminClient.from("request_timeline_events").insert({ service_request_id: requestId, event_type: "documents_uploaded", title: "Administrator documents uploaded", detail: `${files.length} document(s) uploaded by administrator.`, actor_type: "admin", metadata: { file_count: files.length } });
@@ -1761,21 +1762,29 @@ async function setDocumentRelease(fileId, released) {
 
 async function sendComposedMessage(updateStatus) {
   if (!selectedRequest) return;
+  if (window.__alignedSendingMessage) return;
   const templateId = $("#messageTemplateSelect")?.value;
   const status = updateStatus ? $("#messageStatus")?.value : "";
   const output = $("#messageComposerStatus");
   if (!templateId) { output.textContent = "Select an APS message template."; return; }
   if (updateStatus && !status) { output.textContent = "Select the status to apply after delivery."; return; }
+  window.__alignedSendingMessage = true;
   output.textContent = "Sending…";
   const requestFileIds = $$(".message-file-attachment:checked").map(input => input.value);
-  const { data, error } = await adminClient.functions.invoke("send-message", { body: {
-    request_id: selectedRequest.id, template_id: templateId, recipient: $("#messageRecipient")?.value,
-    cc: $("#messageCc")?.value, subject: $("#messageSubject")?.value, html: $("#messageBody")?.value,
-    request_file_ids: requestFileIds, status,
-  } });
-  if (error || data?.ok === false) { output.textContent = data?.error || error?.message || "Message delivery failed; status was not changed."; return; }
-  output.textContent = updateStatus ? "Message delivered and status updated." : "Message delivered.";
-  await refreshSelectedRequest(selectedRequest.id);
+  try {
+    const { data, error } = await adminClient.functions.invoke("send-message", { body: {
+      request_id: selectedRequest.id, template_id: templateId, recipient: $("#messageRecipient")?.value,
+      cc: $("#messageCc")?.value, subject: $("#messageSubject")?.value, html: $("#messageBody")?.value,
+      request_file_ids: requestFileIds, status,
+    } });
+    if (error || data?.ok === false) { output.textContent = data?.error || error?.message || "Message delivery failed; status was not changed."; return; }
+    output.textContent = updateStatus ? "Message delivered and status updated." : "Message delivered.";
+    await refreshSelectedRequest(selectedRequest.id);
+  } catch (error) {
+    output.textContent = error?.message || "Message delivery failed; status was not changed.";
+  } finally {
+    window.__alignedSendingMessage = false;
+  }
 }
 
 async function updateRequestStatus(status) {
@@ -1893,10 +1902,6 @@ async function updateRequestStatus(status) {
     status,
     ...appointmentPayload,
   });
-  if (status === "payment_received") {
-    selectedRequest.payment_status = "paid";
-    selectedRequest.paid_at = new Date().toISOString();
-  }
   if (status === "appointment_confirmed") {
     selectedRequest.appointment_confirmed_at = new Date().toISOString();
   }

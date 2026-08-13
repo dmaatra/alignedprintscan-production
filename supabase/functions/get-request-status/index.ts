@@ -27,6 +27,13 @@ function cleanUuid(value: unknown) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text) ? text : "";
 }
 
+function pick(source: any, keys: string[]) {
+  return keys.reduce((result: Record<string, unknown>, key) => {
+    if (source?.[key] !== undefined) result[key] = source[key];
+    return result;
+  }, {});
+}
+
 async function supabaseFetch(path: string, init: RequestInit = {}) {
   return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...init,
@@ -89,12 +96,33 @@ Deno.serve(async (req) => {
       const customerRows = await readJsonOrEmpty(customerRes);
       customer = customerRows?.[0] || null;
     }
-    request.customers = customer ? [customer] : [];
+    const publicCustomer = customer
+      ? pick(customer, ["id", "first_name", "last_name", "email", "phone"])
+      : null;
+    const publicRequest = pick(request, [
+      "id", "service_type", "status", "workflow_status", "preferred_date",
+      "preferred_time_window", "appointment_date", "appointment_time",
+      "appointment_location", "appointment_platform", "appointment_link",
+      "appointment_instructions", "appointment_line_items_note",
+      "ron_session_url", "fulfillment_method", "service_method",
+      "service_address", "delivery_address", "print_address", "location",
+      "street_address", "quote_amount", "initial_payment_amount",
+      "estimated_total", "paid_amount", "balance_due", "paid_at",
+      "invoice_number", "quote_notes", "customer_message", "receipt_url",
+      "receipt_pdf_url", "review_link_google", "review_link_yelp",
+      "prep_video_url", "current_quote_id",
+    ]);
+    publicRequest.customers = publicCustomer ? [publicCustomer] : [];
 
     const invoicesRes = await supabaseFetch(
       `invoices?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
     );
     const invoices = (await readJsonOrEmpty(invoicesRes)) || [];
+    const publicInvoices = invoices.map((invoice: any) => pick(invoice, [
+      "id", "invoice_number", "invoice_type", "status", "payment_status",
+      "amount_due", "amount_paid", "paid_amount", "balance_due", "paid_at",
+      "receipt_url", "receipt_pdf_url", "note", "created_at",
+    ]));
 
     const allItemsRes = await supabaseFetch(
       `invoice_items?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
@@ -124,6 +152,10 @@ Deno.serve(async (req) => {
         String(item.invoice_id || "") !== String(initialInvoice?.id || "")
       );
     });
+    const publicItem = (item: any) => pick(item, [
+      "id", "invoice_id", "item_type", "description", "quantity",
+      "unit_price", "line_total", "sort_order",
+    ]);
 
     const detailTable = request.service_type === "ron"
       ? "ron_requests"
@@ -139,6 +171,12 @@ Deno.serve(async (req) => {
       const detailRows = await readJsonOrEmpty(detailRes);
       serviceDetail = detailRows?.[0] || null;
     }
+    const detailFields = request.service_type === "ron"
+      ? ["document_type", "number_of_signers", "number_of_notarizations", "tech_ready", "valid_id_confirmed", "consent_to_recording", "witness_need", "witness_count", "witness_provider"]
+      : request.service_type === "mobile"
+      ? ["street_address", "unit", "city", "state", "zip", "number_of_signers", "number_of_notarizations", "witness_need", "witness_count", "witness_provider", "print_add_on", "scan_to_pdf_needed"]
+      : ["fulfillment_type", "delivery_address", "black_white_pages", "color_pages", "paper_size", "print_sides", "paper_type", "scan_pages"];
+    const publicServiceDetail = serviceDetail ? pick(serviceDetail, detailFields) : null;
 
     const filesRes = await supabaseFetch(`request_files?select=id,file_name,file_path,file_type,file_size,document_category,document_classification,customer_visible,eligible_for_delivery,uploaded_by,created_at,is_active&service_request_id=eq.${requestId}&order=created_at.desc`);
     const files = (await readJsonOrEmpty(filesRes)) || [];
@@ -161,19 +199,20 @@ Deno.serve(async (req) => {
 
     return json({
       ok: true,
-      request,
-      items,
-      invoices,
-      additional_invoice_items: additionalItems,
-      service_detail: serviceDetail,
+      request: publicRequest,
+      items: items.map(publicItem),
+      invoices: publicInvoices,
+      additional_invoice_items: additionalItems.map(publicItem),
+      service_detail: publicServiceDetail,
       file_count: Array.isArray(files) ? files.filter((f: any) => f.is_active !== false).length : 0,
-      files,
       customer_documents: customerDocuments,
-      customer_actions: customerActions,
-      timeline_events: timelineEvents,
-      communications,
+      customer_actions: customerActions.map((action: any) => pick(action, [
+        "id", "action_type", "status", "created_at", "updated_at",
+      ])),
       messages,
-      customer_activity: timelineEvents.filter((event: any) => event.visibility === "customer" || ["request_received","message_sent","status_changed","document_released","payment_received","appointment_confirmed","completed"].includes(event.event_type)),
+      customer_activity: timelineEvents
+        .filter((event: any) => event.visibility === "customer")
+        .map((event: any) => pick(event, ["event_type", "title", "detail", "created_at"])),
       reference_number: refFromId(requestId),
     });
   } catch (err) {
