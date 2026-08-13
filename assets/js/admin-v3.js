@@ -351,17 +351,6 @@
       window.open("pricing.html#request", "_blank", "noopener");
     });
 
-    $$("[data-admin-view]").forEach((link) => {
-      link.addEventListener("click", () => {
-        $$("[data-admin-view]").forEach((item) => {
-          item.classList.remove("is-active");
-        });
-        link.classList.add("is-active");
-        $("#adminSidebar")?.classList.remove("is-open");
-        $("#adminMenuButton")?.setAttribute("aria-expanded", "false");
-      });
-    });
-
     $$("[data-quick-filter]").forEach((button) => {
       button.setAttribute(
         "aria-selected",
@@ -1067,6 +1056,7 @@
     $("#adminSidebar")?.classList.remove("is-open");
     $("#adminMenuButton")?.setAttribute("aria-expanded","false");
     $$('[data-admin-view]').forEach(link=>link.classList.toggle("is-active",(view==="dashboard"&&link.textContent.includes("Dashboard"))||link.dataset.adminView===view));
+    window.APSAdminInteractions?.syncViewHash(view);
     window.scrollTo({top:0,behavior:"auto"});
   }
   window.addEventListener("aps:requests-loading",()=>{moduleState.requestsState="loading";moduleState.requestsError="";if(moduleState.activeView==="calendar")refreshCalendarView();});
@@ -1076,7 +1066,8 @@
   $("#returnToRequests")?.addEventListener("click",()=>showAdminView("requests"));
   $("#newRequestButton")?.replaceWith($("#newRequestButton").cloneNode(true));
   $("#newRequestButton")?.addEventListener("click",()=>{moduleState.newOrderCalendarDate=null;showAdminView("new");});
-  $$('[data-admin-view]').forEach(link=>{const clone=link.cloneNode(true);link.replaceWith(clone);clone.addEventListener("click",event=>{event.preventDefault();const view=clone.dataset.adminView;showAdminView(view==="requests"&&clone.textContent.includes("Dashboard")?"dashboard":view);});});
+  window.APSAdminInteractions?.bindAdminNavigation($("#adminSidebar"), showAdminView);
+  window.addEventListener("hashchange",()=>{const view=String(window.location.hash||"").replace(/^#/,"");if((moduleTitles[view]||view==="requests")&&view!==moduleState.activeView)showAdminView(view);});
 
   /** Public bridge used by admin.js after it resolves a selected request. */
   window.AdminV3 = {
@@ -1096,4 +1087,6 @@
       return request?googleCalendarUrl(request):"";
     },
   };
+  const initialView=String(window.location.hash||"").replace(/^#/,"");
+  if(moduleTitles[initialView]||initialView==="requests")showAdminView(initialView);
 })();
