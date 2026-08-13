@@ -1175,7 +1175,7 @@ async function selectRequest(id) {
       : selectedRequest.service_type === "mobile"
         ? "mobile_notary_requests"
         : "print_scan_requests";
-  const [files, serviceDetails, invoices, patch32Records, participantResult, actResult, templateResult, messageResult] = await Promise.all([
+  const [files, serviceDetails, invoices, patch32Records, participantResult, actResult, templateResult, messageResult, completionResult] = await Promise.all([
     getFiles(id),
     getDetailRows(table, id),
     getInvoices(id),
@@ -1184,11 +1184,13 @@ async function selectRequest(id) {
     adminClient.from("request_notarial_acts").select("*").eq("service_request_id", id).order("act_number"),
     adminClient.from("message_templates").select("*").eq("active", true).order("name"),
     adminClient.from("messages").select("*").eq("service_request_id", id).order("created_at", { ascending: false }),
+    adminClient.from("request_completion_facts").select("*").eq("service_request_id", id).maybeSingle(),
   ]);
   const participants = participantResult.data || [];
   const notarialActs = actResult.data || [];
   const messageTemplates = templateResult.data || [];
   const requestMessages = messageResult.data || [];
+  const completionFacts = completionResult.data || {};
   const invoiceItems = await getInvoiceItems(id, invoices);
   const fileItems = await Promise.all(
     files.map(async (f) => {
@@ -1290,6 +1292,30 @@ async function selectRequest(id) {
       <textarea id="appointmentLineItemsNote" placeholder="Example: Additional notarizations, extra prints, witnesses, scanning, travel overage, etc.">${escapeHtml(selectedRequest.appointment_line_items_note || "")}</textarea>
       <div class="status-actions invoice-actions">
         <button id="saveAppointmentBtn" class="btn primary" type="button">Save Appointment Details</button>
+      </div>
+    </div>
+
+    <div class="admin-detail-section completion-facts-card" data-v3-tab-target="fulfillment">
+      <div class="admin-v3-section-heading"><span class="small-label">Completion Gate</span><h3>Authoritative Fulfillment Facts</h3></div>
+      <p class="admin-muted">Record what was actually purchased and fulfilled. A zero balance alone does not complete an order.</p>
+      <fieldset><legend>Purchased service components</legend>${["ron","mobile","print_copy","scan","courier"].map(component => `<label class="check"><input class="completion-component" type="checkbox" value="${component}" ${(completionFacts.components || []).includes(component) ? "checked" : ""}> ${escapeHtml(statusLabel(component))}</label>`).join("")}</fieldset>
+      <div class="admin-detail-grid">
+        ${[["ron_session_completed","RON session completed"],["mobile_service_completed","Mobile service performed"],["production_completed","Print/Copy production completed"],["scan_completed","Scanning completed"],["pickup_completed","Pickup/handoff completed"],["delivery_completed","Delivery/handoff completed"],["proof_of_delivery_present","Proof of delivery present"]].map(([key,label]) => `<label class="check"><input class="completion-fact" data-key="${key}" type="checkbox" ${completionFacts[key] ? "checked" : ""}> ${label}</label>`).join("")}
+      </div>
+      <div class="admin-detail-grid">
+        <label>Document readiness<select id="completionDocumentState"><option value="pending" ${selectedRequest.document_state === "pending" ? "selected" : ""}>Pending / review required</option><option value="approved" ${selectedRequest.document_state === "approved" ? "selected" : ""}>Reviewed and ready</option><option value="not_applicable" ${selectedRequest.document_state === "not_applicable" ? "selected" : ""}>Not applicable</option></select></label>
+        <label>Participant / witness readiness<select id="completionParticipantState"><option value="pending" ${selectedRequest.participant_state === "pending" ? "selected" : ""}>Pending / unresolved</option><option value="approved" ${selectedRequest.participant_state === "approved" ? "selected" : ""}>Prepared and ready</option><option value="not_applicable" ${selectedRequest.participant_state === "not_applicable" ? "selected" : ""}>Not applicable</option></select></label>
+        <label>Customer-delivery path<select id="completionDeliveryPath"><option value="">Select the applicable path…</option><option value="aps" ${completionFacts.aps_deliverable_required === true ? "selected" : ""}>APS must release a portal deliverable</option><option value="external" ${completionFacts.external_platform_delivery ? "selected" : ""}>External platform delivers final document</option><option value="physical" ${completionFacts.physical_only ? "selected" : ""}>Physical-only; no portal deliverable</option><option value="declined" ${completionFacts.customer_declined_optional_deliverable ? "selected" : ""}>Customer declined optional deliverable</option></select></label>
+        <label class="check"><input id="completionPickupRequired" type="checkbox" ${completionFacts.pickup_required !== false ? "checked" : ""}> Courier pickup is required</label>
+        <label class="check"><input id="completionPodRequired" type="checkbox" ${completionFacts.proof_of_delivery_required ? "checked" : ""}> Proof of delivery is required</label>
+      </div>
+      <button id="saveCompletionFactsBtn" class="btn primary" type="button">Save Fulfillment Facts</button>
+      <div id="completionGateResult" class="email-notice" role="status" aria-live="polite" hidden></div>
+      <div id="completionExceptionPanel" class="email-notice" hidden>
+        <h4>Complete with Exception</h4><p>This is an intentional audited override, not the normal completion path.</p>
+        <label>Exception type<select id="completionExceptionType"><option value="">Select type…</option><option value="approved_balance_exception">Approved balance exception</option><option value="physical_only_no_portal_deliverable">Physical-only fulfillment; no portal deliverable required</option><option value="customer_declined_optional_deliverable">Customer declined optional deliverable</option><option value="external_platform_delivery">External-platform final document delivery</option><option value="administrative_closure">Administrative closure</option><option value="other">Other</option></select></label>
+        <label>Required explanation<textarea id="completionExceptionExplanation"></textarea></label>
+        <button id="completeWithExceptionBtn" class="btn dark" type="button">Complete with Exception</button>
       </div>
     </div>
 
@@ -1412,12 +1438,14 @@ async function selectRequest(id) {
     </section>
   `;
   renderInvoiceRows(rows);
-  $$(".status-actions button[data-status]", detail).forEach((btn) => btn.addEventListener("click", () => selectStatusMessage(btn.dataset.status, messageTemplates)));
+  $$(".status-actions button[data-status]", detail).forEach((btn) => btn.addEventListener("click", () => btn.dataset.status === "completed" ? beginCompletion(messageTemplates) : selectStatusMessage(btn.dataset.status, messageTemplates)));
   $("#messageTemplateSelect", detail)?.addEventListener("change", () => applyMessageTemplate(messageTemplates, customer, ref));
   $("#previewMessageBtn", detail)?.addEventListener("click", previewMessage);
   $("#sendMessageBtn", detail)?.addEventListener("click", () => sendComposedMessage(false));
   $("#sendAndUpdateStatusBtn", detail)?.addEventListener("click", () => sendComposedMessage(true));
   $$(".release-document-btn", detail).forEach(button => button.addEventListener("click", () => setDocumentRelease(button.dataset.fileId, button.dataset.released !== "true")));
+  $("#saveCompletionFactsBtn", detail)?.addEventListener("click", saveCompletionFacts);
+  $("#completeWithExceptionBtn", detail)?.addEventListener("click", completeWithException);
   populateInvoicePresetSelect();
 
   $$(".resolve-customer-action", detail).forEach((button) => button.addEventListener("click", async () => { try { await resolveCustomerAction(button); } catch (error) { alert(error.message || "Action could not be resolved."); } }));
@@ -1746,6 +1774,64 @@ function previewMessage() {
   if (!preview) return;
   preview.hidden = false;
   preview.innerHTML = `<h3>${escapeHtml($("#messageSubject")?.value || "Message preview")}</h3>${$("#messageBody")?.value || "<p>Choose a template or enter a message.</p>"}`;
+}
+
+async function saveCompletionFacts() {
+  if (!selectedRequest) return;
+  const deliveryPath = $("#completionDeliveryPath")?.value || "";
+  const payload = {
+    service_request_id: selectedRequest.id,
+    components: $$(".completion-component:checked").map(input => input.value),
+    pickup_required: Boolean($("#completionPickupRequired")?.checked),
+    proof_of_delivery_required: Boolean($("#completionPodRequired")?.checked),
+    aps_deliverable_required: deliveryPath === "aps" ? true : deliveryPath ? false : null,
+    external_platform_delivery: deliveryPath === "external",
+    physical_only: deliveryPath === "physical",
+    customer_declined_optional_deliverable: deliveryPath === "declined",
+  };
+  $$(".completion-fact").forEach(input => { payload[input.dataset.key] = Boolean(input.checked); });
+  payload.updated_at = new Date().toISOString();
+  const [{ error }, { error: requestError }] = await Promise.all([
+    adminClient.from("request_completion_facts").upsert(payload, { onConflict: "service_request_id" }),
+    adminClient.from("service_requests").update({ document_state: $("#completionDocumentState")?.value || "pending", participant_state: $("#completionParticipantState")?.value || "pending" }).eq("id", selectedRequest.id),
+  ]);
+  const result = $("#completionGateResult");
+  if (error || requestError) { result.hidden = false; result.textContent = error?.message || requestError?.message || "Fulfillment facts could not be saved."; return; }
+  selectedRequest.document_state = $("#completionDocumentState")?.value || "pending";
+  selectedRequest.participant_state = $("#completionParticipantState")?.value || "pending";
+  result.hidden = false; result.textContent = "Fulfillment facts saved.";
+}
+
+function renderCompletionBlockers(blockers = []) {
+  const result = $("#completionGateResult");
+  if (!result) return;
+  result.hidden = false;
+  result.innerHTML = blockers.length
+    ? `<h4>Completion is blocked</h4><ul>${blockers.map(item => `<li><button class="completion-blocker-link" data-tab="${escapeHtml(item.target_tab || "overview")}" type="button">${escapeHtml(item.message)}</button></li>`).join("")}</ul>`
+    : "<strong>All applicable completion requirements are satisfied.</strong>";
+  $$(".completion-blocker-link", result).forEach(button => button.addEventListener("click", () => window.AdminV3?.activateTab(button.dataset.tab)));
+  const exception = $("#completionExceptionPanel");
+  if (exception) exception.hidden = blockers.length === 0;
+}
+
+async function beginCompletion(templates) {
+  if (!selectedRequest) return;
+  const { data, error } = await adminClient.functions.invoke("update-request-status", { body: { request_id: selectedRequest.id, status: "completed", validate_only: true, send_message: false } });
+  if (error || data?.ok === false) { renderCompletionBlockers(data?.blockers || data?.validation?.blockers || [{ message: data?.error || error?.message || "Completion could not be evaluated.", target_tab: "overview" }]); return; }
+  renderCompletionBlockers(data.validation?.blockers || []);
+  if (data.validation?.allowed) selectStatusMessage("completed", templates);
+  else window.AdminV3?.activateTab("fulfillment");
+}
+
+async function completeWithException() {
+  if (!selectedRequest) return;
+  const exceptionType = $("#completionExceptionType")?.value || "";
+  const explanation = $("#completionExceptionExplanation")?.value?.trim() || "";
+  if (!exceptionType || explanation.length < 5) { renderCompletionBlockers([{ message: "Select an exception type and enter a meaningful explanation.", target_tab: "fulfillment" }]); return; }
+  const { data, error } = await adminClient.functions.invoke("update-request-status", { body: { request_id: selectedRequest.id, status: "completed", send_message: false, complete_with_exception: true, exception_type: exceptionType, exception_explanation: explanation } });
+  if (error || data?.ok === false) { renderCompletionBlockers(data?.blockers || [{ message: data?.error || error?.message || "Exception completion failed.", target_tab: "fulfillment" }]); return; }
+  showToast("Order completed with an audited exception.");
+  await refreshSelectedRequest(selectedRequest.id);
 }
 
 async function setDocumentRelease(fileId, released) {

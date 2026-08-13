@@ -1342,6 +1342,15 @@ function statusCopy(status) {
   return publicStatusCopy[status] || publicStatusCopy.under_review;
 }
 
+function customerCompletionCopy(request = {}, detail = {}) {
+  const type = workflowKind(request.service_type);
+  if (type === "ron") return { ...publicStatusCopy.completed, headline: "Your Notarization Is Complete", title: "Notarization Complete", body: "Your remote online notarization is complete. Available documents and receipts remain in this request." };
+  if (type === "mobile") return { ...publicStatusCopy.completed, headline: "Your Mobile Service Is Complete", title: "Mobile Service Complete", body: detail.scan_to_pdf_needed ? "Your mobile service and requested scan delivery are complete." : "Your mobile notary appointment is complete." };
+  if (Number(detail.scan_pages || 0) > 0 && Number(detail.black_white_pages || 0) + Number(detail.color_pages || 0) === 0) return { ...publicStatusCopy.completed, headline: "Your Completed Scans Are Ready", title: "Scans Complete", body: "Your scanning service is complete. Your released scans are available in Documents." };
+  if (String(detail.fulfillment_type || "").toLowerCase() === "courier") return { ...publicStatusCopy.completed, headline: "Your Delivery Is Complete", title: "Delivery Complete", body: "Your courier delivery and handoff are complete." };
+  return { ...publicStatusCopy.completed, headline: "Your Document Service Is Complete", title: "Document Service Complete", body: "Your print, copy, or document-service fulfillment is complete." };
+}
+
 function invoiceTotal(items = []) {
   return (items || []).reduce(
     (sum, i) =>
@@ -2250,7 +2259,7 @@ async function initSuccessPage() {
     sessionId && ["awaiting_payment", "payment_pending"].includes(status)
       ? "payment_submitted"
       : status;
-  const copy = statusCopy(displayStatus);
+  const copy = displayStatus === "completed" ? customerCompletionCopy(request, detail || {}) : statusCopy(displayStatus);
   const quoteAmount =
     Number(request.quote_amount || request.estimated_total || 0) || 0;
 

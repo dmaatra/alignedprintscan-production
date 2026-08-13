@@ -48,8 +48,12 @@ Deno.serve(async (request) => {
     if (template.required_attachment_type === "deliverable" && !selectedFiles.length) throw new Error("This template requires at least one released customer deliverable.");
     const reference = `APS-${requestId.slice(0, 8).toUpperCase()}`;
     if (targetStatus === "completed") {
-      const outstanding = invoices.filter((item: any) => !["paid", "payment_received", "final_payment_received", "void", "cancelled"].includes(String(item.status || "").toLowerCase())).reduce((sum: number, item: any) => sum + Math.max(0, Number(item.balance_due ?? (Number(item.amount_due || 0) - Number(item.amount_paid || item.paid_amount || 0)))), 0);
-      if (outstanding > 0) throw new Error(`Completion is blocked by an outstanding balance of $${outstanding.toFixed(2)}.`);
+      const validation = await fetch(`${SUPABASE_URL}/functions/v1/update-request-status`, { method: "POST", headers: { Authorization: request.headers.get("Authorization") || "", "Content-Type": "application/json" }, body: JSON.stringify({ request_id: requestId, status: "completed", validate_only: true, send_message: false }) });
+      const validationResult = await validation.json().catch(() => ({}));
+      if (!validation.ok || validationResult?.validation?.allowed !== true) {
+        const summary = (validationResult?.validation?.blockers || validationResult?.blockers || []).map((item: any) => item.message).join("; ");
+        throw new Error(summary || validationResult?.error || "Completion requirements are not satisfied.");
+      }
     }
     const values = { request_reference: reference, customer_first_name: customer.first_name || "Customer", customer_name: [customer.first_name, customer.last_name].filter(Boolean).join(" ") || "Customer", quote_amount: Number(quote?.amount || serviceRequest.quote_amount || 0).toFixed(2), balance_due: Number(serviceRequest.balance_due || invoice?.balance_due || 0).toFixed(2), invoice_number: invoice?.invoice_number || "", appointment_date: serviceRequest.appointment_date || serviceRequest.preferred_date || "", appointment_time: serviceRequest.appointment_time || serviceRequest.preferred_time_window || "", appointment_location: serviceRequest.appointment_location || "", appointment_link: serviceRequest.appointment_link || serviceRequest.ron_session_url || "", portal_url: `https://alignedprintscan.com/success.html?request_id=${requestId}` };
     const recipient = String(body.recipient || customer.email || "").trim();
@@ -82,9 +86,13 @@ Deno.serve(async (request) => {
     await rest(`messages?id=eq.${messageId}`, { method: "PATCH", body: JSON.stringify({ delivery_state: "sent", provider_message_id: provider.id || null, sent_at: new Date().toISOString() }) });
     await rest("request_timeline_events", { method: "POST", body: JSON.stringify({ service_request_id: requestId, event_type: "message_sent", title: "Customer message sent", detail: subject, actor_type: "admin", visibility: "customer" }) }).catch(() => null);
     if (targetStatus) {
-      const update: Record<string, unknown> = { status: targetStatus, workflow_status: targetStatus };
-      if (targetStatus === "completed") update.fulfillment_state = "completed";
-      const response = await rest(`service_requests?id=eq.${requestId}`, { method: "PATCH", body: JSON.stringify(update) }); if (!response.ok) throw new Error(await response.text());
+      if (targetStatus === "completed") {
+        const completion = await fetch(`${SUPABASE_URL}/functions/v1/update-request-status`, { method: "POST", headers: { Authorization: request.headers.get("Authorization") || "", "Content-Type": "application/json" }, body: JSON.stringify({ request_id: requestId, status: "completed", send_message: false }) });
+        const completionResult = await completion.json().catch(() => ({}));
+        if (!completion.ok || completionResult?.ok === false) throw new Error(completionResult?.error || "Completion state could not be recorded.");
+      } else {
+        const response = await rest(`service_requests?id=eq.${requestId}`, { method: "PATCH", body: JSON.stringify({ status: targetStatus, workflow_status: targetStatus }) }); if (!response.ok) throw new Error(await response.text());
+      }
     }
     if (targetStatus) await rest("request_timeline_events", { method: "POST", body: JSON.stringify({ service_request_id: requestId, event_type: "status_changed", title: "Request status updated", detail: targetStatus, actor_type: "admin", visibility: "customer" }) }).catch(() => null);
     return json({ ok: true, message_id: messageId, provider_message_id: provider.id || null, status: targetStatus || serviceRequest.status });

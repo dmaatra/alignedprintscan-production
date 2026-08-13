@@ -5,6 +5,7 @@
  * buttons use record-admin-payment first; this function does not invent money
  * or mark an invoice paid merely because a workflow button was clicked.
  */
+import { evaluateCompletion } from "../_shared/completion-gate.mjs";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -26,6 +27,7 @@ async function requireAdmin(request: Request) {
     headers: { apikey: SERVICE_ROLE_KEY, Authorization: authorization },
   });
   if (!userResponse.ok) throw new Error("Administrator authentication is required.");
+  const user = await userResponse.json();
   const adminResponse = await fetch(`${SUPABASE_URL}/rest/v1/rpc/is_admin`, {
     method: "POST",
     headers: {
@@ -38,6 +40,7 @@ async function requireAdmin(request: Request) {
   if (!adminResponse.ok || await adminResponse.json() !== true) {
     throw new Error("Administrator access is required.");
   }
+  return user;
 }
 
 function json(body: unknown, status = 200) {
@@ -112,7 +115,7 @@ Deno.serve(async (request) => {
   }
 
   try {
-    await requireAdmin(request);
+    const admin = await requireAdmin(request);
     const body = await request.json();
     const requestId = cleanUuid(body.request_id);
     const status = String(body.status || "").trim();
@@ -147,32 +150,65 @@ Deno.serve(async (request) => {
     }
 
     if (status === "completed") {
-      // Financial safeguard: a request may not be completed while any active
-      // invoice still has an unpaid balance.
-      const invoiceResponse = await supabaseFetch(
-        `invoices?select=id,invoice_number,status,amount_due,amount_paid,paid_amount,balance_due&service_request_id=eq.${requestId}`,
-      );
-      if (!invoiceResponse.ok) throw new Error(await invoiceResponse.text());
-      const invoiceRows = await invoiceResponse.json();
-      const outstanding = (invoiceRows || []).filter((invoice: any) => {
-        const invoiceStatus = String(invoice.status || "").toLowerCase();
-        if (["void", "cancelled"].includes(invoiceStatus)) return false;
-        const due = Number(
-          invoice.balance_due ??
-            (Number(invoice.amount_due || 0) -
-              Number(invoice.amount_paid || invoice.paid_amount || 0)),
-        );
-        return due > 0.009;
+      const requestResponse = await supabaseFetch(`service_requests?select=*&id=eq.${requestId}&limit=1`);
+      if (!requestResponse.ok) throw new Error(await requestResponse.text());
+      const serviceRequest = (await requestResponse.json())?.[0];
+      if (!serviceRequest) throw new Error("Request not found.");
+      const detailTable = serviceRequest.service_type === "ron" ? "ron_requests" : serviceRequest.service_type === "mobile" ? "mobile_notary_requests" : "print_scan_requests";
+      const [invoiceResponse, reviewResponse, fileResponse, participantResponse, detailResponse, factsResponse, proofResponse] = await Promise.all([
+        supabaseFetch(`invoices?select=*&service_request_id=eq.${requestId}`),
+        supabaseFetch(`review_queue_items?select=*&service_request_id=eq.${requestId}&state=eq.open`),
+        supabaseFetch(`request_files?select=*&service_request_id=eq.${requestId}&is_active=eq.true`),
+        supabaseFetch(`request_participants?select=*&service_request_id=eq.${requestId}`),
+        supabaseFetch(`${detailTable}?select=*&service_request_id=eq.${requestId}&limit=1`),
+        supabaseFetch(`request_completion_facts?select=*&service_request_id=eq.${requestId}&limit=1`),
+        supabaseFetch(`proof_transactions?select=proof_status,aps_status&service_request_id=eq.${requestId}&order=created_at.desc&limit=1`),
+      ]);
+      for (const response of [invoiceResponse, reviewResponse, fileResponse, participantResponse, detailResponse, factsResponse, proofResponse]) {
+        if (!response.ok) throw new Error(await response.text());
+      }
+      const result = evaluateCompletion({
+        request: serviceRequest,
+        invoices: await invoiceResponse.json(),
+        reviewItems: await reviewResponse.json(),
+        files: await fileResponse.json(),
+        participants: await participantResponse.json(),
+        detail: (await detailResponse.json())?.[0] || {},
+        facts: (await factsResponse.json())?.[0] || {},
+        proofTransaction: (await proofResponse.json())?.[0] || null,
       });
-      if (outstanding.length) {
-        throw new Error(
-          `Cannot complete this request while ${outstanding.length} invoice(s) have an outstanding balance.`,
-        );
+      if (body.validate_only === true) return json({ ok: true, validation: result });
+
+      const completeWithException = body.complete_with_exception === true;
+      let exceptionId: string | null = null;
+      if (!result.allowed && !completeWithException) {
+        return json({ ok: false, code: "COMPLETION_BLOCKED", blockers: result.blockers, validation: result }, 409);
+      }
+      if (completeWithException) {
+        if (sendMessage) throw new Error("Complete with Exception must be recorded first; send any customer-facing explanation separately.");
+        const exceptionType = String(body.exception_type || "").trim();
+        const explanation = String(body.exception_explanation || "").trim();
+        const allowedTypes = new Set(["approved_balance_exception", "physical_only_no_portal_deliverable", "customer_declined_optional_deliverable", "external_platform_delivery", "administrative_closure", "other"]);
+        if (!allowedTypes.has(exceptionType)) throw new Error("Select a valid completion exception type.");
+        if (explanation.length < 5) throw new Error("Complete with Exception requires an explanation.");
+        const exceptionResponse = await supabaseFetch("request_completion_exceptions", {
+          method: "POST",
+          body: JSON.stringify({ service_request_id: requestId, exception_type: exceptionType, explanation, overridden_blockers: result.blockers, created_by: admin.id }),
+        });
+        if (!exceptionResponse.ok) throw new Error(await exceptionResponse.text());
+        exceptionId = (await exceptionResponse.json())?.[0]?.id || null;
       }
       update.appointment_state = "completed";
-      update.balance_due = 0;
-      update.payment_state = "paid_in_full";
-      update.payment_status = "paid_in_full";
+      update.fulfillment_state = "completed";
+      update.completed_at = new Date().toISOString();
+      update.completion_path = completeWithException ? "exception" : "normal";
+      update.completion_exception_id = exceptionId;
+      if (result.outstanding_balance <= 0.009) {
+        update.balance_due = 0;
+        update.payment_state = "paid_in_full";
+        update.payment_status = "paid_in_full";
+      }
+      body._completion = { result, completeWithException, exceptionId };
     }
 
     const emailStatuses = [
@@ -248,14 +284,22 @@ Deno.serve(async (request) => {
       }),
     });
 
-    await supabaseFetch("request_timeline_events", {
+    const timelineResponse = await supabaseFetch("request_timeline_events", {
       method: "POST",
       body: JSON.stringify({
         service_request_id: requestId,
-        event_type: sendMessage && emailStatuses.includes(status)
+        event_type: status === "completed" && body._completion?.completeWithException
+          ? "order_completed_with_exception"
+          : status === "completed"
+          ? "order_completed"
+          : sendMessage && emailStatuses.includes(status)
           ? "status_changed"
           : "status_changed_without_message",
-        title: sendMessage && emailStatuses.includes(status)
+        title: status === "completed" && body._completion?.completeWithException
+          ? "Order Completed with Exception"
+          : status === "completed"
+          ? "Order Completed"
+          : sendMessage && emailStatuses.includes(status)
           ? `Status Changed to ${status.replaceAll("_", " ")}`
           : `Status Changed Without Message to ${status.replaceAll("_", " ")}`,
         detail: note || null,
@@ -263,9 +307,17 @@ Deno.serve(async (request) => {
         metadata: {
           status,
           message_sent: sendMessage && emailStatuses.includes(status),
+          completion_path: body._completion?.completeWithException ? "exception" : status === "completed" ? "normal" : null,
+          completion_components: body._completion?.result?.components || null,
+          overridden_blockers: body._completion?.completeWithException ? body._completion?.result?.blockers : null,
+          exception_id: body._completion?.exceptionId || null,
+          admin_id: admin.id,
         },
       }),
     });
+    if (!timelineResponse.ok && status === "completed") {
+      throw new Error(`Completion was recorded, but its required audit event failed: ${await timelineResponse.text()}`);
+    }
 
     return json({ ok: true, status, update });
   } catch (error) {

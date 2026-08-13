@@ -23,7 +23,7 @@ Starting commit: `9fde87a5c2c5bd2a5a5c1128d4ab650ac6f54366`
 | MSG-02 | Duplicate click | Admin double-clicks message send | Multiple browser invocations possible | One active send per admin page | Yes; fixed client-side | P2 | Duplicate communication rows | Duplicate email | In-flight guard; add server idempotency key later | No |
 | DOC-01 | Deliverable release | Admin uploads a deliverable classification | Upload marked it customer-visible immediately | Upload alone must remain private until explicit release | Yes; fixed | P1 | Premature document exposure | Customer can access wrong/incomplete file | Default every admin upload private; release only through explicit action | Yes |
 | DOC-02 | Release + send | File is released before message fails | Explicit release and email delivery are separate actions | Preserve explicit release and clearly report message failure | Partial | P2 | Low; release is intentional | File may be visible before notice arrives | Optionally add a combined release-and-send operation | No |
-| WF-01 | Completion | Admin selects Completed | Balance is checked, but fulfillment, reviews, and required deliverables are not authoritative gates | Completion must evaluate service-aware underlying facts | Yes; unresolved | P1 | Incorrect terminal state | Service appears complete prematurely | Add service-aware completion RPC/gate after owner confirms legitimate exceptions | Yes |
+| WF-01 | Completion | Admin selects Completed | Completion now evaluates finance, open reviews, service components, fulfillment facts, delivery path, and released deliverables | Completion must evaluate service-aware underlying facts | Yes; fixed | P1 | Incorrect terminal state prevented | Clear blockers and intentional exception path | Preserve regression coverage and deploy migration/function together | Yes |
 | WF-02 | Status transitions | Free-text status update | No shared transition table or database constraint | Central transition graph with prerequisites and reversals | Yes | P2 | Contradictory state | Confusing next action | Add transition registry and regression matrix | No |
 | WF-03 | Cancellation/refund | Cancel after payment/partial fulfillment | Review records exist; refund policy/processor action is intentionally manual | Preserve ledger and require owner-approved refund decision | Owner rule needed | P2 | Inconsistent handling | Unclear refund expectation | Define cancellation/refund matrix before automation | No |
 | MSG-03 | Central templates | Legacy live emails | New library is registered, but `send-order-email` still contains live hardcoded HTML/wording | Central template library is runtime source of truth for all branded customer messages | Partial | P2 | Template drift | Inconsistent wording/branding | Migrate remaining live legacy rendering to `message_templates` without losing content | No |
@@ -35,13 +35,13 @@ Starting commit: `9fde87a5c2c5bd2a5a5c1128d4ab650ac6f54366`
 
 ## A. Must fix before production
 
-The code fixes in SEC-01 through SEC-03, FIN-01 through FIN-08, MSG-01, and DOC-01 are required. WF-01 remains a deploy blocker because completion is not based on all authoritative service facts.
+The code fixes in SEC-01 through SEC-03, FIN-01 through FIN-08, MSG-01, DOC-01, and WF-01 are required and implemented on this branch.
 
 ## B. Should fix in this refactor
 
 - Make admin upload private by default and make release explicit.
 - Define and enforce the release/send recovery state.
-- Add a service-aware completion gate.
+- Validate the service-aware completion gate in preview against representative legacy and current orders.
 - Finish centralized runtime use of existing branded templates.
 - Add transition-registry and legacy-record fixtures.
 
@@ -61,7 +61,7 @@ The code fixes in SEC-01 through SEC-03, FIN-01 through FIN-08, MSG-01, and DOC-
 
 ## E. Proof UX readiness
 
-The branch has useful Proof extension points and correctly preserves APS as system of record, but it is **not yet fully ready** for the next Proof UX phase. The prerequisite is one authoritative fulfillment/completion/document-release model that Proof webhook state and returned completed assets can enter without bypassing APS completion and customer-release gates.
+The branch is architecturally ready for the next Proof UX phase: the completion gate consumes current Proof completion state and the APS fulfillment-facts model provides the extension point for future Proof session and completed-asset synchronization. Proof UX itself remains out of scope.
 
 ## F. Coverage map
 
@@ -82,7 +82,7 @@ The branch has useful Proof extension points and correctly preserves APS as syst
 | Portal privacy/RLS response minimization | Implemented by this audit + static regression tested; deployed RLS unverified |
 | Admin next-action/review queue | Partial |
 | Service-aware fulfillment | Partial |
-| Completion gate | Partial and blocked before production |
+| Completion gate | Implemented + targeted behavioral regression tested; deployment/browser verification pending |
 | Cancellation/reschedule/reopen | Partial; owner policy required for paid cases |
 | Backward compatibility | Implemented by fallbacks but fixture coverage missing |
 | Mobile/responsive/accessibility | Implemented but browser verification unavailable |

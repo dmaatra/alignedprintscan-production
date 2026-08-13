@@ -128,7 +128,8 @@ test("message delivery validates attachments and releases status only after send
   assert.ok(sendAt > 0 && statusAt > sendAt);
   assert.match(source, /requires at least one released customer deliverable/);
   assert.match(source, /Only intentionally released customer deliverables/);
-  assert.match(source, /Completion is blocked by an outstanding balance/);
+  assert.match(source, /validate_only: true/);
+  assert.match(source, /Completion requirements are not satisfied/);
   assert.match(source, /providerAttachments/);
   assert.match(source, /providerAccepted/);
   assert.match(source, /Message was sent, but the status update failed/);
@@ -184,4 +185,35 @@ test("intake confirmation reads the centralized branded template", async () => {
   const source = await read("supabase/functions/send-request-email/index.ts");
   assert.match(source, /message_templates\?select=\*&template_key=eq\.request_received/);
   assert.match(source, /template_id: template\.id/);
+});
+
+test("completion exceptions are admin-only, reasoned, and separately audited", async () => {
+  const source = await read("supabase/functions/update-request-status/index.ts");
+  const migration = await read("supabase/migrations/20260813030000_service_aware_completion_gate.sql");
+  assert.match(source, /const admin = await requireAdmin/);
+  assert.match(source, /Complete with Exception requires an explanation/);
+  assert.match(source, /order_completed_with_exception/);
+  assert.match(source, /Order Completed with Exception/);
+  assert.match(source, /overridden_blockers/);
+  assert.match(migration, /request_completion_exceptions/);
+  assert.match(migration, /created_by uuid not null/);
+  assert.match(migration, /aps_admin_completion_exceptions/);
+});
+
+test("completion UI shows blocker targets and requires an intentional exception", async () => {
+  const admin = await read("assets/js/admin.js");
+  assert.match(admin, /Authoritative Fulfillment Facts/);
+  assert.match(admin, /Completion is blocked/);
+  assert.match(admin, /completion-blocker-link/);
+  assert.match(admin, /Complete with Exception/);
+  assert.match(admin, /complete_with_exception: true/);
+});
+
+test("customer completion copy is service-specific and hides gate internals", async () => {
+  const portal = await read("assets/js/script.js");
+  assert.match(portal, /Your Notarization Is Complete/);
+  assert.match(portal, /Your Completed Scans Are Ready/);
+  assert.match(portal, /Your Delivery Is Complete/);
+  const copy = portal.slice(portal.indexOf("function customerCompletionCopy"), portal.indexOf("function invoiceTotal"));
+  assert.doesNotMatch(copy, /completion RPC|service-aware gate|override reason|unresolved review item/i);
 });
