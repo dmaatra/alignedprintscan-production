@@ -51,8 +51,8 @@ test("all direct customer notification paths use the canonical shell", async () 
   ];
   for (const path of paths) {
     const source = await read(path);
-    assert.match(source, /_shared\/customer-email\.mjs/);
-    assert.match(source, /renderCustomerEmailShell/);
+    assert.match(source, /_shared\/(customer-email|template-preview)\.mjs/);
+    assert.match(source, /renderCustomerEmailShell|renderFullTemplateEmail/);
   }
 });
 

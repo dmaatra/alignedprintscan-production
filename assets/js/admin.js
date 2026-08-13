@@ -1192,6 +1192,37 @@ async function selectRequest(id) {
   const requestMessages = messageResult.data || [];
   const completionFacts = completionResult.data || {};
   const invoiceItems = await getInvoiceItems(id, invoices);
+  const currentInvoice = invoices.find(invoice => !["void", "cancelled"].includes(String(invoice.status || "").toLowerCase())) || invoices[0] || {};
+  currentMessagePreviewContext = {
+    templates: messageTemplates,
+    context: {
+      requestId: selectedRequest.id,
+      reference: ref,
+      customer: customer || {},
+      serviceType: selectedRequest.service_type,
+      serviceName: serviceLabel(selectedRequest.service_type),
+      requestedDate: selectedRequest.preferred_date || "Not provided",
+      requestedTime: selectedRequest.preferred_time_window || "Not provided",
+      appointmentDate: selectedRequest.appointment_date || "Not confirmed",
+      appointmentTime: selectedRequest.appointment_time || "Not confirmed",
+      appointmentLocation: selectedRequest.service_type === "ron" ? "" : (selectedRequest.appointment_location || "Not provided"),
+      appointmentLink: selectedRequest.service_type === "ron" ? (selectedRequest.appointment_link || selectedRequest.ron_session_url || "") : "",
+      appointmentInstructions: selectedRequest.appointment_instructions || "Review your secure request for preparation details.",
+      preferredContact: customer?.preferred_contact || "Not provided",
+      quoteNumber: selectedRequest.current_quote_id || "Current quote",
+      quoteVersion: "Current",
+      quoteAmount: money(selectedRequest.quote_amount || selectedRequest.estimated_total || 0),
+      quoteItems: invoiceItems.map(item => ({ name: item.description || item.item_name || "Service", quantity: item.quantity || 1, rate: money(item.unit_price || item.rate || 0), total: money(item.line_total || item.amount || 0) })),
+      invoiceNumber: currentInvoice.invoice_number || selectedRequest.invoice_number || "Not issued",
+      paymentAmount: money(currentInvoice.amount_paid || selectedRequest.paid_amount || 0),
+      paymentDate: selectedRequest.paid_at || "Not recorded",
+      paidAmount: money(selectedRequest.paid_amount || 0),
+      balanceDue: money(selectedRequest.balance_due || currentInvoice.balance_due || 0),
+      releasedDocumentNames: files.filter(file => file.customer_visible && file.eligible_for_delivery && file.document_classification !== "internal_document").map(file => file.file_name),
+      completionDate: selectedRequest.completed_at || "Not completed",
+      siteUrl: location.origin,
+    },
+  };
   const fileItems = await Promise.all(
     files.map(async (f) => {
       const url = await signedUrl(f.file_path);
@@ -1743,6 +1774,12 @@ function renderMessageTemplate(value, customer, ref) {
   return String(value || "").replace(/{{\s*([a-z0-9_]+)\s*}}/gi, (_, key) => replacements[key] ?? "");
 }
 
+let currentMessagePreviewContext = null;
+
+async function fullEmailPreviewModule() {
+  return import("../../supabase/functions/_shared/template-preview.mjs");
+}
+
 function applyMessageTemplate(templates, customer, ref) {
   const template = templates.find(item => item.id === $("#messageTemplateSelect")?.value);
   if (!template) return;
@@ -1769,11 +1806,16 @@ function selectStatusMessage(status, templates) {
   $("#messageTemplateSelect")?.focus();
 }
 
-function previewMessage() {
+async function previewMessage() {
   const preview = $("#messagePreview");
   if (!preview) return;
+  const templateId = $("#messageTemplateSelect")?.value;
+  const template = currentMessagePreviewContext?.templates?.find(item => item.id === templateId);
+  if (!template) { preview.hidden = false; preview.textContent = "Choose a template to render the complete customer email."; return; }
+  const { renderFullTemplateEmail } = await fullEmailPreviewModule();
+  const rendered = renderFullTemplateEmail({ template, context: currentMessagePreviewContext.context, editedBody: $("#messageBody")?.value || "", subjectOverride: $("#messageSubject")?.value || null });
   preview.hidden = false;
-  preview.innerHTML = `<h3>${escapeHtml($("#messageSubject")?.value || "Message preview")}</h3>${$("#messageBody")?.value || "<p>Choose a template or enter a message.</p>"}`;
+  preview.innerHTML = `<div class="email-preview-toolbar"><strong>${escapeHtml($("#messageSubject")?.value || rendered.subject)}</strong><span>Full customer email · current request data</span></div><iframe class="aps-full-email-preview" title="Complete customer email preview" sandbox srcdoc="${escapeHtml(rendered.html)}"></iframe>`;
 }
 
 async function saveCompletionFacts() {
