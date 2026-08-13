@@ -1143,7 +1143,9 @@ async function uploadAdminDocuments(requestId) {
     const path = `${requestId}/admin/${crypto.randomUUID()}-${safe}`;
     const { error: uploadError } = await adminClient.storage.from("service-request-files").upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
     if (uploadError) throw uploadError;
-    const { error: recordError } = await adminClient.from("request_files").insert({ service_request_id: requestId, file_name: file.name, file_path: path, file_type: file.type, file_size: file.size, uploaded_by: "admin", document_category: "admin-additional", is_active: true });
+    const classification = document.querySelector("#adminDocumentClassification")?.value || "internal_document";
+    const customerVisible = classification === "customer_deliverable" || classification === "completed_scan" || classification === "completed_notarized_document";
+    const { error: recordError } = await adminClient.from("request_files").insert({ service_request_id: requestId, file_name: file.name, file_path: path, file_type: file.type, file_size: file.size, uploaded_by: "admin", document_category: "admin-additional", document_classification: classification, customer_visible: customerVisible, eligible_for_delivery: customerVisible, is_active: true });
     if (recordError) throw recordError;
   }
   await adminClient.from("request_timeline_events").insert({ service_request_id: requestId, event_type: "documents_uploaded", title: "Administrator documents uploaded", detail: `${files.length} document(s) uploaded by administrator.`, actor_type: "admin", metadata: { file_count: files.length } });
@@ -1172,12 +1174,16 @@ async function selectRequest(id) {
       : selectedRequest.service_type === "mobile"
         ? "mobile_notary_requests"
         : "print_scan_requests";
-  const [files, serviceDetails, invoices, patch32Records] = await Promise.all([
+  const [files, serviceDetails, invoices, patch32Records, participantResult, actResult] = await Promise.all([
     getFiles(id),
     getDetailRows(table, id),
     getInvoices(id),
     getPatch32Records(id),
+    adminClient.from("request_participants").select("*").eq("service_request_id", id).order("sort_order"),
+    adminClient.from("request_notarial_acts").select("*").eq("service_request_id", id).order("act_number"),
   ]);
+  const participants = participantResult.data || [];
+  const notarialActs = actResult.data || [];
   const invoiceItems = await getInvoiceItems(id, invoices);
   const fileItems = await Promise.all(
     files.map(async (f) => {
@@ -1231,7 +1237,7 @@ async function selectRequest(id) {
 
     ${internalWorkflowGuide(selectedRequest)}
 
-    <div class="admin-detail-section invoice-builder-card" data-v3-tab-target="payments" data-payment-group="quote">
+    <div class="admin-detail-section invoice-builder-card" data-v3-tab-target="quote" data-payment-group="quote">
       <div class="admin-v3-section-heading"><span class="small-label">Quote</span><h3>Full Service Quote Builder</h3></div>
       <p class="admin-muted">Build the full estimated service quote here. Saving the quote updates the customer-facing quote; status buttons control when emails are sent.</p>
       <div class="invoice-preset-row"><select id="invoicePresetSelect"><option value="">Add common line item…</option></select><button id="addPresetInvoiceRow" class="btn dark" type="button">Add Selected</button></div><div id="invoiceRows" class="invoice-rows"></div>
@@ -1240,7 +1246,7 @@ async function selectRequest(id) {
       <textarea id="invoiceNote" placeholder="Premium client-facing note, preparation instructions, appointment readiness, or quote terms…">${escapeHtml(selectedRequest.quote_notes || selectedRequest.customer_message || "")}</textarea>
       <div class="dashboard-action-groups">
         <div class="dashboard-action-group"><span class="small-label">Quote Actions</span><div class="status-actions invoice-actions"><button id="addInvoiceRow" class="btn dark" type="button">Add Line Item</button><button id="saveInvoiceBtn" class="btn primary" type="button">Save Quote</button><button id="openStatusPageBtn" class="btn dark" type="button">Open Client Status Page</button></div></div>
-        <div class="dashboard-action-group"><span class="small-label">Payment Actions</span><div class="status-actions invoice-actions"><button id="createAdditionalInvoiceBtn" class="btn dark" type="button">Issue Final Balance Invoice</button></div></div>
+        <div class="dashboard-action-group"><span class="small-label">Payment Actions</span><div class="status-actions invoice-actions"><button id="recordPrimaryPaymentBtn" class="btn dark" type="button">Record Primary Payment</button><button id="recordSupplementalPaymentBtn" class="btn dark" type="button">Record Supplemental Payment</button><button id="createAdditionalInvoiceBtn" class="btn dark" type="button">Create Additional Invoice</button></div></div>
       </div>
       <p class="admin-muted small-admin-note">Save the quote first. Then use Status Update to send Quote Ready or move the request forward.</p>
     </div>
@@ -1258,7 +1264,7 @@ async function selectRequest(id) {
 
     ${patch32AdminPanels(patch32Records)}
 
-    <div class="admin-detail-section appointment-editor-card" data-v3-tab-target="appointment">
+    <div class="admin-detail-section appointment-editor-card" data-v3-tab-target="fulfillment">
       <h3>Appointment / Fulfillment Details</h3>
       <p class="admin-muted">Update these before marking the appointment confirmed. These details appear on the customer's status page and in the appointment confirmation email.</p>
       <div class="admin-detail-grid appointment-fields">
@@ -1287,6 +1293,12 @@ async function selectRequest(id) {
         <div><span class="small-label">APS Reference</span><strong>${escapeHtml(ref)}</strong></div>
         <div><span class="small-label">Order Relationship</span><strong>Primary customer</strong></div>
       </div>
+    </section>
+
+    <section class="admin-detail-section" data-v3-tab-target="customer">
+      <div class="admin-v3-section-heading"><span class="small-label">Transaction Participants</span><h3>Signers &amp; Witnesses</h3></div>
+      ${participants.length ? `<ul class="admin-file-list">${participants.map(person=>`<li><strong>${escapeHtml(person.full_legal_name || (person.witness_source === "aps" ? `APS-provided witness × ${person.quantity || 1}` : "Identity pending"))}</strong><small>${escapeHtml(statusLabel(person.participant_type))}${person.email ? ` · ${escapeHtml(person.email)}` : ""}</small></li>`).join("")}</ul>` : '<p class="admin-muted">No structured participants are stored for this legacy request.</p>'}
+      ${notarialActs.length ? `<h4>Requested acts</h4><ul class="admin-file-list">${notarialActs.map(act=>`<li><strong>Act ${act.act_number}: ${escapeHtml(statusLabel(act.act_type))}</strong><small>${act.requires_admin_review ? "Admin review required; APS must not choose certificate language." : "Customer selection recorded"}</small></li>`).join("")}</ul>` : ""}
     </section>
 
     <section class="admin-detail-section" data-v3-tab-target="customer">
@@ -1328,16 +1340,17 @@ async function selectRequest(id) {
     <div class="admin-detail-section" data-v3-tab-target="documents">
       <h3>Uploaded Files</h3>
       ${fileItems.length ? `<ul class="admin-file-list">${fileItems.join("")}</ul>` : '<p class="admin-muted">No files uploaded with this request.</p>'}
+      <label>Document classification<select id="adminDocumentClassification"><option value="completed_scan">Completed Scan</option><option value="completed_notarized_document">Completed Notarized Document</option><option value="customer_deliverable">Customer Deliverable</option><option value="internal_document" selected>Internal Document</option><option value="supporting_document">Supporting Document</option><option value="other">Other</option></select></label>
       <label>Upload additional administrator documents<input id="adminAdditionalFiles" type="file" multiple></label><button id="uploadAdminFilesBtn" class="btn dark" type="button">Upload Documents</button>
     </div>
 
-    <section class="admin-detail-section notes-active-card" data-v3-tab-target="notes">
+    <section class="admin-detail-section notes-active-card" data-v3-tab-target="messages">
       <div class="admin-v3-section-heading"><span class="small-label">Customer Update</span><h3>Current Customer Update</h3></div>
       <p class="admin-v3-note-display">${activeClientNote ? escapeHtml(activeClientNote) : "No current customer-facing update."}</p>
       <button class="btn dark" type="button" data-open-workspace-tab="payments">Open Customer Update Editor</button>
     </section>
 
-    <section class="admin-detail-section" data-v3-tab-target="notes">
+    <section class="admin-detail-section" data-v3-tab-target="messages">
       <div class="admin-v3-notes-subsection">
         <div class="admin-v3-section-heading"><span class="small-label">Workflow Status</span><h3>Update Order Status</h3></div>
         <div class="status-actions">
@@ -1357,10 +1370,11 @@ async function selectRequest(id) {
         <div class="admin-v3-section-heading"><span class="small-label">Internal Notes</span><h3>APS Staff Note</h3></div>
         <p class="admin-muted">Internal notes are visible only to APS staff and are not visible to the customer.</p>
         <textarea id="adminStatusNote" placeholder="Add an internal note visible only to APS staff..."></textarea>
+        <label class="check"><input id="updateStatusWithoutSending" type="checkbox"> Update Status Without Sending (exception only)</label>
       </div>
     </section>
 
-    <section class="admin-detail-section notes-history-card" data-v3-tab-target="notes">
+    <section class="admin-detail-section notes-history-card" data-v3-tab-target="messages">
       <div class="admin-v3-section-heading"><span class="small-label">Archived Customer Updates</span><h3>Customer Update History</h3></div>
       <div id="archivedCustomerUpdatesHistory" aria-live="polite">
         <div class="admin-v3-history-state" data-history-state="loading">
@@ -1369,7 +1383,7 @@ async function selectRequest(id) {
       </div>
     </section>
 
-    <section class="admin-detail-section" data-v3-tab-target="notes">
+    <section class="admin-detail-section" data-v3-tab-target="overview">
       <div class="admin-v3-section-heading"><span class="small-label">Request Administration</span><h3>Request Visibility</h3></div>
       <div class="status-actions archive-actions">
         <button id="archiveRequestBtn" class="btn dark" type="button">${isArchived(selectedRequest) ? "Restore Request" : "Archive Request"}</button>
@@ -1402,6 +1416,8 @@ async function selectRequest(id) {
     addSelectedPresetInvoiceRow(),
   );
   $("#saveInvoiceBtn")?.addEventListener("click", saveInvoice);
+  $("#recordPrimaryPaymentBtn")?.addEventListener("click", () => recordAdminPayment("initial"));
+  $("#recordSupplementalPaymentBtn")?.addEventListener("click", () => recordAdminPayment("final"));
   $("#createAdditionalInvoiceBtn")?.addEventListener(
     "click",
     createAdditionalInvoice,
@@ -1702,15 +1718,8 @@ async function updateRequestStatus(status) {
 
   const note = $("#adminStatusNote")?.value || "";
 
-  if (status === "payment_received") {
-    const recorded = await recordAdminPayment("initial");
-    if (!recorded) return;
-  }
-
-  if (status === "final_payment_received") {
-    const recorded = await recordAdminPayment("final");
-    if (!recorded) return;
-  }
+  // Status transitions are operational only. Payments are recorded through
+  // the explicit Payment Actions above and never materialized by a status.
 
   if (status === "appointment_confirmed") {
     const saved = await saveAppointmentDetails();
@@ -1763,6 +1772,7 @@ async function updateRequestStatus(status) {
           request_id: selectedRequest.id,
           status,
           note,
+          send_message: !$("#updateStatusWithoutSending")?.checked,
           paid_amount: null,
           appointment: appointmentPayload,
         },
@@ -1947,6 +1957,26 @@ async function saveInvoice() {
     alert(updateError.message);
     return false;
   }
+  let quoteId = selectedRequest.current_quote_id || null;
+  if (quoteId) {
+    const { error: quoteError } = await adminClient.from("quotes").update({ amount: total, notes: note, state: "saved", updated_at: new Date().toISOString() }).eq("id", quoteId);
+    if (quoteError) { alert(quoteError.message); return false; }
+  } else {
+    const { data: existingQuote } = await adminClient.from("quotes").select("id").eq("service_request_id", selectedRequest.id).order("version", { ascending: false }).limit(1).maybeSingle();
+    quoteId = existingQuote?.id || null;
+    if (quoteId) {
+      const { error: quoteError } = await adminClient.from("quotes").update({ amount: total, notes: note, state: "saved", updated_at: new Date().toISOString() }).eq("id", quoteId);
+      if (quoteError) { alert(quoteError.message); return false; }
+    } else {
+      const quoteNumber = `Q-${String(selectedRequest.id).slice(0,8).toUpperCase()}-01`;
+      const { data: quote, error: quoteError } = await adminClient.from("quotes").insert({ service_request_id: selectedRequest.id, quote_number: quoteNumber, state: "saved", amount: total, notes: note, version: 1 }).select("id").single();
+      if (quoteError) { alert(quoteError.message); return false; }
+      quoteId = quote.id;
+    }
+    const { error: linkError } = await adminClient.from("service_requests").update({ current_quote_id: quoteId }).eq("id", selectedRequest.id);
+    if (linkError) { alert(linkError.message); return false; }
+    selectedRequest.current_quote_id = quoteId;
+  }
   // Only replace the initial quote rows. Final-balance invoice items have an
   // invoice_id and must never be deleted when Invoice #1 is edited.
   await adminClient
@@ -2049,7 +2079,7 @@ async function loadRequests() {
   const { data, error } = await adminClient
     .from("service_requests")
     .select(
-      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(id,first_name,last_name,email,phone,preferred_contact),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
+      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customers(id,first_name,last_name,email,phone,preferred_contact),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
     )
     .order("created_at", {
       ascending: false,

@@ -417,6 +417,38 @@ function updateConditional() {
         ? "block"
         : "none";
   });
+  qsa("[data-upload-exception]").forEach((el) => {
+    el.style.display = wizard.elements.documentUploadException?.checked ? "block" : "none";
+  });
+  renderSignerAndActFields();
+  renderWitnessIdentityFields();
+}
+
+function renderWitnessIdentityFields() {
+  ["ron", "mobile"].forEach((service) => {
+    const host = qs(`#${service}WitnessFields`);
+    if (!host) return;
+    const count = witnessAllocation(service).customerProvides;
+    if (Number(host.dataset.count || 0) === count) return;
+    host.dataset.count = String(count);
+    host.innerHTML = Array.from({ length: count }, (_, index) => `<div class="form-grid"><div><label>Witness ${index + 1} full legal ID name *</label><input name="${service}WitnessLegalName${index}" required></div><div><label>Witness ${index + 1} email (optional)</label><input name="${service}WitnessEmail${index}" type="email"></div></div>`).join("");
+  });
+}
+
+function renderSignerAndActFields() {
+  if (!wizard) return;
+  const signerHost = qs("#signerFields");
+  const actHost = qs("#notarialActFields");
+  const signerCount = Math.max(1, Number(wizard.elements.signerCount?.value || 1));
+  const actCount = Math.max(1, Number(wizard.elements.notarizationCount?.value || 1));
+  if (signerHost && Number(signerHost.dataset.count || 0) !== signerCount) {
+    signerHost.dataset.count = String(signerCount);
+    signerHost.innerHTML = Array.from({ length: signerCount }, (_, index) => `<div class="form-grid"><div><label>Signer ${index + 1} full legal ID name *</label><input name="signerLegalName${index}" required></div><div><label>Signer ${index + 1} individual email${activeService === "ron" ? " *" : " (optional)"}</label><input name="signerEmail${index}" type="email" ${activeService === "ron" ? "required" : ""}></div></div>`).join("");
+  }
+  if (actHost && Number(actHost.dataset.count || 0) !== actCount) {
+    actHost.dataset.count = String(actCount);
+    actHost.innerHTML = Array.from({ length: actCount }, (_, index) => `<label>Act ${index + 1}</label><select name="notarialActType${index}" required><option value="acknowledgment">Acknowledgment</option><option value="jurat">Jurat / verification on oath</option><option value="signature_witnessing">Signature witnessing</option><option value="certified_copy">Certified copy (when permitted)</option><option value="unsure">I&rsquo;m not sure</option></select>`).join("");
+  }
 }
 
 function showStep(n) {
@@ -508,15 +540,20 @@ function validateStep(showErrors = false) {
     need(["firstName", "lastName", "email", "phone"]);
   }
   if (currentStep === 1) {
+    const uploadException = wizard.elements.documentUploadException?.checked;
+    if (uploadException) {
+      need(["documentUploadExceptionReason"]);
+      if (wizard.elements.documentUploadExceptionReason?.value === "other") need(["documentUploadExceptionDetail"]);
+    }
     if (activeService === "ron") {
       need([
         "documentType",
         "notarizationCount",
         "signerCount",
-        "ronFiles",
         "techReady",
         "recordingConsent",
       ]);
+      if (!uploadException) need(["ronFiles"]);
     }
     if (activeService === "mobile") {
       need([
@@ -527,9 +564,10 @@ function validateStep(showErrors = false) {
         "city",
         "zip",
       ]);
+      if (!uploadException) need(["mobileFiles"]);
     }
     if (activeService === "print") {
-      need(["printFiles"]);
+      if (!uploadException) need(["printFiles"]);
       if (
         (+wizard.elements.pages.value || 0) <= 0 &&
         (+wizard.elements.scanPages.value || 0) <= 0
@@ -538,6 +576,15 @@ function validateStep(showErrors = false) {
         if (showErrors)
           markInvalid("pages", "Enter the number of print or scan pages.");
       }
+    }
+    if (["ron", "mobile"].includes(activeService)) {
+      const signerCount = Math.max(1, numericValue("signerCount"));
+      const actCount = Math.max(1, numericValue("notarizationCount"));
+      for (let index = 0; index < signerCount; index += 1) {
+        need([`signerLegalName${index}`]);
+        if (activeService === "ron") need([`signerEmail${index}`]);
+      }
+      for (let index = 0; index < actCount; index += 1) need([`notarialActType${index}`]);
     }
   }
   if (currentStep === 2) {
@@ -579,6 +626,10 @@ function validateStep(showErrors = false) {
           "printSignerCount",
           "printNotaryDocType",
         ]);
+    }
+    if (["ron", "mobile"].includes(activeService)) {
+      const customerWitnesses = witnessAllocation(activeService).customerProvides;
+      for (let index = 0; index < customerWitnesses; index += 1) need([`${activeService}WitnessLegalName${index}`]);
     }
   }
   if (currentStep === 3) {
@@ -823,6 +874,12 @@ async function submitRequestToSupabase(e) {
       preferred_time_window: f.timeWindow.value || null,
       notes: f.notes.value || null,
       estimated_total: estimateNumber(),
+      request_completeness: "submitted",
+      document_state: f.documentUploadException?.checked ? "pending" : "received",
+      participant_state: "submitted",
+      fulfillment_state: "not_started",
+      document_upload_exception_reason: f.documentUploadException?.checked ? f.documentUploadExceptionReason?.value || null : null,
+      document_upload_exception_detail: f.documentUploadException?.checked ? f.documentUploadExceptionDetail?.value || null : null,
       detected_pdf_page_count: detectedPdfPageCount,
       ...urgencyFlags,
     };
@@ -833,6 +890,50 @@ async function submitRequestToSupabase(e) {
       .single();
     if (requestError) throw requestError;
     const requestId = request.id;
+    if (["ron", "mobile"].includes(activeService)) {
+      const signerCount = Math.max(1, numericValue("signerCount"));
+      const participants = Array.from({ length: signerCount }, (_, index) => ({
+        service_request_id: requestId,
+        participant_type: "signer",
+        full_legal_name: f[`signerLegalName${index}`]?.value?.trim() || null,
+        email: f[`signerEmail${index}`]?.value?.trim() || null,
+        identity_name_confirmed: true,
+        sort_order: index,
+      }));
+      const { error: participantError } = await supabaseClient.from("request_participants").insert(participants);
+      if (participantError) throw participantError;
+      const actCount = Math.max(1, numericValue("notarizationCount"));
+      const acts = Array.from({ length: actCount }, (_, index) => {
+        const actType = f[`notarialActType${index}`]?.value || "unsure";
+        return { service_request_id: requestId, act_number: index + 1, act_type: actType, requires_admin_review: actType === "unsure" };
+      });
+      const { error: actError } = await supabaseClient.from("request_notarial_acts").insert(acts);
+      if (actError) throw actError;
+      const allocation = witnessAllocation(activeService);
+      const witnesses = Array.from({ length: allocation.customerProvides }, (_, index) => ({
+        service_request_id: requestId,
+        participant_type: "witness",
+        witness_source: "customer",
+        full_legal_name: f[`${activeService}WitnessLegalName${index}`]?.value?.trim() || null,
+        email: f[`${activeService}WitnessEmail${index}`]?.value?.trim() || null,
+        identity_name_confirmed: true,
+        sort_order: signerCount + index,
+      }));
+      if (allocation.alignedProvides > 0) witnesses.push({
+        service_request_id: requestId,
+        participant_type: "witness",
+        witness_source: "aps",
+        full_legal_name: null,
+        email: null,
+        identity_name_confirmed: false,
+        quantity: allocation.alignedProvides,
+        sort_order: signerCount + allocation.customerProvides,
+      });
+      if (witnesses.length) {
+        const { error: witnessError } = await supabaseClient.from("request_participants").insert(witnesses);
+        if (witnessError) throw witnessError;
+      }
+    }
     if (activeService === "ron") {
       const ronWitnessAllocation = witnessAllocation("ron");
       const { error } = await supabaseClient.from("ron_requests").insert({
@@ -912,6 +1013,7 @@ async function submitRequestToSupabase(e) {
           "mobilePrintFiles",
           "mobile-print-files",
         );
+      await uploadFileGroup(requestId, "mobileFiles", "mobile-documents");
     }
     if (activeService === "print") {
       const fulfillment = f.fulfillment?.value || "courier";
@@ -2189,6 +2291,13 @@ async function initSuccessPage() {
     quoteAmount > 0 &&
     request.id &&
     status !== "quote_expired";
+  const actionRequired = canApprove
+    ? `<section class="next-panel reveal" aria-labelledby="customerActionHeading"><p class="eyebrow">Action Required</p><h3 id="customerActionHeading">Review and approve your quote</h3><p>Total: <strong>${money(quoteAmount)}</strong></p><a class="btn primary" href="#quoteActionPanel">Review &amp; Approve Quote</a></section>`
+    : canPay
+      ? `<section class="next-panel reveal" aria-labelledby="customerActionHeading"><p class="eyebrow">Action Required</p><h3 id="customerActionHeading">Payment required</h3><p>Amount due: <strong>${money(Number(request.balance_due || quoteAmount))}</strong></p><a class="btn primary" href="#paymentSchedule">Pay Now</a></section>`
+      : !fileCount && ["under_review", "document_pending"].includes(status)
+        ? `<section class="next-panel reveal" aria-labelledby="customerActionHeading"><p class="eyebrow">Action Required</p><h3 id="customerActionHeading">Document needed</h3><p>Upload the document APS needs to review your request.</p><a class="btn primary" href="#customerActionsPanel">Upload Document</a></section>`
+        : "";
 
   const customer = Array.isArray(request.customers)
     ? request.customers[0]
@@ -2253,6 +2362,7 @@ async function initSuccessPage() {
 
   successBox.innerHTML = `
     <div class="success-ref reveal">${escapePublic(reference)}</div>
+    ${actionRequired}
     ${statusTimeline(displayStatus, request.service_type)}
     <div class="success-grid reveal">
       <div><span class="small-label">Selected Service</span><strong>${escapePublic(serviceName)}</strong></div>
@@ -2271,10 +2381,10 @@ async function initSuccessPage() {
       ${serviceDetailSummary(request.service_type, detail)}
     </div>
     <div class="email-notice status-${statusClass} reveal"><h3>${escapePublic(copy.title)}</h3><p>${escapePublic(copy.body)}</p></div>
-    ${customerActionPanel(request, reference, customerActions)}
+    <div id="customerActionsPanel">${customerActionPanel(request, reference, customerActions)}</div>
     ${hasQuote ? `<div class="next-panel invoice-panel reveal"><h3>Prepared Service Quote</h3><p class="premium-intro">This is the full estimated service quote for your request. Payments are handled below based on the approved schedule.</p>${invoiceList(items)}<p class="admin-muted">Quote Reference: <strong>QUOTE-${escapePublic(reference.replace(/^APS-/, ""))}</strong></p>${quoteNote ? `<div class="email-notice slim-note"><h3>Client Note</h3><p>${escapePublic(quoteNote)}</p></div>` : ""}</div>` : ""}
-    ${hasQuote ? paymentSchedulePanel({ request, invoices, quoteItems: items, additionalItems, quoteAmount }) : ""}
-    ${canApprove ? `<div class="next-panel reveal"><h3>Review Quote</h3><p>Please review the itemized quote and service details. Approving the quote moves your request to the secure payment step. If anything needs to change, request an edit before paying.</p><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" class="form-submit-status" role="status" aria-live="polite"></div></div>` : ""}
+    ${hasQuote ? `<div id="paymentSchedule">${paymentSchedulePanel({ request, invoices, quoteItems: items, additionalItems, quoteAmount })}</div>` : ""}
+    ${canApprove ? `<div class="next-panel reveal" id="quoteActionPanel"><h3>Review Quote</h3><p>Please review the itemized quote and service details. Approving the quote moves your request to the secure payment step. If anything needs to change, request an edit before paying.</p><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" class="form-submit-status" role="status" aria-live="polite"></div></div>` : ""}
     
     ${receiptPanel({ ...request, status: displayStatus }, reference)}
     ${appointmentDetailsPanel({ ...request, status: displayStatus })}

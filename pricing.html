@@ -375,6 +375,16 @@
                       />
                     </div>
                   </div>
+                  <div class="add-on-box">
+                    <h3>Signer Information</h3>
+                    <p class="form-help">Enter each signer&rsquo;s full legal name exactly as it appears on the government-issued ID they will use. Each remote signer must have an individual email address.</p>
+                    <div id="signerFields"></div>
+                  </div>
+                  <div class="add-on-box">
+                    <h3>Requested Notarial Acts</h3>
+                    <p class="form-help">Choose a type for each requested act. Select &ldquo;I&rsquo;m not sure&rdquo; instead of guessing.</p>
+                    <div id="notarialActFields"></div>
+                  </div>
                 </div>
                 <div data-only="ron">
                   <label> Upload Document(s) </label>
@@ -400,6 +410,11 @@
                   </div>
                 </div>
                 <div data-only="mobile">
+                  <label> Upload Document(s) </label>
+                  <div class="upload-box">
+                    <input multiple name="mobileFiles" type="file" />
+                    <span>Upload the document(s) APS should review before the mobile appointment.</span>
+                  </div>
                   <label> Service Address </label>
                   <input name="street" placeholder="Street address" />
                   <div class="form-grid">
@@ -440,6 +455,26 @@
                       <label> Scan Pages Needed </label>
                       <input min="0" name="scanPages" type="number" value="0" />
                     </div>
+                  </div>
+                </div>
+                <div class="add-on-box" data-only="ron mobile print">
+                  <label class="check">
+                    <input name="documentUploadException" type="checkbox" />
+                    I&rsquo;m unable to upload the document right now.
+                  </label>
+                  <div data-upload-exception>
+                    <label>Why can&rsquo;t you upload the document?</label>
+                    <select name="documentUploadExceptionReason">
+                      <option value="">Select a reason</option>
+                      <option value="physical_copy">I only have a physical copy</option>
+                      <option value="upload_later">I will upload it later</option>
+                      <option value="appointment_or_pickup">I will provide it at my appointment/pickup</option>
+                      <option value="technical_problem">I&rsquo;m having trouble uploading</option>
+                      <option value="not_received">I haven&rsquo;t received the document yet</option>
+                      <option value="other">Other</option>
+                    </select>
+                    <label>Short explanation</label>
+                    <textarea name="documentUploadExceptionDetail" placeholder="Add any detail APS should know."></textarea>
                   </div>
                 </div>
               </div>
@@ -524,6 +559,7 @@
                           </div>
                         </div>
                       </div>
+                      <div id="ronWitnessFields"></div>
                       <p class="form-help">
                         A remote witness provided by Aligned Print & Scan is
                         estimated at $25 per witness. If you select &ldquo;Not
@@ -596,6 +632,7 @@
                           </div>
                         </div>
                       </div>
+                      <div id="mobileWitnessFields"></div>
                       <p class="form-help">
                         A mobile witness provided by Aligned Print & Scan is
                         estimated at $50 per witness. Availability must be

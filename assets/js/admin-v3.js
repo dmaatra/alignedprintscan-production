@@ -55,14 +55,14 @@
   function primaryActionFor(request = {}) {
     const status = String(request.workflow_status || request.status || "under_review").toLowerCase();
     const actions = {
-      under_review: { label: "Build Quote", tab: "payments" },
-      quote_ready: { label: "Review & Send Quote", tab: "payments" },
-      awaiting_approval: { label: "Review Quote", tab: "payments" },
-      changes_requested: { label: "Revise Quote", tab: "payments" },
+      under_review: { label: "Build Quote", tab: "quote" },
+      quote_ready: { label: "Review & Send Quote", tab: "messages" },
+      awaiting_approval: { label: "Review Quote", tab: "quote" },
+      changes_requested: { label: "Revise Quote", tab: "quote" },
       awaiting_payment: { label: "Open Invoice #1", tab: "payments" },
       payment_pending: { label: "Review Payment", tab: "payments" },
-      payment_received: { label: "Schedule Appointment", tab: "appointment" },
-      appointment_confirmed: { label: "Open Appointment", tab: "appointment" },
+      payment_received: { label: "Schedule Fulfillment", tab: "fulfillment" },
+      appointment_confirmed: { label: "Open Fulfillment", tab: "fulfillment" },
       final_balance_due: { label: "Open Invoice #2", tab: "payments" },
       final_payment_received: { label: "Complete Request", tab: "overview" },
       completed: { label: "View Completed Request", tab: "overview" },
@@ -136,15 +136,15 @@
     if (text.includes("workflow") && text.includes("recommended action")) {
       return "overview";
     }
-    if (heading.includes("quote builder")) return "payments";
+    if (heading.includes("quote builder")) return "quote";
     if (heading.includes("invoice payment")) return "payments";
-    if (heading.includes("appointment")) return "appointment";
+    if (heading.includes("appointment")) return "fulfillment";
     if (heading.includes("service details")) return "customer";
     if (heading.includes("uploaded files")) return "documents";
-    if (heading.includes("communication log")) return "communication";
+    if (heading.includes("communication log")) return "messages";
     if (heading.includes("automatic timeline")) return "timeline";
     if (heading.includes("cancellation") || heading.includes("reschedule")) return "overview";
-    if (heading.includes("status update")) return "notes";
+    if (heading.includes("status update")) return "messages";
 
     return "overview";
   }
@@ -152,13 +152,9 @@
   /** Create a helpful empty panel for modules planned for later integration. */
   function createPlaceholder(tabName) {
     const copy = {
-      ron: [
-        "RON Session",
-        "Proof session creation, participant invitations, identity status, recording, audit trail, and completion records will live here.",
-      ],
-      communication: [
-        "Communication",
-        "Customer emails, reminders, support messages, and delivery history will appear in one unified conversation timeline.",
+      messages: [
+        "Messages",
+        "Customer messages, status communications, attachments, and delivery history appear here.",
       ],
       timeline: [
         "Timeline",
@@ -188,11 +184,10 @@
       "overview",
       "customer",
       "documents",
+      "quote",
       "payments",
-      "notes",
-      "appointment",
-      "ron",
-      "communication",
+      "messages",
+      "fulfillment",
       "timeline",
     ];
 
@@ -208,7 +203,7 @@
       panels.get(tabName).append(node);
     });
 
-    ["ron", "communication", "timeline"].forEach((tabName) => {
+    ["messages", "timeline"].forEach((tabName) => {
       if (!panels.get(tabName).children.length) {
         panels.get(tabName).append(createPlaceholder(tabName));
       }
@@ -361,6 +356,8 @@
   const moduleState = {
     requests: [],
     supportTickets: [],
+    messages: [],
+    templates: [],
     activeView: "requests",
     newOrderStep: 0,
     newOrderMaxStep: 0,
@@ -378,11 +375,13 @@
   const moduleTitles = {
     dashboard: ["Overview", "Operations Dashboard", "Live request, schedule, and revenue indicators."],
     calendar: ["Operations", "Scheduling Center", "Plan and export requested and confirmed APS appointments."],
+    review: ["Operations", "Review Queue", "Requests that require a specific administrator decision or correction."],
+    sessions: ["Operations", "RON Sessions", "Cross-order RON preparation and session state."],
     invoices: ["Financial", "Invoices", "Request-level invoice status and outstanding balances."],
     payments: ["Financial", "Payments", "Paid-to-date and remaining balance visibility."],
     customers: ["Clients", "Customers", "Customer directory built from active service requests."],
-    documents: ["Documents", "Document Manager", "Open a request to review or upload its documents."],
-    templates: ["Documents", "Templates", "Reusable operational templates and quick-start resources."],
+    messages: ["Communications", "Messages", "Cross-order customer communication and delivery history."],
+    templates: ["Communications", "Templates", "Master APS branded communication templates."],
     support: ["Support", "Support Tickets", "Current customer support workload."],
     settings: ["System", "Settings", "Portal configuration and integration status."],
     new: ["Operations", "New Order", "Create an order received by phone, email, or in person."],
@@ -411,6 +410,28 @@
     const paid = rows.reduce((sum,r)=>sum+Number(r.paid_amount||0),0);
     const newCount = rows.filter((r)=>["under_review","new"].includes(requestStatus(r))).length;
     return `<div class="admin-v3-module-grid"><article class="admin-v3-module-card admin-v3-kpi"><span>Active requests</span><strong>${rows.length}</strong></article><article class="admin-v3-module-card admin-v3-kpi"><span>Needs review</span><strong>${newCount}</strong></article><article class="admin-v3-module-card admin-v3-kpi"><span>Upcoming dates</span><strong>${upcoming}</strong></article><article class="admin-v3-module-card admin-v3-kpi"><span>Outstanding</span><strong>${displayMoney(outstanding)}</strong></article></div><div class="admin-v3-module-card"><h2>Financial snapshot</h2><p><strong>${displayMoney(paid)}</strong> paid to date across loaded requests · <strong>${displayMoney(outstanding)}</strong> remaining.</p></div>${table(rows.slice(0,10),[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Customer",render:r=>{const c=getCustomer(r)||{};return safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client");}},{label:"Service",render:r=>safe(labelFromStatus(r.service_type))},{label:"Status",render:r=>safe(labelFromStatus(requestStatus(r)))}])}`;
+  }
+  function requestBlockers(request) {
+    const blockers=[];
+    if(["pending","re_review_required"].includes(request.document_state)) blockers.push([request.document_state==="re_review_required"?"Document re-review required":"Document pending","documents"]);
+    if(request.participant_state && request.participant_state!=="complete") blockers.push(["Participant information incomplete","customer"]);
+    if(Number(request.balance_due||0)>0) blockers.push(["Payment pending","payments"]);
+    if(request.workflow_status==="quote_ready") blockers.push(["Quote approval pending","quote"]);
+    if(request.appointment_state==="rescheduling_requested") blockers.push(["Appointment needs confirmation","fulfillment"]);
+    return blockers;
+  }
+  function renderReviewQueue() {
+    const items=activeRequests().flatMap(request=>requestBlockers(request).map(([title,tab])=>({request,title,tab})));
+    if(!items.length)return '<div class="admin-v3-module-card admin-v3-empty-module"><h3>No open review items</h3><p>APS has no loaded requests requiring administrator intervention.</p></div>';
+    return `<div class="admin-v3-module-card admin-v3-table-wrap"><table class="admin-v3-table"><thead><tr><th>Request</th><th>Customer</th><th>Action required</th><th></th></tr></thead><tbody>${items.map(item=>{const customer=getCustomer(item.request)||{};return `<tr><td>${safe(`APS-${item.request.id.slice(0,8).toUpperCase()}`)}</td><td>${safe(`${customer.first_name||""} ${customer.last_name||""}`.trim())}</td><td>${safe(item.title)}</td><td><button class="admin-v3-button admin-v3-button--outline module-open-request" data-request-id="${safe(item.request.id)}" data-tab="${safe(item.tab)}" type="button">Review</button></td></tr>`}).join("")}</tbody></table></div>`;
+  }
+  function renderMessages() {
+    if(!moduleState.messages.length)return '<div class="admin-v3-module-card admin-v3-empty-module"><h3>No messages found</h3><p>Sent and failed customer communications will appear here.</p></div>';
+    return `<div class="admin-v3-module-card admin-v3-table-wrap"><table class="admin-v3-table"><thead><tr><th>Sent</th><th>Recipient</th><th>Subject</th><th>State</th><th></th></tr></thead><tbody>${moduleState.messages.map(message=>`<tr><td>${safe(message.sent_at?new Date(message.sent_at).toLocaleString():"Draft")}</td><td>${safe(message.recipient)}</td><td>${safe(message.subject)}</td><td>${safe(labelFromStatus(message.delivery_state))}</td><td>${message.service_request_id?`<button class="admin-v3-button admin-v3-button--outline module-open-request" data-request-id="${safe(message.service_request_id)}" data-tab="messages" type="button">Open</button>`:""}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+  function renderTemplates() {
+    if(!moduleState.templates.length)return '<div class="admin-v3-module-card admin-v3-empty-module"><h3>No templates loaded</h3><p>Apply the workflow migration to register the complete APS template library.</p></div>';
+    return `<div class="admin-v3-module-grid">${moduleState.templates.map(template=>`<article class="admin-v3-module-card"><p class="small-label">${safe(template.associated_status?labelFromStatus(template.associated_status):"General")}</p><h3>${safe(template.name)}</h3><p>${safe(template.description||"")}</p><p><strong>Required attachment:</strong> ${safe(template.required_attachment_type?labelFromStatus(template.required_attachment_type):"None")}</p></article>`).join("")}</div>`;
   }
   function dateKey(date) {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
@@ -650,12 +671,14 @@
     const rows=activeRequests();
     if(view==="dashboard") return renderDashboard();
     if(view==="calendar") return renderCalendar();
+    if(view==="review") return renderReviewQueue();
+    if(view==="sessions") return table(rows.filter(r=>r.service_type==="ron"),[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Customer",render:r=>{const c=getCustomer(r)||{};return safe(`${c.first_name||""} ${c.last_name||""}`.trim())}},{label:"State",render:r=>safe(labelFromStatus(r.fulfillment_state||r.appointment_state||"needs_preparation"))}]);
     if(view==="new") return renderNewRequest();
     if(view==="invoices") return table(rows,[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Invoice status",render:r=>safe(labelFromStatus(r.invoice_status||r.payment_status||"not_created"))},{label:"Quoted",render:r=>displayMoney(r.quote_amount||r.estimated_total)},{label:"Balance",render:r=>displayMoney(r.balance_due)}]);
     if(view==="payments") return table(rows,[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Paid",render:r=>displayMoney(r.paid_amount)},{label:"Balance",render:r=>displayMoney(r.balance_due)},{label:"State",render:r=>safe(labelFromStatus(r.payment_state||r.payment_status||"not_started"))}]);
     if(view==="customers") return table(rows,[{label:"Customer",render:r=>{const c=getCustomer(r)||{};return safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client");}},{label:"Email",render:r=>safe((getCustomer(r)||{}).email||"")},{label:"Phone",render:r=>safe((getCustomer(r)||{}).phone||"")},{label:"Service",render:r=>safe(labelFromStatus(r.service_type))}]);
-    if(view==="documents") return `<div class="admin-v3-module-card"><h2>Request document workspace</h2><p>Document access remains securely scoped to each request. Open a request directly in its Documents tab.</p></div>${table(rows,[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Customer",render:r=>{const c=getCustomer(r)||{};return safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client");}},{label:"Service",render:r=>safe(labelFromStatus(r.service_type))},{label:"Pages detected",render:r=>safe(r.detected_pdf_page_count||"—")}])}`;
-    if(view==="templates") return '<div class="admin-v3-module-grid"><article class="admin-v3-module-card"><h3>Quote & invoice items</h3><p>Use the request Payments tab to build a quote from centralized APS pricing.</p></article><article class="admin-v3-module-card"><h3>Customer status emails</h3><p>Approved status messages remain connected to the existing Resend functions.</p></article><article class="admin-v3-module-card"><h3>Appointment instructions</h3><p>Store appointment links, location, platform, and preparation notes in each request.</p></article><article class="admin-v3-module-card"><h3>Support responses</h3><p>Use the Support module to track customer follow-up and internal notes.</p></article></div>';
+    if(view==="messages") return renderMessages();
+    if(view==="templates") return renderTemplates();
     if(view==="support") {const tickets=moduleState.supportTickets;return `<div class="admin-v3-module-grid"><article class="admin-v3-module-card admin-v3-kpi"><span>Open tickets</span><strong>${tickets.length}</strong></article></div><div class="admin-v3-module-card"><h2>Support workspace</h2><p>Open the request workspace to use the full support controls already connected to Supabase.</p><button class="admin-v3-button admin-v3-button--navy" id="openLegacySupport" type="button">Open support controls</button></div>`;}
     if(view==="settings") return '<div class="admin-v3-module-grid"><article class="admin-v3-module-card"><h3>Supabase</h3><p>Request storage, authentication, files, and realtime updates are connected through the existing configuration.</p></article><article class="admin-v3-module-card"><h3>Stripe</h3><p>Invoice checkout and webhook logic remain unchanged.</p></article><article class="admin-v3-module-card"><h3>Resend</h3><p>Transactional email functions remain unchanged.</p></article><article class="admin-v3-module-card"><h3>Proof infrastructure</h3><p>Owner-supervised connection and webhook setup only. No transaction controls are available here.</p><div class="admin-v3-agenda-actions"><button class="admin-v3-button admin-v3-button--navy" id="verifyProofConnection" type="button">Verify Proof Connection</button><button class="admin-v3-button admin-v3-button--outline" id="registerProofWebhook" type="button">Register Proof Webhook</button></div><div id="proofInfrastructureStatus" role="status" aria-live="polite"><p>No infrastructure check has run in this session.</p></div></article></div>';
     return renderDashboard();
@@ -931,11 +954,21 @@
       if(calendarDate){moduleState.newOrderCalendarDate=null;moduleState.calendarSelectedDate=calendarDate;const selected=dateFromKey(calendarDate);if(selected)moduleState.calendarMonth=new Date(selected.getFullYear(),selected.getMonth(),1,12);showAdminView("calendar");}else{openRequestFromModule(request.id);}
     } catch(error) {status.textContent=`Could not create request: ${error.message||error}`;} finally {submit.disabled=false;}
   }
-  function showAdminView(view) {
+  async function loadCommunicationData(view) {
+    if(view==="messages") {
+      const {data}=await adminClient.from("messages").select("id,service_request_id,recipient,subject,delivery_state,sent_at,created_at").order("created_at",{ascending:false}).limit(200);
+      moduleState.messages=data||[];
+    }
+    if(view==="templates") {
+      const {data}=await adminClient.from("message_templates").select("id,name,description,associated_status,required_attachment_type,active").eq("active",true).order("name");
+      moduleState.templates=data||[];
+    }
+  }
+  async function showAdminView(view) {
     moduleState.activeView=view;
     const isRequests=view==="requests";
     appView.hidden=!isRequests; moduleView.hidden=isRequests;
-    if(!isRequests){const labels=moduleTitles[view]||moduleTitles.dashboard;$("#moduleEyebrow").textContent=labels[0];$("#moduleTitle").textContent=labels[1];$("#moduleSubtitle").textContent=labels[2];moduleContent.innerHTML=renderModule(view);bindModuleActions();}
+    if(!isRequests){const labels=moduleTitles[view]||moduleTitles.dashboard;$("#moduleEyebrow").textContent=labels[0];$("#moduleTitle").textContent=labels[1];$("#moduleSubtitle").textContent=labels[2];moduleContent.innerHTML='<div class="admin-v3-module-card"><p>Loading…</p></div>';await loadCommunicationData(view);if(moduleState.activeView!==view)return;moduleContent.innerHTML=renderModule(view);bindModuleActions();}
     $("#adminSidebar")?.classList.remove("is-open");
     $("#adminMenuButton")?.setAttribute("aria-expanded","false");
     $$('[data-admin-view]').forEach(link=>link.classList.toggle("is-active",(view==="dashboard"&&link.textContent.includes("Dashboard"))||link.dataset.adminView===view));

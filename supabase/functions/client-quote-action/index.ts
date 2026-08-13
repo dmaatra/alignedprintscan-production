@@ -13,20 +13,17 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const SUPABASE_URL =
-  Deno.env.get("SUPABASE_URL") ||
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ||
   "https://sfsdniavqldgbiretply.supabase.co";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
 const SITE_URL = Deno.env.get("SITE_URL") || "https://alignedprintscan.com";
-const FROM_EMAIL =
-  Deno.env.get("FROM_EMAIL") ||
+const FROM_EMAIL = Deno.env.get("FROM_EMAIL") ||
   "Aligned Print & Scan <hello@alignedprintscan.com>";
-const SUPPORT_EMAIL =
-  Deno.env.get("SUPPORT_EMAIL") || "hello@alignedprintscan.com";
+const SUPPORT_EMAIL = Deno.env.get("SUPPORT_EMAIL") ||
+  "hello@alignedprintscan.com";
 const ADMIN_EMAIL = Deno.env.get("ADMIN_EMAIL") || SUPPORT_EMAIL;
-const LOGO_URL =
-  Deno.env.get("EMAIL_LOGO_URL") ||
+const LOGO_URL = Deno.env.get("EMAIL_LOGO_URL") ||
   `${SITE_URL}/assets/images/logo-full.webp`;
 
 function json(body: unknown, status = 200) {
@@ -86,7 +83,9 @@ function emailShell(body: string, preheader: string) {
   return `<!doctype html>
 <html>
   <body style="margin:0;background:#f6f3ee;font-family:Arial,Helvetica,sans-serif;color:#2d2d2d;line-height:1.6">
-    <div style="display:none;max-height:0;overflow:hidden">${escapeHtml(preheader)}</div>
+    <div style="display:none;max-height:0;overflow:hidden">${
+    escapeHtml(preheader)
+  }</div>
     <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f6f3ee;padding:28px 12px">
       <tr>
         <td align="center">
@@ -125,7 +124,9 @@ async function logTimeline(
     }),
   });
 
-  if (!response.ok) console.warn("Timeline logging failed:", await response.text());
+  if (!response.ok) {
+    console.warn("Timeline logging failed:", await response.text());
+  }
 }
 
 async function logCommunication(
@@ -146,7 +147,9 @@ async function logCommunication(
     }),
   });
 
-  if (!response.ok) console.warn("Communication logging failed:", await response.text());
+  if (!response.ok) {
+    console.warn("Communication logging failed:", await response.text());
+  }
 }
 
 async function sendAdminEmail(subject: string, html: string) {
@@ -180,7 +183,9 @@ async function findRequestId(
       .replace(/^APS-/i, "")
       .toLowerCase();
     const response = await supabaseFetch(
-      `service_requests?select=id&id=ilike.${encodeURIComponent(prefix)}*&limit=1`,
+      `service_requests?select=id&id=ilike.${
+        encodeURIComponent(prefix)
+      }*&limit=1`,
     );
     const rows = await readJson(response);
     id = rows?.[0]?.id || "";
@@ -191,7 +196,7 @@ async function findRequestId(
 
 async function materializeInitialInvoice(requestId: string) {
   const requestResponse = await supabaseFetch(
-    `service_requests?select=id,quote_amount,initial_payment_amount,estimated_total,invoice_number&id=eq.${requestId}&limit=1`,
+    `service_requests?select=id,quote_amount,initial_payment_amount,estimated_total,invoice_number,current_quote_id&id=eq.${requestId}&limit=1`,
   );
   const requestRows = await readJson(requestResponse);
   const request = requestRows?.[0];
@@ -210,6 +215,21 @@ async function materializeInitialInvoice(requestId: string) {
   if (!Number.isFinite(amountDue) || amountDue <= 0) {
     throw new Error("The approved quote does not have a payable amount.");
   }
+  const sourceQuoteId = String(request.current_quote_id || "").trim() || null;
+  if (sourceQuoteId) {
+    const quoteResponse = await supabaseFetch(
+      `quotes?id=eq.${sourceQuoteId}&service_request_id=eq.${requestId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          state: "approved",
+          approved_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+      },
+    );
+    await readJson(quoteResponse);
+  }
 
   const invoiceLookupResponse = await supabaseFetch(
     `invoices?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
@@ -221,8 +241,21 @@ async function materializeInitialInvoice(requestId: string) {
       String(row.invoice_number || "").endsWith("-01")
     );
   }) || null;
-  const invoiceNumber =
-    existingInvoice?.invoice_number || invoiceNumberFromId(requestId);
+  const invoiceNumber = existingInvoice?.invoice_number ||
+    invoiceNumberFromId(requestId);
+
+  if (existingInvoice) {
+    const paid =
+      ["paid", "payment_received", "final_payment_received"].includes(
+        String(existingInvoice.payment_status || existingInvoice.status || "")
+          .toLowerCase(),
+      ) ||
+      Number(existingInvoice.balance_due || 0) <= 0 &&
+        Number(
+            existingInvoice.amount_paid || existingInvoice.paid_amount || 0,
+          ) > 0;
+    if (paid) return existingInvoice;
+  }
 
   let invoice;
 
@@ -233,13 +266,14 @@ async function materializeInitialInvoice(requestId: string) {
         method: "PATCH",
         body: JSON.stringify({
           invoice_number: invoiceNumber,
-          invoice_type: "initial",
+          invoice_type: "primary",
           status: "awaiting_payment",
           payment_status: "unpaid",
           amount_due: amountDue,
           balance_due: amountDue,
           amount_paid: 0,
           paid_amount: 0,
+          source_quote_id: sourceQuoteId,
         }),
       },
     );
@@ -251,13 +285,14 @@ async function materializeInitialInvoice(requestId: string) {
       body: JSON.stringify({
         service_request_id: requestId,
         invoice_number: invoiceNumber,
-        invoice_type: "initial",
+        invoice_type: "primary",
         status: "awaiting_payment",
         payment_status: "unpaid",
         amount_due: amountDue,
         balance_due: amountDue,
         amount_paid: 0,
         paid_amount: 0,
+        source_quote_id: sourceQuoteId,
         note: "Approved initial service invoice.",
       }),
     });
@@ -336,8 +371,12 @@ Deno.serve(async (request) => {
         emailShell(
           `<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">Admin Alert</p>
            <h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">Quote Approved</h1>
-           <p>The client approved the quote for <strong>${escapeHtml(reference)}</strong>.</p>
-           <p>Invoice <strong>${escapeHtml(invoice.invoice_number)}</strong> is now awaiting payment.</p>`,
+           <p>The client approved the quote for <strong>${
+            escapeHtml(reference)
+          }</strong>.</p>
+           <p>Invoice <strong>${
+            escapeHtml(invoice.invoice_number)
+          }</strong> is now awaiting payment.</p>`,
           `Quote approved: ${reference}`,
         ),
       );
@@ -354,7 +393,9 @@ Deno.serve(async (request) => {
         requestId,
         "initial_invoice_created",
         "Invoice #1 created",
-        `${invoice.invoice_number} was created for $${Number(invoice.amount_due || 0).toFixed(2)}.`,
+        `${invoice.invoice_number} was created for $${
+          Number(invoice.amount_due || 0).toFixed(2)
+        }.`,
         "system",
         {
           invoice_id: invoice.id,

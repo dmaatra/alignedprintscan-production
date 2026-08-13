@@ -13,8 +13,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const SUPABASE_URL =
-  Deno.env.get("SUPABASE_URL") ||
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ||
   "https://sfsdniavqldgbiretply.supabase.co";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
@@ -45,8 +44,8 @@ function cleanUuid(value: unknown) {
   const text = String(value || "").trim();
 
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    text,
-  )
+      text,
+    )
     ? text
     : "";
 }
@@ -94,6 +93,7 @@ Deno.serve(async (request) => {
     const requestId = cleanUuid(body.request_id);
     const status = String(body.status || "").trim();
     const note = String(body.note || "").trim();
+    const sendMessage = body.send_message !== false;
 
     if (!requestId) {
       throw new Error("Missing or invalid request_id.");
@@ -133,16 +133,72 @@ Deno.serve(async (request) => {
       const outstanding = (invoiceRows || []).filter((invoice: any) => {
         const invoiceStatus = String(invoice.status || "").toLowerCase();
         if (["void", "cancelled"].includes(invoiceStatus)) return false;
-        const due = Number(invoice.balance_due ?? (Number(invoice.amount_due || 0) - Number(invoice.amount_paid || invoice.paid_amount || 0)));
+        const due = Number(
+          invoice.balance_due ??
+            (Number(invoice.amount_due || 0) -
+              Number(invoice.amount_paid || invoice.paid_amount || 0)),
+        );
         return due > 0.009;
       });
       if (outstanding.length) {
-        throw new Error(`Cannot complete this request while ${outstanding.length} invoice(s) have an outstanding balance.`);
+        throw new Error(
+          `Cannot complete this request while ${outstanding.length} invoice(s) have an outstanding balance.`,
+        );
       }
       update.appointment_state = "completed";
       update.balance_due = 0;
       update.payment_state = "paid_in_full";
       update.payment_status = "paid_in_full";
+    }
+
+    const emailStatuses = [
+      "quote_ready",
+      "awaiting_approval",
+      "payment_received",
+      "final_payment_received",
+      "appointment_confirmed",
+      "appointment_needs_rescheduling",
+      "quote_expired",
+      "completed",
+    ];
+
+    // Customer communication is sent first. A failed delivery must never
+    // produce a false operational transition.
+    if (sendMessage && emailStatuses.includes(status)) {
+      const emailResponse = await fetch(
+        `${SUPABASE_URL}/functions/v1/send-order-email`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            request_id: requestId,
+            status,
+            note,
+            invoice_id: body.invoice_id || body.invoiceId || null,
+          }),
+        },
+      );
+      const emailResult = await emailResponse.json().catch(() => ({}));
+      if (!emailResponse.ok || emailResult?.ok === false) {
+        await supabaseFetch("request_timeline_events", {
+          method: "POST",
+          body: JSON.stringify({
+            service_request_id: requestId,
+            event_type: "message_failed",
+            title: "Message Failed",
+            detail: emailResult?.error || "Customer message could not be sent.",
+            actor_type: "system",
+            metadata: { attempted_status: status },
+          }),
+        });
+        throw new Error(
+          emailResult?.error ||
+            "Customer message could not be sent; status was not changed.",
+        );
+      }
     }
 
     const updateResponse = await supabaseFetch(
@@ -172,40 +228,20 @@ Deno.serve(async (request) => {
       method: "POST",
       body: JSON.stringify({
         service_request_id: requestId,
-        event_type: "status_changed",
-        title: `Status changed to ${status.replaceAll("_", " ")}`,
+        event_type: sendMessage && emailStatuses.includes(status)
+          ? "status_changed"
+          : "status_changed_without_message",
+        title: sendMessage && emailStatuses.includes(status)
+          ? `Status Changed to ${status.replaceAll("_", " ")}`
+          : `Status Changed Without Message to ${status.replaceAll("_", " ")}`,
         detail: note || null,
         actor_type: "admin",
-        metadata: { status },
+        metadata: {
+          status,
+          message_sent: sendMessage && emailStatuses.includes(status),
+        },
       }),
     });
-
-    const emailStatuses = [
-      "quote_ready",
-      "awaiting_approval",
-      "payment_received",
-      "final_payment_received",
-      "appointment_confirmed",
-      "appointment_needs_rescheduling",
-      "quote_expired",
-      "completed",
-    ];
-
-    if (emailStatuses.includes(status)) {
-      await fetch(`${SUPABASE_URL}/functions/v1/send-order-email`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          request_id: requestId,
-          status,
-          note,
-          invoice_id: body.invoice_id || body.invoiceId || null,
-        }),
-      });
-    }
 
     return json({ ok: true, status, update });
   } catch (error) {

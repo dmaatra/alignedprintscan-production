@@ -65,10 +65,16 @@ async function requireAdmin(request: Request) {
   const token = authorization.replace(/^Bearer\s+/i, "").trim();
 
   if (!token || !ANON_KEY) {
-    throw new Response(JSON.stringify({ ok: false, error: "Administrator authentication is required." }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    throw new Response(
+      JSON.stringify({
+        ok: false,
+        error: "Administrator authentication is required.",
+      }),
+      {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
@@ -78,26 +84,49 @@ async function requireAdmin(request: Request) {
   const email = String(user?.email || "").toLowerCase();
 
   if (!email || (ADMIN_EMAILS.size && !ADMIN_EMAILS.has(email))) {
-    throw new Response(JSON.stringify({ ok: false, error: "You are not authorized to record payments." }), {
-      status: 403,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    throw new Response(
+      JSON.stringify({
+        ok: false,
+        error: "You are not authorized to record payments.",
+      }),
+      {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   return { id: user.id, email };
 }
 
-async function logTimeline(requestId: string, eventType: string, title: string, detail: string, metadata: Record<string, unknown> = {}) {
+async function logTimeline(
+  requestId: string,
+  eventType: string,
+  title: string,
+  detail: string,
+  metadata: Record<string, unknown> = {},
+) {
   const response = await supabaseFetch("request_timeline_events", {
     method: "POST",
-    body: JSON.stringify({ service_request_id: requestId, event_type: eventType, title, detail, actor_type: "admin", metadata }),
+    body: JSON.stringify({
+      service_request_id: requestId,
+      event_type: eventType,
+      title,
+      detail,
+      actor_type: "admin",
+      metadata,
+    }),
   });
-  if (!response.ok) console.warn("Timeline logging failed:", await response.text());
+  if (!response.ok) {
+    console.warn("Timeline logging failed:", await response.text());
+  }
 }
 
 function isFinalInvoice(invoice: Record<string, unknown>) {
   return (
-    String(invoice.invoice_type || "").includes("final") ||
+    ["final", "final_balance", "supplemental", "additional"].some((kind) =>
+      String(invoice.invoice_type || "").includes(kind)
+    ) ||
     String(invoice.invoice_number || "").endsWith("-02")
   );
 }
@@ -167,10 +196,9 @@ async function createMissingInitialInvoice(requestId: string) {
     throw new Error("The request does not have a payable initial amount.");
   }
 
-  const invoiceNumber =
-    String(request.invoice_number || "").endsWith("-01")
-      ? String(request.invoice_number)
-      : invoiceNumberFromId(requestId);
+  const invoiceNumber = String(request.invoice_number || "").endsWith("-01")
+    ? String(request.invoice_number)
+    : invoiceNumberFromId(requestId);
 
   const insertResponse = await supabaseFetch("invoices", {
     method: "POST",
@@ -272,25 +300,48 @@ Deno.serve(async (request) => {
       Record<string, unknown>
     >;
     let targetInvoice = requestedInvoiceId
-      ? invoices.find((invoice) => String(invoice.id || "") === requestedInvoiceId) || null
+      ? invoices.find((invoice) =>
+        String(invoice.id || "") === requestedInvoiceId
+      ) || null
       : findTargetInvoice(invoices, paymentStage);
 
     if (targetInvoice) {
       const targetIsFinal = isFinalInvoice(targetInvoice);
       if ((paymentStage === "final") !== targetIsFinal) {
-        throw new Error("The selected invoice does not match the requested payment stage.");
+        throw new Error(
+          "The selected invoice does not match the requested payment stage.",
+        );
       }
       const targetStatus = String(targetInvoice.status || "").toLowerCase();
-      if (paidInvoiceStatuses.has(targetStatus) || invoiceRemainingBalance(targetInvoice) <= 0) {
-        throw new Error("The selected invoice is already paid or has no remaining balance.");
+      if (
+        paidInvoiceStatuses.has(targetStatus) ||
+        invoiceRemainingBalance(targetInvoice) <= 0
+      ) {
+        throw new Error(
+          "The selected invoice is already paid or has no remaining balance.",
+        );
       }
     }
 
     // Existing requests created before Pass 3.2 may show a quote but have no
     // physical Invoice #1 row. Materialize it once, then continue normally.
     if (!targetInvoice && paymentStage !== "final") {
-      targetInvoice = await createMissingInitialInvoice(requestId);
-      invoices = [...invoices, targetInvoice];
+      const existingPrimary = invoices.find((invoice) =>
+        !isFinalInvoice(invoice)
+      );
+      if (existingPrimary) {
+        throw new Error(
+          invoiceRemainingBalance(existingPrimary) <= 0 ||
+            paidInvoiceStatuses.has(
+              String(existingPrimary.status || "").toLowerCase(),
+            )
+            ? "The primary invoice is already paid. No additional payment or invoice was created."
+            : "The existing primary invoice could not be selected. Choose it explicitly before recording payment.",
+        );
+      }
+      const createdInvoice = await createMissingInitialInvoice(requestId);
+      targetInvoice = createdInvoice;
+      invoices = [...invoices, createdInvoice];
     }
 
     if (!targetInvoice) {
@@ -305,7 +356,9 @@ Deno.serve(async (request) => {
 
     if (requestedAmount > invoiceBalance + 0.009) {
       throw new Error(
-        `The payment exceeds the invoice balance of $${invoiceBalance.toFixed(2)}.`,
+        `The payment exceeds the invoice balance of $${
+          invoiceBalance.toFixed(2)
+        }.`,
       );
     }
 
@@ -321,9 +374,7 @@ Deno.serve(async (request) => {
     const invoicePaidInFull = newInvoiceBalance <= 0;
     const paidAt = invoicePaidInFull ? new Date().toISOString() : null;
     const invoiceStatus = invoicePaidInFull
-      ? paymentStage === "final"
-        ? "final_payment_received"
-        : "payment_received"
+      ? paymentStage === "final" ? "final_payment_received" : "payment_received"
       : "partially_paid";
 
     const paymentResponse = await supabaseFetch("request_payments", {
@@ -361,14 +412,13 @@ Deno.serve(async (request) => {
     const paymentState = financials.paidInFull
       ? "paid_in_full"
       : financials.totalPaid > 0
-        ? "partially_paid"
-        : "unpaid";
-    const workflowStatus =
-      paymentStage === "final" && financials.paidInFull
-        ? "final_payment_received"
-        : paymentStage === "initial" && invoicePaidInFull
-          ? "payment_received"
-          : "awaiting_payment";
+      ? "partially_paid"
+      : "unpaid";
+    const workflowStatus = paymentStage === "final" && financials.paidInFull
+      ? "final_payment_received"
+      : paymentStage === "initial" && invoicePaidInFull
+      ? "payment_received"
+      : "awaiting_payment";
 
     const requestUpdateResponse = await supabaseFetch(
       `service_requests?id=eq.${requestId}`,
@@ -394,8 +444,12 @@ Deno.serve(async (request) => {
         service_request_id: requestId,
         status: workflowStatus,
         message: isTest
-          ? `Simulated ${paymentStage} payment recorded for $${paymentAmount.toFixed(2)} on ${targetInvoice.invoice_number}.`
-          : `${paymentStage} payment recorded for $${paymentAmount.toFixed(2)} on ${targetInvoice.invoice_number}.`,
+          ? `Simulated ${paymentStage} payment recorded for $${
+            paymentAmount.toFixed(2)
+          } on ${targetInvoice.invoice_number}.`
+          : `${paymentStage} payment recorded for $${
+            paymentAmount.toFixed(2)
+          } on ${targetInvoice.invoice_number}.`,
         sent_email: false,
         sent_sms: false,
       }),
@@ -405,8 +459,17 @@ Deno.serve(async (request) => {
       requestId,
       isTest ? "test_payment_recorded" : "payment_recorded",
       isTest ? "Test payment recorded" : "Payment recorded",
-      `${paymentStage === "final" ? "Final" : "Initial"} payment of $${paymentAmount.toFixed(2)} was recorded on ${targetInvoice.invoice_number}.`,
-      { invoice_id: targetInvoice.id, invoice_number: targetInvoice.invoice_number, payment_stage: paymentStage, amount: paymentAmount, method: paymentMethod, admin_email: admin.email },
+      `${paymentStage === "final" ? "Final" : "Initial"} payment of $${
+        paymentAmount.toFixed(2)
+      } was recorded on ${targetInvoice.invoice_number}.`,
+      {
+        invoice_id: targetInvoice.id,
+        invoice_number: targetInvoice.invoice_number,
+        payment_stage: paymentStage,
+        amount: paymentAmount,
+        method: paymentMethod,
+        admin_email: admin.email,
+      },
     );
 
     return json({

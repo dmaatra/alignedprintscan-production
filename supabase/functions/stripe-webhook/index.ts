@@ -5,12 +5,51 @@
  * records. The invoice is the source of truth; the request aggregates totals.
  */
 
-const SUPABASE_URL =
-  Deno.env.get("SUPABASE_URL") ||
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ||
   "https://sfsdniavqldgbiretply.supabase.co";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY") || "";
+const STRIPE_WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET") || "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
+
+function secureEqual(left: string, right: string) {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return difference === 0;
+}
+
+async function verifyStripeSignature(rawBody: string, signatureHeader: string) {
+  if (!STRIPE_WEBHOOK_SECRET) {
+    throw new Error("Stripe webhook secret is not configured.");
+  }
+  const parts = signatureHeader.split(",").map((part) => part.trim());
+  const timestamp = parts.find((part) => part.startsWith("t="))?.slice(2) || "";
+  const signatures = parts.filter((part) => part.startsWith("v1=")).map((
+    part,
+  ) => part.slice(3));
+  if (!timestamp || !signatures.length) return false;
+  const age = Math.abs(Date.now() / 1000 - Number(timestamp));
+  if (!Number.isFinite(age) || age > 300) return false;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(STRIPE_WEBHOOK_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const digest = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(`${timestamp}.${rawBody}`),
+  );
+  const expected = Array.from(new Uint8Array(digest)).map((byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+  return signatures.some((signature) => secureEqual(signature, expected));
+}
 
 async function supabaseFetch(path: string, init: RequestInit = {}) {
   return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -52,10 +91,9 @@ async function stripeGet(path: string) {
 }
 
 async function receiptUrlForSession(session: any) {
-  const paymentIntentId =
-    typeof session.payment_intent === "string"
-      ? session.payment_intent
-      : session.payment_intent?.id;
+  const paymentIntentId = typeof session.payment_intent === "string"
+    ? session.payment_intent
+    : session.payment_intent?.id;
 
   if (!paymentIntentId) {
     return null;
@@ -109,7 +147,18 @@ async function recalculateRequest(requestId: string) {
 
 Deno.serve(async (request) => {
   try {
-    const event = await request.json();
+    const rawBody = await request.text();
+    const signature = request.headers.get("stripe-signature") || "";
+    if (!(await verifyStripeSignature(rawBody, signature))) {
+      return new Response(
+        JSON.stringify({ error: "Invalid Stripe signature." }),
+        {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+    const event = JSON.parse(rawBody);
 
     if (event.type !== "checkout.session.completed") {
       return new Response(JSON.stringify({ received: true }), {
@@ -122,7 +171,9 @@ Deno.serve(async (request) => {
     const invoiceId = String(session.metadata?.invoice_id || "").trim();
 
     if (!requestId || !invoiceId) {
-      throw new Error("Stripe checkout metadata is missing request or invoice ID.");
+      throw new Error(
+        "Stripe checkout metadata is missing request or invoice ID.",
+      );
     }
 
     const invoiceResponse = await supabaseFetch(
@@ -144,25 +195,31 @@ Deno.serve(async (request) => {
 
     // Avoid duplicate payment records when Stripe retries the webhook.
     const existingPaymentResponse = await supabaseFetch(
-      `request_payments?select=id&external_reference=eq.${encodeURIComponent(session.id)}&limit=1`,
+      `request_payments?select=id&external_reference=eq.${
+        encodeURIComponent(session.id)
+      }&limit=1`,
     );
     const existingPaymentRows = await readJson(existingPaymentResponse);
 
-    if (!existingPaymentRows?.length) {
-      await supabaseFetch("request_payments", {
-        method: "POST",
-        body: JSON.stringify({
-          service_request_id: requestId,
-          invoice_id: invoiceId,
-          payment_stage: finalInvoice ? "final" : "initial",
-          amount,
-          payment_method: "stripe",
-          external_reference: session.id,
-          note: "Stripe Checkout payment.",
-          is_test: Boolean(session.livemode === false),
-        }),
+    if (existingPaymentRows?.length) {
+      return new Response(JSON.stringify({ received: true, duplicate: true }), {
+        headers: { "Content-Type": "application/json" },
       });
     }
+
+    await supabaseFetch("request_payments", {
+      method: "POST",
+      body: JSON.stringify({
+        service_request_id: requestId,
+        invoice_id: invoiceId,
+        payment_stage: finalInvoice ? "final" : "initial",
+        amount,
+        payment_method: "stripe",
+        external_reference: session.id,
+        note: `Stripe Checkout payment; event ${event.id || "unknown"}.`,
+        is_test: Boolean(session.livemode === false),
+      }),
+    });
 
     await supabaseFetch(`invoices?id=eq.${invoiceId}`, {
       method: "PATCH",
