@@ -1201,9 +1201,9 @@ async function selectRequest(id) {
       customer: customer || {},
       serviceType: selectedRequest.service_type,
       serviceName: serviceLabel(selectedRequest.service_type),
-      requestedDate: selectedRequest.preferred_date || "Not provided",
+      requestedDate: customerPreviewDate(selectedRequest.preferred_date, "Not provided"),
       requestedTime: selectedRequest.preferred_time_window || "Not provided",
-      appointmentDate: selectedRequest.appointment_date || "Not confirmed",
+      appointmentDate: customerPreviewDate(selectedRequest.appointment_date, "Not confirmed"),
       appointmentTime: selectedRequest.appointment_time || "Not confirmed",
       appointmentLocation: selectedRequest.service_type === "ron" ? "" : (selectedRequest.appointment_location || "Not provided"),
       appointmentLink: selectedRequest.service_type === "ron" ? (selectedRequest.appointment_link || selectedRequest.ron_session_url || "") : "",
@@ -1215,11 +1215,11 @@ async function selectRequest(id) {
       quoteItems: invoiceItems.map(item => ({ name: item.description || item.item_name || "Service", quantity: item.quantity || 1, rate: money(item.unit_price || item.rate || 0), total: money(item.line_total || item.amount || 0) })),
       invoiceNumber: currentInvoice.invoice_number || selectedRequest.invoice_number || "Not issued",
       paymentAmount: money(currentInvoice.amount_paid || selectedRequest.paid_amount || 0),
-      paymentDate: selectedRequest.paid_at || "Not recorded",
+      paymentDate: customerPreviewDate(selectedRequest.paid_at, "Not recorded"),
       paidAmount: money(selectedRequest.paid_amount || 0),
       balanceDue: money(selectedRequest.balance_due || currentInvoice.balance_due || 0),
       releasedDocumentNames: files.filter(file => file.customer_visible && file.eligible_for_delivery && file.document_classification !== "internal_document").map(file => file.file_name),
-      completionDate: selectedRequest.completed_at || "Not completed",
+      completionDate: customerPreviewDate(selectedRequest.completed_at, "Not completed"),
       siteUrl: location.origin,
     },
   };
@@ -1775,6 +1775,12 @@ function renderMessageTemplate(value, customer, ref) {
 }
 
 let currentMessagePreviewContext = null;
+
+function customerPreviewDate(value, fallback) {
+  if (!value) return fallback;
+  const date = new Date(String(value).length === 10 ? `${value}T12:00:00-05:00` : value);
+  return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "America/Chicago" }).format(date);
+}
 
 async function fullEmailPreviewModule() {
   return import("../../supabase/functions/_shared/template-preview.mjs");
