@@ -36,6 +36,7 @@ export interface WebhookEventRecord extends AcceptedWebhook {
 }
 export interface WebhookTransaction {
   id: string;
+  service_request_id?: string;
   workflow_category: "aps_originated" | "proof_odn";
   proof_status: string | null;
   aps_status: string;

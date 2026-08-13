@@ -25,7 +25,7 @@ const flags = {
   notarizationRequired: true,
   esignRequired: false,
   identityConfirmationRequired: false,
-  witnessRequired: false as const,
+  witnessRequired: false,
   signingRequiresMeeting: true,
   customerCanAnnotate: false,
   bundlePosition: 0,
@@ -492,18 +492,15 @@ Deno.test("ODN upload blocked", async () => {
     ProofError,
   );
 });
-Deno.test("witness flag blocked without approved mapping", async () => {
+Deno.test("explicit witness requirement is preserved for Proof upload", async () => {
   const x = lifecycle();
-  await assertRejects(
-    () =>
-      x.value.execute({
-        command: "prepare_upload",
-        integrationId: ids.integration,
-        requestFileId: ids.file,
-        flags: { ...flags, witnessRequired: true as never },
-      }, ids.admin),
-    ProofError,
-  );
+  await x.value.execute({
+    command: "prepare_upload",
+    integrationId: ids.integration,
+    requestFileId: ids.file,
+    flags: { ...flags, witnessRequired: true },
+  }, ids.admin);
+  assertEquals(x.repo.asset?.witness_required, true);
 });
 Deno.test("document projection contains no storage path or bytes", async () => {
   const x = lifecycle();

@@ -102,6 +102,60 @@ export class SupabaseWebhookRepository implements WebhookRepository {
       },
     );
   }
+  async recordTimeline(
+    transaction: WebhookTransaction,
+    event: AcceptedWebhook,
+  ) {
+    if (!transaction.service_request_id) return;
+    const existing = await this.rows<{ id: string }>(
+      `request_timeline_events?select=id&service_request_id=eq.${transaction.service_request_id}&metadata-%3E%3Eproof_fingerprint=eq.${event.fingerprint}&limit=1`,
+    );
+    if (existing[0]) return;
+    const labels: Record<string, [string, string]> = {
+      "transaction.document.processed": [
+        "proof_document_processed",
+        "Secure-session document processed",
+      ],
+      "transaction.meeting.created": [
+        "proof_session_available",
+        "Secure notary session became available",
+      ],
+      "transaction.completed": [
+        "proof_transaction_completed",
+        "Secure notarization completed",
+      ],
+      "transaction.completed_with_rejections": [
+        "proof_transaction_rejected_documents",
+        "Secure notarization completed with rejected documents",
+      ],
+      "transaction.released": [
+        "proof_documents_available",
+        "Completed notarized documents available for retrieval",
+      ],
+      "transaction.expired": [
+        "proof_transaction_expired",
+        "Secure notarization transaction expired",
+      ],
+    };
+    const label = labels[event.eventName];
+    if (!label) return;
+    const response = await this.request("request_timeline_events", {
+      method: "POST",
+      body: JSON.stringify({
+        service_request_id: transaction.service_request_id,
+        event_type: label[0],
+        title: label[1],
+        detail: "Proof lifecycle state synchronized to APS.",
+        actor_type: "system",
+        visibility: "internal",
+        metadata: {
+          proof_fingerprint: event.fingerprint,
+          proof_event: event.eventName,
+        },
+      }),
+    });
+    if (!response.ok && response.status !== 409) throw persist();
+  }
   private async patch(path: string, body: Record<string, unknown>) {
     const response = await this.request(path, {
       method: "PATCH",

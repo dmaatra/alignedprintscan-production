@@ -32,7 +32,7 @@ export interface ProofDocumentService {
     notarizationRequired: boolean;
     esignRequired: boolean;
     identityConfirmationRequired: boolean;
-    witnessRequired: false;
+    witnessRequired: boolean;
     signingRequiresMeeting: boolean;
     customerCanAnnotate: boolean;
     bundlePosition: number | null;
@@ -184,7 +184,7 @@ export class ProofDocumentLifecycle {
       notarization_required: flags.notarizationRequired,
       esign_required: flags.esignRequired,
       identity_confirmation_required: flags.identityConfirmationRequired,
-      witness_required: false,
+      witness_required: flags.witnessRequired,
       signing_requires_meeting: flags.signingRequiresMeeting,
       customer_can_annotate: flags.customerCanAnnotate,
       bundle_position: flags.bundlePosition,
@@ -287,7 +287,7 @@ export class ProofDocumentLifecycle {
         notarizationRequired: asset.notarization_required,
         esignRequired: asset.esign_required,
         identityConfirmationRequired: asset.identity_confirmation_required,
-        witnessRequired: false,
+        witnessRequired: asset.witness_required,
         signingRequiresMeeting: asset.signing_requires_meeting,
         customerCanAnnotate: asset.customer_can_annotate,
         bundlePosition: asset.bundle_position,
@@ -640,11 +640,6 @@ function validateFlags(
   if (!input || !PROOF_REQUIREMENTS.includes(input.requirement as never)) {
     throw readiness("An explicit supported document requirement is required.");
   }
-  if (input.witnessRequired) {
-    throw readiness(
-      "Proof witness_required is blocked until APS approves an explicit witness mapping.",
-    );
-  }
   const requirement = input.requirement!;
   const expected = {
     notarization: requirement === "notarization",
@@ -674,7 +669,7 @@ function validateFlags(
     notarizationRequired: expected.notarization,
     esignRequired: expected.esign,
     identityConfirmationRequired: expected.identity,
-    witnessRequired: false,
+    witnessRequired: Boolean(input.witnessRequired),
     signingRequiresMeeting: Boolean(input.signingRequiresMeeting),
     customerCanAnnotate: Boolean(input.customerCanAnnotate),
     bundlePosition: bundle,

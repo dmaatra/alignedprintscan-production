@@ -10,6 +10,7 @@ import type {
   ReadinessContext,
   SignerRecord,
 } from "./activation-types.ts";
+import { approvedSignerInputs } from "./activation-types.ts";
 const id = "11111111-1111-4111-8111-111111111111",
   req = "22222222-2222-4222-8222-222222222222",
   admin = "33333333-3333-4333-8333-333333333333";
@@ -80,6 +81,14 @@ const tx = (p: Partial<ActivationTransaction> = {}): ActivationTransaction => ({
 });
 const context = (p: Partial<ReadinessContext> = {}): ReadinessContext => ({
   approvedSignerIdentitySource: true,
+  participants: [{
+    id: "66666666-6666-4666-8666-666666666666",
+    participant_type: "signer",
+    full_legal_name: "Avery Middle Signer",
+    email: "AVERY@EXAMPLE.TEST",
+    sort_order: 1,
+    identity_name_confirmed: true,
+  }],
   request: {
     id: req,
     service_type: "ron",
@@ -210,6 +219,32 @@ Deno.test("multiple valid signers", () => {
   x.r.c.signers = [signer(1), signer(2)];
   x.r.c.ron!.number_of_signers = 2;
   assert(x.l.evaluate(x.r.t, x.r.c, true).ready);
+});
+Deno.test("approved current-request participants map in stable signer order", () => {
+  const c = context();
+  c.participants = [{
+    id: "77777777-7777-4777-8777-777777777777",
+    participant_type: "signer",
+    full_legal_name: "Second Legal Signer",
+    email: "SECOND@EXAMPLE.TEST",
+    sort_order: 2,
+    identity_name_confirmed: true,
+  }, c.participants[0]];
+  assertEquals(approvedSignerInputs(c), [{
+    apsSignerReference: "66666666-6666-4666-8666-666666666666",
+    firstName: "Avery",
+    middleName: "Middle",
+    lastName: "Signer",
+    email: "avery@example.test",
+    order: 1,
+  }, {
+    apsSignerReference: "77777777-7777-4777-8777-777777777777",
+    firstName: "Second",
+    middleName: "Legal",
+    lastName: "Signer",
+    email: "second@example.test",
+    order: 2,
+  }]);
 });
 Deno.test("missing signer email blocked", () => {
   const x = setup();
@@ -382,6 +417,12 @@ const blocks: [string, (x: ReturnType<typeof setup>) => void, string][] = [
   }, "DOCUMENT_FLAGS_INCOMPLETE"],
   ["payment gate failure blocks", (x) => {
     x.r.c.invoices[0].balance_due = 1;
+  }, "PAYMENT_REQUIRED"],
+  ["missing issued invoice blocks", (x) => {
+    x.r.c.invoices = [];
+  }, "PAYMENT_REQUIRED"],
+  ["draft invoice does not satisfy payment gate", (x) => {
+    x.r.c.invoices[0].status = "draft";
   }, "PAYMENT_REQUIRED"],
   ["missing appointment blocks", (x) => {
     x.r.c.request.appointment_confirmed_at = null;

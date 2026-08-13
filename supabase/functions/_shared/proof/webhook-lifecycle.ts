@@ -20,6 +20,10 @@ export interface WebhookRepository {
     documentId: string | null,
     processed: boolean,
   ): Promise<void>;
+  recordTimeline?(
+    transaction: WebhookTransaction,
+    event: AcceptedWebhook,
+  ): Promise<void>;
 }
 
 const precedence: Record<string, number> = {
@@ -154,6 +158,7 @@ export class ProofWebhookLifecycle {
       patch.webhook_refresh_required = true;
     }
     await this.repository.updateTransaction(transaction.id, patch);
+    await this.repository.recordTimeline?.(transaction, row);
     await this.repository.updateEvent(row.id, {
       proof_transaction_record_id: transaction.id,
       processing_status: "processed",

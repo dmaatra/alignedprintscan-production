@@ -1153,6 +1153,106 @@ async function uploadAdminDocuments(requestId) {
   await selectRequest(requestId);
 }
 
+async function proofCommand(command, extra = {}, documentCommand = false) {
+  const { data, error } = await adminClient.functions.invoke(
+    documentCommand ? "proof-admin-document" : "proof-admin-transaction",
+    { body: { command, serviceRequestId: selectedRequest?.id, ...extra } },
+  );
+  if (error || data?.ok === false) throw new Error(data?.error?.message || error?.message || "Proof operation failed.");
+  return data;
+}
+
+function proofState(value) {
+  return statusLabel(value || "not_started");
+}
+
+async function loadProofControlPanel() {
+  const host = $("#proofControlPanel");
+  if (!host || selectedRequest?.service_type !== "ron") return;
+  try {
+    const data = await proofCommand("get_control_panel");
+    const tx = data.transaction;
+    const participants = data.participants || [];
+    const signers = data.signers || [];
+    const assets = data.assets || [];
+    const sourceAssets = assets.filter(asset => asset.asset_type === "source_document");
+    const completedAssets = assets.filter(asset => ["completed_document", "audit_trail"].includes(asset.asset_type));
+    const appointmentReady = Boolean(data.request?.appointment_confirmed_at && data.request?.appointment_date && data.request?.appointment_time);
+    host.innerHTML = `
+      <div class="admin-v3-section-heading"><span class="small-label">RON Session / Proof</span><h3>Secure Online Notary Orchestration</h3></div>
+      <p class="admin-muted">APS owns business readiness and customer delivery. Proof executes the secure notarization.</p>
+      ${!data.configured ? '<div class="email-notice"><strong>Proof is not configured.</strong><p>Configure the required server-side Proof secrets before using transaction actions.</p></div>' : ""}
+      <div class="admin-detail-grid proof-control-grid">
+        <div><span class="small-label">RON readiness</span><strong>${data.invoices?.primaryPaymentReady && appointmentReady ? "Business prerequisites ready" : "Preparation required"}</strong></div>
+        <div><span class="small-label">Primary payment</span><strong>${data.invoices?.primaryPaymentReady ? "Satisfied" : `Blocked · ${money(data.invoices?.openBalance || 0)} open`}</strong></div>
+        <div><span class="small-label">Appointment</span><strong>${appointmentReady ? "Confirmed" : "Not confirmed"}</strong></div>
+        <div><span class="small-label">Approved signers</span><strong>${participants.filter(person => person.participant_type === "signer").length} / ${data.ron?.number_of_signers || 0}</strong></div>
+        <div><span class="small-label">Proof transaction</span><strong>${tx?.proof_transaction_id ? escapeHtml(tx.proof_transaction_id) : "Not created"}</strong></div>
+        <div><span class="small-label">Provider status</span><strong>${proofState(tx?.proof_status || tx?.creation_state)}</strong></div>
+        <div><span class="small-label">Activation</span><strong>${proofState(tx?.activation_state)}</strong></div>
+        <div><span class="small-label">Last synchronization</span><strong>${tx?.last_synced_at ? new Date(tx.last_synced_at).toLocaleString() : "Not synchronized"}</strong></div>
+      </div>
+      ${tx?.last_error_message || tx?.webhook_manual_review_reason ? `<div class="email-notice"><strong>Administrator attention required</strong><p>${escapeHtml(tx.last_error_message || tx.webhook_manual_review_reason)}</p></div>` : ""}
+      <div class="proof-control-section"><h4>Signers</h4>${signers.length ? `<ul class="admin-file-list">${signers.map(signer => `<li><strong>Signer ${signer.signer_position}: ${escapeHtml([signer.first_name,signer.last_name].filter(Boolean).join(" ") || signer.email)}</strong><small>${proofState(signer.configuration_state)} · ${proofState(signer.proof_status)}${signer.access_link_present ? " · Secure access available" : ""}</small></li>`).join("")}</ul>` : '<p class="admin-muted">Approved APS participants have not been mapped to Proof.</p>'}</div>
+      <div class="proof-control-section"><h4>Documents</h4>${sourceAssets.length ? `<ul class="admin-file-list">${sourceAssets.map(asset => `<li><strong>${escapeHtml(asset.file_name)}</strong><small>${proofState(asset.upload_state)} · ${proofState(asset.processing_state)} · ${proofState(asset.requirement)}${asset.witness_required ? " · Witness required" : ""}</small></li>`).join("")}</ul>` : '<p class="admin-muted">No APS source documents have been selected for Proof.</p>'}<div id="proofEligibleDocuments"></div></div>
+      <div class="proof-control-section"><h4>Completed assets</h4>${completedAssets.length ? `<ul class="admin-file-list">${completedAssets.map(asset => `<li><strong>${escapeHtml(asset.file_name)}</strong><small>${proofState(asset.retrieval_state)} · Internal until explicitly released through APS Documents</small>${asset.retrieval_state === "retrieved" ? `<button class="btn dark proof-stage-asset" data-asset-id="${escapeHtml(asset.id)}" type="button">Stage for Review</button>` : ""}</li>`).join("")}</ul>` : '<p class="admin-muted">No completed notarized documents have been retrieved.</p>'}${tx?.completed_assets_available ? `<div class="status-actions">${sourceAssets.map(asset => `<button class="btn dark proof-retrieve-document" data-source-id="${escapeHtml(asset.id)}" type="button">Retrieve ${escapeHtml(asset.file_name)}</button>`).join("")}<button class="btn dark" id="proofRetrieveAudit" type="button">Retrieve Audit Trail</button></div>` : ""}</div>
+      <div class="status-actions proof-actions">
+        ${!tx ? '<button class="btn primary" id="proofCreateDraft" type="button">Create Proof Draft</button>' : ""}
+        ${tx && !signers.length ? '<button class="btn dark" id="proofConfigureSigners" type="button">Map Approved Signers</button>' : ""}
+        ${tx ? '<button class="btn dark" id="proofLoadDocuments" type="button">Select APS Documents</button><button class="btn dark" id="proofSyncStatus" type="button">Sync Proof Status</button>' : ""}
+        ${tx && tx.activation_state !== "activated" ? '<button class="btn primary" id="proofActivate" type="button">Activate Prepared Transaction</button>' : ""}
+      </div>
+      <div id="proofActionStatus" role="status" aria-live="polite"></div>`;
+    $("#proofCreateDraft")?.addEventListener("click", async () => runProofUiAction(async () => {
+      const primary = participants.find(person => person.participant_type === "signer");
+      if (!primary?.email) throw new Error("An approved signer email is required.");
+      await proofCommand("create_draft", { signerEmail: primary.email });
+    }));
+    $("#proofConfigureSigners")?.addEventListener("click", () => runProofUiAction(() => proofCommand("configure_approved_signers", { integrationId: tx.id })));
+    $("#proofSyncStatus")?.addEventListener("click", () => runProofUiAction(() => proofCommand("refresh", { integrationId: tx.id })));
+    $("#proofLoadDocuments")?.addEventListener("click", () => loadEligibleProofDocuments(tx.id));
+    $("#proofActivate")?.addEventListener("click", () => runProofUiAction(async () => {
+      const readiness = await proofCommand("evaluate_activation_readiness", { integrationId: tx.id, confirmActivation: false });
+      if (readiness.readiness?.blockingCodes?.filter(code => code !== "ADMIN_CONFIRMATION_REQUIRED").length) throw new Error(`Activation blocked: ${readiness.readiness.blockingCodes.join(", ")}`);
+      if (!confirm("Activate this prepared Proof transaction? Proof will send its required signer invitation.")) return;
+      await proofCommand("activate", { integrationId: tx.id, confirmActivation: true });
+    }));
+    $$(".proof-retrieve-document").forEach(button => button.addEventListener("click", () => runProofUiAction(() => proofCommand("retrieve_completed_document", { integrationId: tx.id, sourceAssetId: button.dataset.sourceId }, true))));
+    $("#proofRetrieveAudit")?.addEventListener("click", () => runProofUiAction(() => proofCommand("retrieve_audit_trail", { integrationId: tx.id }, true)));
+    $$(".proof-stage-asset").forEach(button => button.addEventListener("click", () => runProofUiAction(async () => {
+      await proofCommand("stage_completed_asset", { integrationId: tx.id, assetId: button.dataset.assetId }, true);
+      await selectRequest(selectedRequest.id);
+      window.AdminV3?.activateTab("documents");
+    })));
+  } catch (error) {
+    host.innerHTML = `<div class="admin-v3-section-heading"><span class="small-label">RON Session / Proof</span><h3>Secure Online Notary Orchestration</h3></div><div class="email-notice"><strong>Proof state could not be loaded.</strong><p>${escapeHtml(error.message || String(error))}</p></div>`;
+  }
+}
+
+async function runProofUiAction(action) {
+  const status = $("#proofActionStatus");
+  if (status) status.textContent = "Working…";
+  try { await action(); if (status) status.textContent = "Proof operation completed."; await loadProofControlPanel(); }
+  catch (error) { if (status) status.textContent = error.message || String(error); }
+}
+
+async function loadEligibleProofDocuments(integrationId) {
+  const result = await proofCommand("list_eligible_source_documents", { integrationId }, true);
+  const host = $("#proofEligibleDocuments");
+  if (!host) return;
+  host.innerHTML = `${result.documents?.map(document => `<label class="check"><input class="proof-document-choice" type="checkbox" value="${escapeHtml(document.requestFileId)}" ${document.eligible ? "" : "disabled"}> ${escapeHtml(document.fileName)} <small>${document.eligible ? "Eligible PDF" : escapeHtml(document.reason)}</small></label>`).join("") || '<p class="admin-muted">No eligible APS documents.</p>'}<div class="admin-detail-grid"><label>Proof requirement<select id="proofDocumentRequirement"><option value="notarization">Notarization</option><option value="esign">Electronic signature</option><option value="identity_confirmation">Identity confirmation</option><option value="readonly">Read only</option><option value="non_essential">Non-essential</option></select></label><label class="check"><input id="proofWitnessRequired" type="checkbox"> Witness required for selected document(s)</label></div><button class="btn primary" id="proofPrepareDocuments" type="button">Prepare &amp; Upload Selected</button>`;
+  $("#proofPrepareDocuments")?.addEventListener("click", () => runProofUiAction(async () => {
+    const requirement = $("#proofDocumentRequirement").value;
+    const flags = { requirement, notarizationRequired: requirement === "notarization", esignRequired: requirement === "esign", identityConfirmationRequired: requirement === "identity_confirmation", witnessRequired: $("#proofWitnessRequired").checked, signingRequiresMeeting: requirement === "notarization", customerCanAnnotate: requirement === "esign", bundlePosition: null };
+    const selected = $$(".proof-document-choice:checked").map(input => input.value);
+    if (!selected.length) throw new Error("Select at least one eligible APS PDF.");
+    for (const requestFileId of selected) {
+      const prepared = await proofCommand("prepare_upload", { integrationId, requestFileId, flags }, true);
+      await proofCommand("upload_source_document", { integrationId, assetId: prepared.document.assetId }, true);
+    }
+  }));
+}
+
 async function selectRequest(id) {
   selectedRequest = requests.find((r) => r.id === id);
   renderStats();
@@ -1325,6 +1425,8 @@ async function selectRequest(id) {
         <button id="saveAppointmentBtn" class="btn primary" type="button">Save Appointment Details</button>
       </div>
     </div>
+
+    ${selectedRequest.service_type === "ron" ? '<section class="admin-detail-section proof-control-panel" id="proofControlPanel" data-v3-tab-target="fulfillment"><div class="admin-v3-section-heading"><span class="small-label">RON Session / Proof</span><h3>Loading secure-session orchestration…</h3></div></section>' : ""}
 
     <div class="admin-detail-section completion-facts-card" data-v3-tab-target="fulfillment">
       <div class="admin-v3-section-heading"><span class="small-label">Completion Gate</span><h3>Authoritative Fulfillment Facts</h3></div>
@@ -1512,6 +1614,7 @@ async function selectRequest(id) {
 
   // Convert the newly rendered long detail view into the v3 tab workspace.
   window.AdminV3?.organizeRequestDetail();
+  void loadProofControlPanel();
   void renderArchivedCustomerUpdates(id);
 }
 

@@ -51,21 +51,25 @@ export class SupabaseActivationRepository implements ActivationRepository {
     ))[0] ?? null;
   }
   async context(tx: ActivationTransaction): Promise<ReadinessContext> {
-    const [request, ron, invoices, signers, assets] = await Promise.all([
-      this.rows<ReadinessContext["request"]>(
-        `service_requests?select=id,service_type,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_state&id=eq.${tx.service_request_id}&limit=1`,
-      ),
-      this.rows<NonNullable<ReadinessContext["ron"]>>(
-        `ron_requests?select=number_of_signers,witness_need,witness_count,witness_provider,client_witness_count,provided_witness_count,witness_review_required&service_request_id=eq.${tx.service_request_id}&limit=1`,
-      ),
-      this.rows<ReadinessContext["invoices"][number]>(
-        `invoices?select=status,payment_status,balance_due,amount_due,amount_paid,paid_amount&service_request_id=eq.${tx.service_request_id}`,
-      ),
-      this.listSigners(tx.id),
-      this.rows<ReadinessContext["assets"][number]>(
-        `proof_transaction_assets?select=proof_asset_id,upload_state,processing_state,requirement,manual_review_reason&proof_transaction_record_id=eq.${tx.id}&asset_type=eq.source_document`,
-      ),
-    ]);
+    const [request, ron, invoices, signers, assets, participants] =
+      await Promise.all([
+        this.rows<ReadinessContext["request"]>(
+          `service_requests?select=id,service_type,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_state&id=eq.${tx.service_request_id}&limit=1`,
+        ),
+        this.rows<NonNullable<ReadinessContext["ron"]>>(
+          `ron_requests?select=number_of_signers,witness_need,witness_count,witness_provider,client_witness_count,provided_witness_count,witness_review_required&service_request_id=eq.${tx.service_request_id}&limit=1`,
+        ),
+        this.rows<ReadinessContext["invoices"][number]>(
+          `invoices?select=status,payment_status,balance_due,amount_due,amount_paid,paid_amount&service_request_id=eq.${tx.service_request_id}`,
+        ),
+        this.listSigners(tx.id),
+        this.rows<ReadinessContext["assets"][number]>(
+          `proof_transaction_assets?select=proof_asset_id,upload_state,processing_state,requirement,manual_review_reason&proof_transaction_record_id=eq.${tx.id}&asset_type=eq.source_document`,
+        ),
+        this.rows<ReadinessContext["participants"][number]>(
+          `request_participants?select=id,participant_type,full_legal_name,email,sort_order,identity_name_confirmed&service_request_id=eq.${tx.service_request_id}&participant_type=eq.signer&order=sort_order.asc`,
+        ),
+      ]);
     if (!request[0]) {
       throw new ProofError(
         "PROOF_NOT_FOUND",
@@ -74,9 +78,16 @@ export class SupabaseActivationRepository implements ActivationRepository {
       );
     }
     return {
-      // APS currently stores signer count, not approved structured identities.
-      // Keep production configuration fail-closed until that source is approved.
-      approvedSignerIdentitySource: false,
+      approvedSignerIdentitySource: Boolean(
+        ron[0]?.number_of_signers &&
+          participants.length === ron[0].number_of_signers &&
+          participants.every((participant) =>
+            participant.id && participant.identity_name_confirmed === true &&
+            participant.full_legal_name?.trim() &&
+            /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(participant.email || "")
+          ),
+      ),
+      participants,
       request: request[0],
       ron: ron[0] ?? null,
       invoices,

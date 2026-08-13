@@ -45,6 +45,7 @@ export interface ConfigureSignerInput {
 export interface CreateDraftInput {
   externalId: string;
   signerEmail: string;
+  transactionName?: string;
 }
 
 export interface AddDocumentInput {
@@ -61,7 +62,7 @@ export interface AddDocumentInput {
   notarizationRequired: boolean;
   esignRequired: boolean;
   identityConfirmationRequired: boolean;
-  witnessRequired: false;
+  witnessRequired: boolean;
   signingRequiresMeeting: boolean;
   customerCanAnnotate: boolean;
   bundlePosition: number | null;
@@ -163,6 +164,7 @@ export class ProofService {
       json: {
         draft: true,
         external_id: input.externalId,
+        transaction_name: input.transactionName || undefined,
         signer: { email: input.signerEmail },
       },
     });
@@ -253,7 +255,7 @@ export class ProofService {
       "identity_confirmation_required",
       String(input.identityConfirmationRequired),
     );
-    form.set("witness_required", "false");
+    form.set("witness_required", String(input.witnessRequired));
     form.set("signing_requires_meeting", String(input.signingRequiresMeeting));
     form.set("customer_can_annotate", String(input.customerCanAnnotate));
     if (input.bundlePosition !== null) {

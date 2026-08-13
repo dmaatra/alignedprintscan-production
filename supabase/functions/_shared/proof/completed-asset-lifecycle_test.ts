@@ -14,6 +14,7 @@ const pdf = new TextEncoder().encode("%PDF-1.7 test completed content");
 class Repo implements CompletedAssetRepository {
   tx = {
     id: integrationId,
+    service_request_id: "55555555-5555-4555-8555-555555555555",
     proof_transaction_id: "ot_test",
     workflow_category: "aps_originated",
     completed_assets_available: true,
@@ -23,6 +24,7 @@ class Repo implements CompletedAssetRepository {
   rows: CompletedAssetRecord[] = [];
   stored: Array<{ path: string; bytes: Uint8Array }> = [];
   storageFail = false;
+  staged: Array<{ assetId: string; serviceRequestId: string }> = [];
   async integration() {
     return this.tx;
   }
@@ -57,6 +59,10 @@ class Repo implements CompletedAssetRepository {
   async store(path: string, bytes: Uint8Array) {
     if (this.storageFail) throw new Error("storage");
     this.stored.push({ path, bytes });
+  }
+  async stageForReview(asset: CompletedAssetRecord, serviceRequestId: string) {
+    this.staged.push({ assetId: asset.id, serviceRequestId });
+    return "44444444-4444-4444-8444-444444444444";
   }
 }
 class Service implements CompletedAssetService {
@@ -97,6 +103,40 @@ Deno.test("completed document retrieved", async () => {
     sourceAssetId: sourceId,
   }, admin) as { asset: { stored: boolean } };
   assert(r.asset.stored);
+});
+Deno.test("retrieved document stages into its own APS request review queue", async () => {
+  const x = setup();
+  const retrieved = await x.life.execute({
+    command: "retrieve_completed_document",
+    integrationId,
+    sourceAssetId: sourceId,
+  }, admin) as { asset: { assetId: string } };
+  const result = await x.life.execute({
+    command: "stage_completed_asset",
+    integrationId,
+    assetId: retrieved.asset.assetId,
+  }, admin) as { requestFileId: string };
+  assertEquals(result.requestFileId, "44444444-4444-4444-8444-444444444444");
+  assertEquals(x.repo.staged, [{
+    assetId: retrieved.asset.assetId,
+    serviceRequestId: x.repo.tx.service_request_id,
+  }]);
+});
+Deno.test("ODN asset staging is blocked without authorization", async () => {
+  const x = setup();
+  const retrieved = await x.life.execute({
+    command: "retrieve_completed_document",
+    integrationId,
+    sourceAssetId: sourceId,
+  }, admin) as { asset: { assetId: string } };
+  x.repo.tx.workflow_category = "proof_odn";
+  await assertRejects(() =>
+    x.life.execute({
+      command: "stage_completed_asset",
+      integrationId,
+      assetId: retrieved.asset.assetId,
+    }, admin)
+  );
 });
 Deno.test("invalid PDF blocked", async () => {
   const x = setup();

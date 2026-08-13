@@ -3,6 +3,7 @@ import type { ProofTransactionRecord } from "./transaction-types.ts";
 export type ActivationCommand =
   | "list_signers"
   | "configure_signers"
+  | "configure_approved_signers"
   | "refresh_signers"
   | "evaluate_activation_readiness"
   | "activate"
@@ -56,6 +57,14 @@ export interface ActivationTransaction extends ProofTransactionRecord {
 }
 export interface ReadinessContext {
   approvedSignerIdentitySource: boolean;
+  participants: Array<{
+    id: string;
+    participant_type: string;
+    full_legal_name: string | null;
+    email: string | null;
+    sort_order: number | null;
+    identity_name_confirmed: boolean | null;
+  }>;
   request: {
     id: string;
     service_type: string;
@@ -94,6 +103,26 @@ export interface ReadinessContext {
       manual_review_reason: string | null;
     }
   >;
+}
+
+export function approvedSignerInputs(context: ReadinessContext): SignerInput[] {
+  if (!context.approvedSignerIdentitySource) return [];
+  return context.participants
+    .filter((participant) => participant.participant_type === "signer")
+    .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0))
+    .map((participant, index) => {
+      const names = String(participant.full_legal_name || "").trim().split(
+        /\s+/,
+      );
+      return {
+        apsSignerReference: participant.id,
+        firstName: names[0] || undefined,
+        middleName: names.length > 2 ? names.slice(1, -1).join(" ") : undefined,
+        lastName: names.length > 1 ? names.at(-1) : undefined,
+        email: String(participant.email || "").trim().toLowerCase(),
+        order: index + 1,
+      };
+    });
 }
 export interface ActivationCommandInput {
   command: ActivationCommand;

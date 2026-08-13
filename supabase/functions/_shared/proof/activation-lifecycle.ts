@@ -8,6 +8,7 @@ import type { ActivationRepository } from "./activation-repository.ts";
 import {
   type ActivationCommandInput,
   type ActivationTransaction,
+  approvedSignerInputs,
   type ReadinessContext,
   type ReadinessResult,
   type SignerInput,
@@ -54,6 +55,14 @@ export class ProofActivationLifecycle {
         };
       case "configure_signers":
         return this.configure(tx, input, admin);
+      case "configure_approved_signers": {
+        const context = await this.repo.context(tx);
+        return this.configure(
+          tx,
+          { ...input, signers: approvedSignerInputs(context) },
+          admin,
+        );
+      }
       case "refresh_signers":
         return this.refresh(tx, admin);
       case "evaluate_activation_readiness":
@@ -340,14 +349,19 @@ export class ProofActivationLifecycle {
     }
     const witness = witnessPolicy(c);
     if (witness) b.push(witness);
+    const issuedInvoices = c.invoices.filter((invoice) =>
+      !["draft", "void", "cancelled"].includes(
+        (invoice.status ?? "").toLowerCase(),
+      )
+    );
     if (
-      c.invoices.some((i) =>
-        !["void", "cancelled"].includes((i.status ?? "").toLowerCase()) &&
+      !issuedInvoices.length ||
+      issuedInvoices.some((invoice) =>
         Number(
-            i.balance_due ??
-              (Number(i.amount_due ?? 0) -
-                Number(i.amount_paid ?? i.paid_amount ?? 0)),
-          ) > 0
+          invoice.balance_due ??
+            (Number(invoice.amount_due ?? 0) -
+              Number(invoice.amount_paid ?? invoice.paid_amount ?? 0)),
+        ) > 0
       )
     ) b.push("PAYMENT_REQUIRED");
     if (
@@ -360,7 +374,7 @@ export class ProofActivationLifecycle {
     if (tx.activation_state === "activated") b.push("ALREADY_ACTIVATED");
     if (tx.activation_state === "ambiguous") b.push("ACTIVATION_AMBIGUOUS");
     if (!confirmed) b.push("ADMIN_CONFIRMATION_REQUIRED");
-    if (!c.invoices.length) w.push("NO_REQUIRED_INVOICES_FOUND");
+    if (!issuedInvoices.length) w.push("NO_REQUIRED_INVOICES_FOUND");
     return {
       ready: b.length === 0,
       blockingCodes: [...new Set(b)],

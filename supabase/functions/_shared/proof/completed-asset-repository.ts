@@ -15,6 +15,10 @@ export interface CompletedAssetRepository {
     patch: Record<string, unknown>,
   ): Promise<CompletedAssetRecord>;
   store(path: string, bytes: Uint8Array): Promise<void>;
+  stageForReview(
+    asset: CompletedAssetRecord,
+    serviceRequestId: string,
+  ): Promise<string>;
 }
 export class SupabaseCompletedAssetRepository
   implements CompletedAssetRepository {
@@ -106,6 +110,94 @@ export class SupabaseCompletedAssetRepository
         true,
       );
     }
+  }
+  async stageForReview(asset: CompletedAssetRecord, serviceRequestId: string) {
+    if (
+      asset.retrieval_state !== "retrieved" || !asset.storage_path ||
+      asset.storage_bucket !== "proof-assets"
+    ) {
+      throw new ProofError(
+        "PROOF_READINESS_ERROR",
+        "Retrieve the completed Proof asset before staging it for APS review.",
+        422,
+      );
+    }
+    const destination = `${serviceRequestId}/proof-completed/${asset.id}.pdf`;
+    const existing = await this.rows<{ id: string }>(
+      `request_files?select=id&service_request_id=eq.${serviceRequestId}&file_path=eq.${
+        encodeURIComponent(destination)
+      }&limit=1`,
+    );
+    if (existing[0]) return existing[0].id;
+    const source = await fetch(
+      `${this.url}/storage/v1/object/proof-assets/${
+        asset.storage_path.split("/").map(encodeURIComponent).join("/")
+      }`,
+      { headers: { apikey: this.key, Authorization: `Bearer ${this.key}` } },
+    );
+    if (!source.ok) {
+      throw new ProofError(
+        "PROOF_PROVIDER_ERROR",
+        "APS could not read the protected completed asset.",
+        500,
+        true,
+      );
+    }
+    const bytes = new Uint8Array(await source.arrayBuffer());
+    const stored = await fetch(
+      `${this.url}/storage/v1/object/service-request-files/${
+        destination.split("/").map(encodeURIComponent).join("/")
+      }`,
+      {
+        method: "POST",
+        headers: {
+          apikey: this.key,
+          Authorization: `Bearer ${this.key}`,
+          "Content-Type": "application/pdf",
+          "x-upsert": "false",
+        },
+        body: bytes,
+      },
+    );
+    if (!stored.ok && stored.status !== 409) {
+      throw new ProofError(
+        "PROOF_PROVIDER_ERROR",
+        "APS could not stage the completed document for review.",
+        500,
+        true,
+      );
+    }
+    const response = await this.request("request_files", {
+      method: "POST",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({
+        service_request_id: serviceRequestId,
+        file_name: asset.file_name || "Completed Notarized Document.pdf",
+        file_path: destination,
+        file_type: "application/pdf",
+        file_size: bytes.byteLength,
+        uploaded_by: "proof",
+        document_category: "proof-completed",
+        document_classification: asset.asset_type === "completed_document"
+          ? "completed_notarized_document"
+          : "internal_document",
+        customer_visible: false,
+        eligible_for_delivery: false,
+        review_state: "pending",
+        is_active: true,
+        content_fingerprint: asset.sha256,
+      }),
+    });
+    const rows = await this.read<{ id: string }>(response);
+    if (!rows[0]) {
+      throw new ProofError(
+        "PROOF_PROVIDER_ERROR",
+        "APS could not create the review document record.",
+        500,
+        true,
+      );
+    }
+    return rows[0].id;
   }
   private request(path: string, init: RequestInit = {}) {
     return fetch(`${this.url}/rest/v1/${path}`, {

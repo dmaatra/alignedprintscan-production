@@ -2038,11 +2038,18 @@ function completedSuccessView({
   `;
 }
 
-function ronNextStepPanel(request = {}, detail = {}) {
+function ronNextStepPanel(request = {}, detail = {}, session = null) {
   if (workflowKind(request.service_type) !== "ron") return "";
   const link = request.appointment_link || request.ron_session_url || "";
-  if (!link) return "";
-  return `<div class="next-panel reveal"><h3>Secure Online Session</h3><p>Your RON session link is available below.</p><a class="btn primary" href="${escapePublic(link)}" target="_blank" rel="noopener">Open Secure Session</a></div>`;
+  const copy = {
+    payment_required: ["Payment Required", "Your required payment must be received before the secure online notary session can begin."],
+    appointment_pending: ["Appointment Confirmation Pending", "APS is confirming the date and time for your secure online notary session."],
+    preparing: ["Preparing Your Session", "APS is preparing your signers and documents in the secure notary platform."],
+    invitation_sent: ["Secure Session Invitation Sent", "Proof has sent the required secure invitation to the signer email associated with this request."],
+    ready: ["Session Ready", "Your secure online notary session is ready. Use the signer-specific invitation sent to your email."],
+    completed: ["Session Completed", "Your secure online notarization is complete. APS will release reviewed completed documents here when available."],
+  }[session?.state] || ["Preparing Your Session", "APS will provide secure-session instructions when all requirements are ready."];
+  return `<div class="next-panel reveal"><h3>${copy[0]}</h3><p>${copy[1]}</p>${link && session?.state === "ready" ? `<a class="btn primary" href="${escapePublic(link)}" target="_blank" rel="noopener">Join Secure Notary Session</a>` : ""}</div>`;
 }
 async function submitQuoteDecision(requestId, reference, decision, quoteId = "") {
   if (!supabaseClient || !requestId)
@@ -2308,6 +2315,9 @@ async function initSuccessPage() {
     ? request.customers[0]
     : request.customers || {};
   const documents = result.customer_documents || [];
+  const completedNotarizedDocuments = documents.filter(file => file.document_classification === "completed_notarized_document");
+  const customerProvidedDocuments = documents.filter(file => file.document_classification !== "completed_notarized_document");
+  const portalDocumentList = files => files.length ? `<ul class="portal-document-list">${files.map(file => `<li><strong>${escapePublic(file.file_name)}</strong><span>${escapePublic(file.document_classification || "Customer document")}</span>${file.download_url ? `<a class="btn dark" href="${escapePublic(file.download_url)}" target="_blank" rel="noopener">Download</a>` : ""}</li>`).join("")}</ul>` : "<p>None released yet.</p>";
   const messages = result.messages || [];
   const activity = result.customer_activity || [];
   const portalTab = params.get("tab") || "overview";
@@ -2329,7 +2339,8 @@ async function initSuccessPage() {
       ${printControls(reference)}
     </section>
     <section data-portal-panel="documents" ${portalTab !== "documents" ? "hidden" : ""}>
-      <div class="next-panel reveal"><h3>Documents</h3><p>Only files intentionally released by APS appear here.</p>${documents.length ? `<ul class="portal-document-list">${documents.map(file => `<li><strong>${escapePublic(file.file_name)}</strong><span>${escapePublic(file.document_classification || "Customer document")}</span>${file.download_url ? `<a class="btn dark" href="${escapePublic(file.download_url)}" target="_blank" rel="noopener">Download</a>` : ""}</li>`).join("")}</ul>` : "<p>No completed documents have been released yet.</p>"}</div>
+      <div class="next-panel reveal"><h3>Documents You Provided</h3><p>Only files intentionally released by APS appear here.</p>${portalDocumentList(customerProvidedDocuments)}</div>
+      ${request.service_type === "ron" ? `<div class="next-panel reveal"><h3>Completed Notarized Documents</h3><p>Reviewed notarized documents appear here only after APS releases them to you.</p>${portalDocumentList(completedNotarizedDocuments)}</div>` : ""}
       <div id="customerActionsPanel">${customerActionPanel(request, reference, customerActions)}</div>
     </section>
     <section data-portal-panel="quote-payment" ${portalTab !== "quote-payment" ? "hidden" : ""}>
@@ -2338,7 +2349,7 @@ async function initSuccessPage() {
       ${receiptPanel({ ...request, status: displayStatus }, reference)}
     </section>
     <section data-portal-panel="fulfillment" ${portalTab !== "fulfillment" ? "hidden" : ""}>
-      ${appointmentDetailsPanel({ ...request, status: displayStatus })}${ronNextStepPanel(request, detail)}${prepVideo || '<div class="next-panel"><h3>Appointment / Fulfillment</h3><p>Confirmed details and delivery instructions will appear here.</p></div>'}
+      ${appointmentDetailsPanel({ ...request, status: displayStatus })}${ronNextStepPanel(request, detail, result.ron_session)}${prepVideo || '<div class="next-panel"><h3>Appointment / Fulfillment</h3><p>Confirmed details and delivery instructions will appear here.</p></div>'}
     </section>
     <section data-portal-panel="messages" ${portalTab !== "messages" ? "hidden" : ""}>
       <div class="next-panel"><h3>Messages</h3>${messages.length ? `<ul class="portal-message-list">${messages.map(message => `<li><strong>${escapePublic(message.subject)}</strong><p>${escapePublic(message.rendered_text || "")}</p><small>${formatDateValue(message.sent_at || message.created_at)}</small></li>`).join("")}</ul>` : "<p>No customer messages have been sent yet.</p>"}</div>

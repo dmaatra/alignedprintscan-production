@@ -168,7 +168,7 @@ test("public status reader excludes unreleased and internal documents", async ()
   assert.match(response, /visibility === "customer"/);
   assert.match(source, /const publicRequest = pick/);
   assert.match(source, /const publicInvoices = invoices\.map/);
-  assert.match(source, /const publicServiceDetail = serviceDetail \? pick/);
+  assert.match(source, /const publicServiceDetail = serviceDetail\s*\? pick/);
   assert.doesNotMatch(response, /service_detail: serviceDetail/);
 });
 
