@@ -17,6 +17,7 @@ import {
 } from "../_shared/proof/transaction-lifecycle.ts";
 import { registerProofWebhook } from "../_shared/proof/webhook-registration.ts";
 import { ProofControlPanel } from "../_shared/proof/control-panel.ts";
+import { ProofSessionInventory } from "../_shared/proof/session-inventory.ts";
 
 const commands = new Set([
   "organization_check",
@@ -38,7 +39,7 @@ const activationCommands = new Set([
   "mark_activation_manual_review",
 ]);
 const infrastructureCommands = new Set(["register_webhook"]);
-const readCommands = new Set(["get_control_panel"]);
+const readCommands = new Set(["get_control_panel", "get_session_inventory"]);
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
@@ -61,12 +62,13 @@ Deno.serve(async (request) => {
     const body = await request.json().catch(() => null) as
       | TransactionCommandInput
       | null;
+    const command = String(body?.command ?? "");
     if (
       !body ||
-      !(commands.has(String(body.command ?? "")) ||
-        activationCommands.has(String(body.command ?? "")) ||
-        infrastructureCommands.has(String(body.command ?? "")) ||
-        readCommands.has(String(body.command ?? "")))
+      !(commands.has(command) ||
+        activationCommands.has(command) ||
+        infrastructureCommands.has(command) ||
+        readCommands.has(command))
     ) {
       throw new ProofError(
         "PROOF_VALIDATION_ERROR",
@@ -74,7 +76,9 @@ Deno.serve(async (request) => {
         400,
       );
     }
-    const result = readCommands.has(String(body.command))
+    const result = command === "get_session_inventory"
+      ? await new ProofSessionInventory().read()
+      : command === "get_control_panel"
       ? await new ProofControlPanel().read(String(body.serviceRequestId || ""))
       : await executeConfigured(body, admin.id);
     return new Response(
