@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { canonicalReference, collapseWhitespace, formatPhone, normalizeEmail, normalizePersonInput, normalizePhone, normalizeSearch, normalizeState, normalizeZip } from "../assets/js/aps-data-standard.mjs";
 
 const [migration, admin, adminV3, intake, lifecycle, config] = await Promise.all([
-  readFile(new URL("../supabase/migrations/20260813102521_customer_directory_review_queue_cleanup.sql", import.meta.url), "utf8"),
+  readFile(new URL("../supabase/migrations/20260813104147_customer_directory_review_queue_cleanup.sql", import.meta.url), "utf8"),
   readFile(new URL("../assets/js/admin.js", import.meta.url), "utf8"),
   readFile(new URL("../assets/js/admin-v3.js", import.meta.url), "utf8"),
   readFile(new URL("../assets/js/script.js", import.meta.url), "utf8"),
