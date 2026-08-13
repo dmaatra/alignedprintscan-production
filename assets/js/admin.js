@@ -1284,7 +1284,7 @@ async function selectRequest(id) {
       <label>Invoice / client note</label>
       <textarea id="invoiceNote" placeholder="Premium client-facing note, preparation instructions, appointment readiness, or quote terms…">${escapeHtml(selectedRequest.quote_notes || selectedRequest.customer_message || "")}</textarea>
       <div class="dashboard-action-groups">
-        <div class="dashboard-action-group"><span class="small-label">Quote Actions</span><div class="status-actions invoice-actions"><button id="addInvoiceRow" class="btn dark" type="button">Add Line Item</button><button id="saveInvoiceBtn" class="btn primary" type="button">Save Quote</button><button id="openStatusPageBtn" class="btn dark" type="button">Open Client Status Page</button></div></div>
+        <div class="dashboard-action-group"><span class="small-label">Quote Actions</span><div class="status-actions invoice-actions"><button id="addInvoiceRow" class="btn dark" type="button">Add Line Item</button><button id="saveInvoiceBtn" class="btn primary" type="button">Save Quote</button></div></div>
         <div class="dashboard-action-group"><span class="small-label">Payment Actions</span><div class="status-actions invoice-actions"><button id="recordPrimaryPaymentBtn" class="btn dark" type="button">Record Primary Payment</button><button id="recordSupplementalPaymentBtn" class="btn dark" type="button">Record Supplemental Payment</button><button id="createAdditionalInvoiceBtn" class="btn dark" type="button">Create Additional Invoice</button></div></div>
       </div>
       <p class="admin-muted small-admin-note">Save the quote first. Then use Status Update to send Quote Ready or move the request forward.</p>
@@ -1503,12 +1503,6 @@ async function selectRequest(id) {
     createAdditionalInvoice,
   );
   $("#saveAppointmentBtn")?.addEventListener("click", saveAppointmentDetails);
-  $("#openStatusPageBtn")?.addEventListener("click", () =>
-    window.open(
-      `success.html?request_id=${selectedRequest.id}&ref=${encodeURIComponent(ref)}`,
-      "_blank",
-    ),
-  );
   $("#archiveRequestBtn")?.addEventListener("click", toggleArchiveRequest);
   $$('[data-open-workspace-tab]', detail).forEach((button) => {
     button.addEventListener("click", () =>
