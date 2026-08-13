@@ -43,5 +43,6 @@ test("global cards are buttons and detail view exposes specification, expected d
 test("request body editor stays compact while preview and delivery share the final renderer",async()=>{
   const admin=await read("assets/js/admin.js"),send=await read("supabase/functions/send-message/index.ts");
   assert.match(admin,/Message HTML<textarea/);assert.match(admin,/renderFullTemplateEmail/);assert.match(admin,/aps-full-email-preview/);assert.match(admin,/currentMessagePreviewContext/);
+  assert.match(admin,/customerPreviewDate\(selectedRequest\.appointment_date/);
   assert.match(send,/renderFullTemplateEmail/);assert.doesNotMatch(admin,/textarea[^>]*renderCustomerEmailShell/);
 });
