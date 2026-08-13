@@ -2259,6 +2259,7 @@ async function initSuccessPage() {
     sessionId && ["awaiting_payment", "payment_pending"].includes(status)
       ? "payment_submitted"
       : status;
+  const detail = result.service_detail || null;
   const copy = displayStatus === "completed" ? customerCompletionCopy(request, detail || {}) : statusCopy(displayStatus);
   const quoteAmount =
     Number(request.quote_amount || request.estimated_total || 0) || 0;
@@ -2286,7 +2287,6 @@ async function initSuccessPage() {
     ? `<div class="next-panel reveal"><h3>Appointment Preparation Video</h3><p>Watch this preparation guide before your session or appointment.</p><div class="video-embed"><iframe src="${escapePublic(request.prep_video_url)}" title="Preparation video" allowfullscreen></iframe></div></div>`
     : "";
 
-  const detail = result.service_detail || null;
   const fileCount = Number(result.file_count || 0);
   const requestedDate = formatDateValue(request.preferred_date);
   const requestedTime = formatTimeWindow(request.preferred_time_window);
