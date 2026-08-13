@@ -246,6 +246,32 @@
     });
   }
 
+  function normalizedSearch(value) {
+    return String(value || "").trim().toLowerCase().replace(/[^a-z0-9@.+]/g, "");
+  }
+
+  function escapeSearchResult(value) {
+    return String(value || "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+  }
+
+  function renderGlobalSearchResults(searchTerm) {
+    const box = $("#globalAdminSearchResults");
+    if (!box) return;
+    const query = normalizedSearch(searchTerm);
+    if (query.length < 2) { box.hidden = true; box.replaceChildren(); return; }
+    const results = [];
+    $$("#requestList .request-row").forEach((card) => {
+      const matches = (value) => normalizedSearch(value).includes(query);
+      const reference = card.dataset.reference || "APS Request";
+      if (matches(`${reference} ${card.dataset.serviceLabel} ${card.dataset.statusLabel}`)) results.push({ type: "Request", title: reference, detail: `${card.dataset.serviceLabel} · ${card.dataset.statusLabel}`, id: card.dataset.id, tab: "overview" });
+      if (matches(`${card.dataset.customerName} ${card.dataset.customerEmail} ${card.dataset.customerPhone}`)) results.push({ type: "Customer", title: card.dataset.customerName || "Customer", detail: card.dataset.customerEmail || card.dataset.customerPhone || reference, id: card.dataset.id, tab: "customer" });
+      String(card.dataset.invoiceNumbers || "").split("|").filter(Boolean).forEach((invoice) => { if (matches(`${invoice} ${reference} ${card.dataset.statusLabel}`)) results.push({ type: "Invoice", title: invoice, detail: `${reference} · ${card.dataset.statusLabel}`, id: card.dataset.id, tab: "payments" }); });
+    });
+    const unique = results.filter((item, index, all) => all.findIndex((candidate) => `${candidate.type}:${candidate.title}:${candidate.id}` === `${item.type}:${item.title}:${item.id}`) === index).slice(0, 12);
+    box.hidden = false;
+    box.innerHTML = unique.length ? unique.map((item) => `<button type="button" role="option" data-search-request="${escapeSearchResult(item.id)}" data-search-tab="${escapeSearchResult(item.tab)}"><span>${escapeSearchResult(item.type)}</span><strong>${escapeSearchResult(item.title)}</strong><small>${escapeSearchResult(item.detail)}</small></button>`).join("") : '<p>No matching requests, customers, or invoices.</p>';
+  }
+
   /** Keep request counters in the new shell synchronized with rendered cards. */
   function syncRequestCount() {
     const count = $$("#requestList .request-row").length;
@@ -273,6 +299,18 @@
       const requestSearch = $("#requestSearch");
       requestSearch.value = term;
       filterVisibleRequestCards(term);
+      renderGlobalSearchResults(term);
+    });
+
+    $("#globalAdminSearchResults")?.addEventListener("click", (event) => {
+      const result = event.target.closest("[data-search-request]");
+      if (!result) return;
+      const card = $(`#requestList .request-row[data-id="${result.dataset.searchRequest}"]`);
+      if (!card) return;
+      card.hidden = false;
+      card.click();
+      window.setTimeout(() => activateTab(result.dataset.searchTab || "overview"), 80);
+      $("#globalAdminSearchResults").hidden = true;
     });
 
     document.addEventListener("keydown", (event) => {

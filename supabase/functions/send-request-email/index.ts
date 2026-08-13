@@ -1,3 +1,5 @@
+import { emailButton, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
+
 // Aligned Print & Scan — New request notification emails
 // Sends a branded customer confirmation and an admin alert to hello@alignedprintscan.com.
 
@@ -28,7 +30,7 @@ async function supabaseFetch(path: string, init: RequestInit = {}) {
 }
 
 function emailShell(body: string, preheader: string) {
-  return `<!doctype html><html><head><meta name="color-scheme" content="light only"></head><body style="margin:0;background:#f6f3ee;font-family:Arial,Helvetica,sans-serif;color:#2d2d2d;line-height:1.6"><div style="display:none;max-height:0;overflow:hidden">${esc(preheader)}</div><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f6f3ee;padding:28px 12px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:680px;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #e7dcc5"><tr><td style="background:#ffffff;padding:30px 34px 20px;text-align:center;border-bottom:4px solid #c8a96b"><img src="${LOGO_URL}" alt="Aligned Print & Scan" style="max-width:210px;margin:0 auto 14px;display:block"><div style="font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#161c4d;font-weight:800">Remote & Mobile Notary · Print, Scan & Document Support</div></td></tr><tr><td style="padding:34px">${body}</td></tr><tr><td style="padding:26px 34px;background:#fffaf2;border-top:1px solid #e7dcc5;color:#5b5a61;font-size:14px"><strong style="color:#161c4d">Need assistance?</strong><br><a href="mailto:${SUPPORT_EMAIL}" style="color:#161c4d;font-weight:bold">${SUPPORT_EMAIL}</a><br>${SUPPORT_PHONE}<br>Waxahachie, Texas<div style="margin-top:18px;color:#8a8072">Aligned Print & Scan LLC</div></td></tr></table></td></tr></table></body></html>`;
+  return renderCustomerEmailShell({ body, preheader, siteUrl: SITE_URL, logoUrl: LOGO_URL, supportEmail: SUPPORT_EMAIL, supportPhone: SUPPORT_PHONE });
 }
 
 async function sendEmail(to: string, subject: string, html: string) {
@@ -76,7 +78,7 @@ Deno.serve(async (req) => {
     if (!template) throw new Error("The centralized request_received message template is unavailable.");
     const templateValues = { request_reference: ref, customer_first_name: customer.first_name || "there", portal_url: statusUrl };
     const customerSubject = renderTemplate(template.subject_template, templateValues);
-    const customerHtml = emailShell(`${renderTemplate(template.html_template, templateValues)}<p><a href="${statusUrl}" style="display:inline-block;background:#c8a96b;color:#111522;padding:14px 22px;border-radius:999px;text-decoration:none;font-weight:bold">View Request Status</a></p>`, customerSubject);
+    const customerHtml = emailShell(`${renderTemplate(template.html_template, templateValues)}${emailButton(statusUrl, "View My Request")}`, customerSubject);
 
     const adminHtml = emailShell(`<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">New Request</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">New Client Request Received</h1><p>A new request was submitted and needs admin review.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}<br><strong style="color:#161c4d">Client:</strong> ${esc([customer.first_name, customer.last_name].filter(Boolean).join(" ") || "Client")}<br><strong style="color:#161c4d">Email:</strong> ${esc(customer.email)}<br><strong style="color:#161c4d">Phone:</strong> ${esc(customer.phone || "Not provided")}<br><strong style="color:#161c4d">Preferred Contact:</strong> ${esc(customer.preferred_contact || "Not provided")}<br><strong style="color:#161c4d">Service:</strong> ${esc(serviceLabel(request?.service_type))}</div><p><a href="${SITE_URL}/admin-dashboard.html" style="display:inline-block;background:#c8a96b;color:#111522;padding:14px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Open Admin Dashboard</a></p>`, `New request: ${ref}`);
 

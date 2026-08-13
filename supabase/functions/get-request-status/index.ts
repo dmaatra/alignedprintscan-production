@@ -110,7 +110,7 @@ Deno.serve(async (req) => {
       "estimated_total", "paid_amount", "balance_due", "paid_at",
       "invoice_number", "quote_notes", "customer_message", "receipt_url",
       "receipt_pdf_url", "review_link_google", "review_link_yelp",
-      "prep_video_url", "current_quote_id",
+      "prep_video_url", "current_quote_id", "document_state",
     ]);
     publicRequest.customers = publicCustomer ? [publicCustomer] : [];
 

@@ -5,6 +5,8 @@
  * records a review request, verifies the customer's email, writes timeline and
  * communication records, and sends confirmation/administrator notifications.
  */
+import { customerPortalUrl, emailButton, recipientGreeting, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -61,9 +63,9 @@ Deno.serve(async (req) => {
 
     const reference = ref(requestId);
     const actionLabel = actionType === "cancel" ? "cancellation" : "rescheduling";
-    const statusUrl = `${SITE_URL}/success.html?request_id=${requestId}&ref=${reference}`;
+    const statusUrl = customerPortalUrl(SITE_URL, requestId, "fulfillment");
     const customerSubject = `${actionType === "cancel" ? "Cancellation" : "Reschedule"} request received: ${reference}`;
-    const customerHtml = `<h1>We received your ${actionLabel} request</h1><p>Hello ${esc(customer?.first_name || "there")},</p><p>Your request for <strong>${esc(reference)}</strong> has been submitted for review. Paid services are not cancelled automatically.</p>${proposed ? `<p><strong>Proposed date/time:</strong> ${esc(new Date(proposed).toLocaleString("en-US", { timeZone: "America/Chicago" }))}</p>` : ""}<p><a href="${esc(statusUrl)}">View your request status</a></p>`;
+    const customerHtml = renderCustomerEmailShell({ title: `We received your ${actionLabel} request`, preheader: customerSubject, body: `<p>${recipientGreeting(customer)}</p><p>Your request for <strong>${esc(reference)}</strong> has been submitted for review. Paid services are not cancelled automatically.</p>${proposed ? `<p><strong>Proposed date/time:</strong> ${esc(new Date(proposed).toLocaleString("en-US", { timeZone: "America/Chicago" }))}</p>` : ""}${emailButton(statusUrl, "View Request Status")}`, siteUrl: SITE_URL });
     const customerSend = await send(email, customerSubject, customerHtml).catch(() => ({ id: null, failed: true }));
     await logCommunication(requestId, "outbound", customerSubject, `Customer ${actionLabel} confirmation.`, customerSend.failed ? "failed" : (customerSend.skipped ? "skipped" : "sent"), customerSend.id || null);
 

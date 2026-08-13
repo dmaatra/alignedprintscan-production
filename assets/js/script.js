@@ -2221,6 +2221,19 @@ function bindCustomerActionControls(requestId) {
   qs("#uploadAdditionalFilesBtn")?.addEventListener("click", handle(() => uploadAdditionalCustomerFiles(requestId)));
 }
 
+function customerPrimaryAction({ request = {}, invoices = [], documents = [], messages = [], hasQuote = false, sessionId = "" } = {}) {
+  const status = String(request.workflow_status || request.status || "under_review").toLowerCase();
+  const activeInvoices = invoices.filter((invoice) => !["void", "cancelled"].includes(String(invoice.status || "").toLowerCase()));
+  const balanceDue = activeInvoices.reduce((sum, invoice) => sum + Math.max(0, Number(invoice.balance_due ?? invoice.amount_due ?? 0) - Number(invoice.amount_paid ?? invoice.paid_amount ?? 0)), 0) || Math.max(0, Number(request.balance_due || 0));
+  if (["quote_ready", "quote_sent", "awaiting_approval"].includes(status) && hasQuote && request.id) return { key: "quote", label: "Review & Approve Quote", tab: "quote-payment", title: "Review and approve your quote" };
+  if (!sessionId && ["awaiting_payment", "payment_pending", "final_balance_due"].includes(status) && balanceDue > 0 && request.id) return { key: "payment", label: "Make Payment", tab: "quote-payment", title: "Payment required", detail: `Amount due: ${money(balanceDue)}` };
+  if (status === "document_pending" || request.document_state === "customer_action_required") return { key: "document", label: "Upload Document", tab: "documents", title: "Document needed", detail: "Upload the document APS requested for review." };
+  if (["appointment_confirmed", "scheduled", "appointment_needs_rescheduling"].includes(status)) return { key: "appointment", label: "View Appointment", tab: "fulfillment", title: "Appointment details available" };
+  if (["completed", "final_payment_received"].includes(status) && documents.length) return { key: "deliverable", label: "View Documents", tab: "documents", title: "Your documents are available" };
+  if (request.customer_message_requires_attention === true && messages.length) return { key: "message", label: "View Message", tab: "messages", title: "A message needs your attention" };
+  return null;
+}
+
 async function initSuccessPage() {
   const successBox = qs("#successDetails");
   if (!successBox) return;
@@ -2291,24 +2304,6 @@ async function initSuccessPage() {
   const requestedDate = formatDateValue(request.preferred_date);
   const requestedTime = formatTimeWindow(request.preferred_time_window);
   const quoteNote = request.quote_notes || request.customer_message || "";
-  const canApprove =
-    ["quote_ready", "quote_sent", "awaiting_approval"].includes(status) &&
-    hasQuote &&
-    request.id;
-  const canPay =
-    !sessionId &&
-    ["awaiting_payment", "payment_pending"].includes(status) &&
-    quoteAmount > 0 &&
-    request.id &&
-    status !== "quote_expired";
-  const actionRequired = canApprove
-    ? `<section class="next-panel reveal" aria-labelledby="customerActionHeading"><p class="eyebrow">Action Required</p><h3 id="customerActionHeading">Review and approve your quote</h3><p>Total: <strong>${money(quoteAmount)}</strong></p><a class="btn primary" href="#quoteActionPanel">Review &amp; Approve Quote</a></section>`
-    : canPay
-      ? `<section class="next-panel reveal" aria-labelledby="customerActionHeading"><p class="eyebrow">Action Required</p><h3 id="customerActionHeading">Payment required</h3><p>Amount due: <strong>${money(Number(request.balance_due || quoteAmount))}</strong></p><a class="btn primary" href="#paymentSchedule">Pay Now</a></section>`
-      : !fileCount && ["under_review", "document_pending"].includes(status)
-        ? `<section class="next-panel reveal" aria-labelledby="customerActionHeading"><p class="eyebrow">Action Required</p><h3 id="customerActionHeading">Document needed</h3><p>Upload the document APS needs to review your request.</p><a class="btn primary" href="#customerActionsPanel">Upload Document</a></section>`
-        : "";
-
   const customer = Array.isArray(request.customers)
     ? request.customers[0]
     : request.customers || {};
@@ -2317,6 +2312,10 @@ async function initSuccessPage() {
   const activity = result.customer_activity || [];
   const portalTab = params.get("tab") || "overview";
   const tabLink = (tab) => `success.html?request_id=${encodeURIComponent(request.id || requestId || "")}&tab=${tab}`;
+  const primaryAction = customerPrimaryAction({ request, invoices, documents, messages, hasQuote, sessionId });
+  const canApprove = primaryAction?.key === "quote";
+  const canPay = primaryAction?.key === "payment";
+  const actionRequired = primaryAction ? `<section class="next-panel portal-action-required reveal" aria-labelledby="customerActionHeading"><p class="eyebrow">Action Required</p><h3 id="customerActionHeading">${escapePublic(primaryAction.title)}</h3>${primaryAction.detail ? `<p>${escapePublic(primaryAction.detail)}</p>` : ""}<a class="btn primary" href="${tabLink(primaryAction.tab)}" data-portal-action="${escapePublic(primaryAction.tab)}">${escapePublic(primaryAction.label)}</a></section>` : `<section class="portal-no-action reveal"><strong>No action required</strong><span>${escapePublic(copy.body)}</span></section>`;
   successBox.innerHTML = `
     <div class="success-ref reveal">${escapePublic(reference)}</div>
     <nav class="customer-portal-tabs" aria-label="Request sections">
@@ -2325,9 +2324,9 @@ async function initSuccessPage() {
     <section data-portal-panel="overview" ${portalTab !== "overview" ? "hidden" : ""}>
       ${actionRequired}
       ${statusTimeline(displayStatus, request.service_type)}
-      <div class="success-grid reveal"><div><span class="small-label">Service</span><strong>${escapePublic(serviceName)}</strong></div><div><span class="small-label">Current Status</span><strong>${escapePublic(copy.title)}</strong></div><div><span class="small-label">Next Action</span><strong>${canApprove ? "Approve quote" : canPay ? "Make payment" : !fileCount ? "Upload requested document" : "APS is handling the next step"}</strong></div></div>
+      <div class="success-grid portal-summary-grid reveal"><div><span class="small-label">Service</span><strong>${escapePublic(serviceName)}</strong></div><div><span class="small-label">Status</span><strong>${escapePublic(copy.title)}</strong></div><div><span class="small-label">Prepared For</span><strong>${escapePublic([customer.first_name, customer.last_name].filter(Boolean).join(" ") || "Customer")}</strong></div>${customer.email ? `<div><span class="small-label">Email</span><strong>${escapePublic(customer.email)}</strong></div>` : ""}${customer.phone ? `<div><span class="small-label">Phone</span><strong>${escapePublic(customer.phone)}</strong></div>` : ""}</div>
       <div class="email-notice status-${statusClass} reveal"><h3>${escapePublic(copy.title)}</h3><p>${escapePublic(copy.body)}</p></div>
-      ${customerCard(customer)}${printControls(reference)}
+      ${printControls(reference)}
     </section>
     <section data-portal-panel="documents" ${portalTab !== "documents" ? "hidden" : ""}>
       <div class="next-panel reveal"><h3>Documents</h3><p>Only files intentionally released by APS appear here.</p>${documents.length ? `<ul class="portal-document-list">${documents.map(file => `<li><strong>${escapePublic(file.file_name)}</strong><span>${escapePublic(file.document_classification || "Customer document")}</span>${file.download_url ? `<a class="btn dark" href="${escapePublic(file.download_url)}" target="_blank" rel="noopener">Download</a>` : ""}</li>`).join("")}</ul>` : "<p>No completed documents have been released yet.</p>"}</div>
@@ -2349,13 +2348,16 @@ async function initSuccessPage() {
     </section>
     <div class="next-panel support-panel"><h3>Need Help?</h3><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Contact Customer Support</a></div>`;
 
-  qsa("[data-portal-tab]").forEach(link => link.addEventListener("click", event => {
-    event.preventDefault();
-    const tab = link.dataset.portalTab;
+  const activatePortalTab = (tab) => {
     qsa("[data-portal-tab]").forEach(item => item.classList.toggle("is-active", item.dataset.portalTab === tab));
     qsa("[data-portal-panel]").forEach(panel => panel.hidden = panel.dataset.portalPanel !== tab);
     history.replaceState(null, "", tabLink(tab));
+  };
+  qsa("[data-portal-tab]").forEach(link => link.addEventListener("click", event => {
+    event.preventDefault();
+    activatePortalTab(link.dataset.portalTab);
   }));
+  qsa("[data-portal-action]").forEach(link => link.addEventListener("click", event => { event.preventDefault(); activatePortalTab(link.dataset.portalAction); }));
   qs("#approveQuoteBtn")?.addEventListener("click", async () => { const box = qs("#quoteActionStatus"); try { if (box) box.textContent = "Approving your quote…"; await submitQuoteDecision(request.id, reference, "approve", request.current_quote_id || ""); location.reload(); } catch (_) { if (box) box.textContent = "Approval failed. Refresh this page or contact APS."; } });
   bindCustomerActionControls(request.id || requestId);
   const portalInitialInvoice = findInitialInvoice(invoices);
