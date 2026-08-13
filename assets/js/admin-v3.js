@@ -114,6 +114,9 @@
     primaryButton.textContent = primaryAction.label;
     primaryButton.dataset.targetTab = primaryAction.tab;
     $("#workspaceEmailAction").disabled = false;
+    const portalLink = $("#workspaceCustomerPortal");
+    portalLink.href = `success.html?request_id=${encodeURIComponent(request.id)}&ref=${encodeURIComponent(reference)}`;
+    portalLink.setAttribute("aria-disabled", "false");
     workspace?.classList.add("has-selection");
     resetWorkspaceScroll();
 
@@ -396,6 +399,9 @@
     supportTickets: [],
     messages: [],
     templates: [],
+    invoices: [],
+    payments: [],
+    financialView: { search:"", state:"all", service:"all", from:"", to:"", sortKey:"date", sortDirection:"desc" },
     activeView: "requests",
     newOrderStep: 0,
     newOrderMaxStep: 0,
@@ -410,6 +416,7 @@
   const appView = $("#requests");
   const moduleView = $("#adminModuleView");
   const moduleContent = $("#adminModuleContent");
+  let financialTools = null;
   const moduleTitles = {
     dashboard: ["Overview", "Operations Dashboard", "Live request, schedule, and revenue indicators."],
     calendar: ["Operations", "Scheduling Center", "Plan and export requested and confirmed APS appointments."],
@@ -430,8 +437,8 @@
 
   function requestStatus(request) { return request.workflow_status || request.status || "under_review"; }
   function activeRequests() { return moduleState.requests.filter((request) => !request.archived_at); }
-  function openRequestFromModule(id, tab = "overview") {
-    showAdminView("requests");
+  async function openRequestFromModule(id, tab = "overview") {
+    await showAdminView("requests");
     const button = $(`#requestList .request-row[data-id="${CSS.escape(id)}"]`);
     button?.click();
     window.setTimeout(() => activateTab(tab), 120);
@@ -463,6 +470,12 @@
     if(!items.length)return '<div class="admin-v3-module-card admin-v3-empty-module"><h3>No open review items</h3><p>APS has no loaded requests requiring administrator intervention.</p></div>';
     return `<div class="admin-v3-module-card admin-v3-table-wrap"><table class="admin-v3-table"><thead><tr><th>Request</th><th>Customer</th><th>Action required</th><th></th></tr></thead><tbody>${items.map(item=>{const customer=getCustomer(item.request)||{};return `<tr><td>${safe(`APS-${item.request.id.slice(0,8).toUpperCase()}`)}</td><td>${safe(`${customer.first_name||""} ${customer.last_name||""}`.trim())}</td><td>${safe(item.title)}</td><td><button class="admin-v3-button admin-v3-button--outline module-open-request" data-request-id="${safe(item.request.id)}" data-tab="${safe(item.tab)}" type="button">Review</button></td></tr>`}).join("")}</tbody></table></div>`;
   }
+  function financialDate(value) { return value?new Date(value).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"Not available"; }
+  function financialControls(rows,stateLabel) { const states=[...new Set(rows.map(row=>row.status||row.state).filter(Boolean))].sort();return `<section class="admin-v3-financial-controls" aria-label="Financial search and filters"><label><span>Search</span><input id="financialSearch" type="search" value="${safe(moduleState.financialView.search)}" placeholder="APS reference or customer"></label><label><span>${safe(stateLabel)}</span><select id="financialState"><option value="all">All states</option>${states.map(state=>`<option value="${safe(state)}" ${moduleState.financialView.state===state?"selected":""}>${safe(labelFromStatus(state))}</option>`).join("")}</select></label><label><span>Service</span><select id="financialService"><option value="all">All services</option>${["ron","mobile","print"].map(service=>`<option value="${service}" ${moduleState.financialView.service===service?"selected":""}>${safe(labelFromStatus(service))}</option>`).join("")}</select></label><label><span>From</span><input id="financialFrom" type="date" value="${safe(moduleState.financialView.from)}"></label><label><span>To</span><input id="financialTo" type="date" value="${safe(moduleState.financialView.to)}"></label></section>`; }
+  function financialSortHeader(label,key) { const active=moduleState.financialView.sortKey===key;return `<button class="financial-sort" data-financial-sort="${safe(key)}" type="button">${safe(label)} <span aria-hidden="true">${active?(moduleState.financialView.sortDirection==="asc"?"↑":"↓"):"↕"}</span></button>`; }
+  function financialRows(view) { return view==="invoices"?financialTools.buildInvoiceRows(activeRequests(),moduleState.invoices):financialTools.buildPaymentRows(activeRequests(),moduleState.invoices,moduleState.payments); }
+  function filteredFinancialRows(view) { return financialTools.sortFinancialRows(financialTools.filterFinancialRows(financialRows(view),moduleState.financialView),moduleState.financialView.sortKey,moduleState.financialView.sortDirection); }
+  function renderFinancial(view) { const all=financialRows(view),rows=filteredFinancialRows(view),invoiceView=view==="invoices";const summary=invoiceView?financialTools.summarizeInvoices(all):financialTools.summarizePayments(all);const summaryHtml=invoiceView?`<div><span>Total quoted</span><strong>${displayMoney(summary.quoted)}</strong></div><div><span>Issued invoices</span><strong>${displayMoney(summary.invoiced)}</strong></div><div><span>Outstanding receivable</span><strong>${displayMoney(summary.outstanding)}</strong></div><div><span>Open invoices</span><strong>${summary.open}</strong></div>`:`<div><span>Payments recorded</span><strong>${displayMoney(summary.paid)}</strong></div><div><span>Outstanding receivable</span><strong>${displayMoney(summary.outstanding)}</strong></div><div><span>Requests with payments</span><strong>${summary.recorded}</strong></div>`;const headers=invoiceView?[["Request","reference"],["Customer","customer"],["Invoice state","status"],["Quoted","quoted"],["Invoiced","invoiced"],["Balance","balance"],["Relevant date","date"]]:[["Request","reference"],["Customer","customer"],["Paid","paid"],["Remaining balance","balance"],["Payment state","state"],["Relevant date","date"]];return `<div class="admin-v3-financial-summary">${summaryHtml}</div>${financialControls(all,invoiceView?"Invoice state":"Payment state")}<div class="admin-v3-module-card admin-v3-table-wrap"><table class="admin-v3-table admin-v3-financial-table"><thead><tr>${headers.map(([label,key])=>`<th>${financialSortHeader(label,key)}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr><td><button class="financial-request-link" data-request-id="${safe(row.id)}" data-tab="${invoiceView?"quote":"payments"}" type="button">${safe(row.reference)}</button></td><td>${safe(row.customer)}</td>${invoiceView?`<td>${safe(labelFromStatus(row.status))}</td><td>${displayMoney(row.quoted)}${!row.has_invoice?'<small>Draft quote</small>':""}</td><td>${displayMoney(row.invoiced)}</td><td>${displayMoney(row.balance)}</td>`:`<td>${displayMoney(row.paid)}</td><td>${displayMoney(row.balance)}</td><td>${safe(labelFromStatus(row.state))}</td>`}<td>${safe(financialDate(row.date))}<small>${safe(row.date_kind)}</small></td></tr>`).join(""):`<tr><td colspan="${headers.length}">No financial records match these filters.</td></tr>`}</tbody></table></div>`; }
   function renderMessages() {
     if(!moduleState.messages.length)return '<div class="admin-v3-module-card admin-v3-empty-module"><h3>No messages found</h3><p>Sent and failed customer communications will appear here.</p></div>';
     return `<div class="admin-v3-module-card admin-v3-table-wrap"><table class="admin-v3-table"><thead><tr><th>Sent</th><th>Recipient</th><th>Subject</th><th>State</th><th></th></tr></thead><tbody>${moduleState.messages.map(message=>`<tr><td>${safe(message.sent_at?new Date(message.sent_at).toLocaleString():"Draft")}</td><td>${safe(message.recipient)}</td><td>${safe(message.subject)}</td><td>${safe(labelFromStatus(message.delivery_state))}</td><td>${message.service_request_id?`<button class="admin-v3-button admin-v3-button--outline module-open-request" data-request-id="${safe(message.service_request_id)}" data-tab="messages" type="button">Open</button>`:""}</td></tr>`).join("")}</tbody></table></div>`;
@@ -719,8 +732,7 @@
     if(view==="review") return renderReviewQueue();
     if(view==="sessions") return table(rows.filter(r=>r.service_type==="ron"),[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Customer",render:r=>{const c=getCustomer(r)||{};return safe(`${c.first_name||""} ${c.last_name||""}`.trim())}},{label:"State",render:r=>safe(labelFromStatus(r.fulfillment_state||r.appointment_state||"needs_preparation"))}]);
     if(view==="new") return renderNewRequest();
-    if(view==="invoices") return table(rows,[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Invoice status",render:r=>safe(labelFromStatus(r.invoice_status||r.payment_status||"not_created"))},{label:"Quoted",render:r=>displayMoney(r.quote_amount||r.estimated_total)},{label:"Balance",render:r=>displayMoney(r.balance_due)}]);
-    if(view==="payments") return table(rows,[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Paid",render:r=>displayMoney(r.paid_amount)},{label:"Balance",render:r=>displayMoney(r.balance_due)},{label:"State",render:r=>safe(labelFromStatus(r.payment_state||r.payment_status||"not_started"))}]);
+    if(view==="invoices"||view==="payments") return renderFinancial(view);
     if(view==="customers") return table(rows,[{label:"Customer",render:r=>{const c=getCustomer(r)||{};return safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client");}},{label:"Email",render:r=>safe((getCustomer(r)||{}).email||"")},{label:"Phone",render:r=>safe((getCustomer(r)||{}).phone||"")},{label:"Service",render:r=>safe(labelFromStatus(r.service_type))}]);
     if(view==="messages") return renderMessages();
     if(view==="templates") return renderTemplates();
@@ -734,6 +746,9 @@
     const newOrderForm = $("#adminCreateRequestForm", moduleContent);
     if (newOrderForm) bindNewOrderWizard(newOrderForm);
     bindCalendarActions();
+    $$(".financial-request-link",moduleContent).forEach(button=>button.addEventListener("click",()=>openRequestFromModule(button.dataset.requestId,button.dataset.tab)));
+    $$("[data-financial-sort]",moduleContent).forEach(button=>button.addEventListener("click",()=>{const key=button.dataset.financialSort;moduleState.financialView.sortDirection=moduleState.financialView.sortKey===key&&moduleState.financialView.sortDirection==="asc"?"desc":"asc";moduleState.financialView.sortKey=key;moduleContent.innerHTML=renderFinancial(moduleState.activeView);bindModuleActions();}));
+    [["financialSearch","search"],["financialState","state"],["financialService","service"],["financialFrom","from"],["financialTo","to"]].forEach(([id,key])=>{$(`#${id}`,moduleContent)?.addEventListener(id==="financialSearch"?"input":"change",event=>{moduleState.financialView[key]=event.target.value;moduleContent.innerHTML=renderFinancial(moduleState.activeView);bindModuleActions();if(id==="financialSearch"){const input=$("#financialSearch",moduleContent);input?.focus();input?.setSelectionRange(input.value.length,input.value.length);}});});
     $$(".template-library-card",moduleContent).forEach(card=>card.addEventListener("click",()=>openTemplateDetail(card.dataset.templateId)));
     $("#openLegacySupport", moduleContent)?.addEventListener("click",()=>showAdminView("requests"));
     $("#verifyProofConnection", moduleContent)?.addEventListener("click",()=>runProofInfrastructureCommand("organization_check"));
@@ -1008,6 +1023,15 @@
     if(view==="templates") {
       const {data}=await adminClient.from("message_templates").select("*").eq("active",true).order("name");
       moduleState.templates=data||[];
+    }
+    if(view==="invoices"||view==="payments") {
+      financialTools ||= await import("./admin-financial-view.mjs");
+      const [invoiceResult,paymentResult]=await Promise.all([
+        adminClient.from("invoices").select("id,service_request_id,invoice_number,invoice_type,status,payment_status,amount_due,amount_paid,paid_amount,balance_due,created_at,updated_at,paid_at,due_at").order("created_at",{ascending:false}),
+        adminClient.from("request_payments").select("id,service_request_id,invoice_id,payment_stage,amount,is_test,received_at,created_at").order("received_at",{ascending:false}),
+      ]);
+      moduleState.invoices=invoiceResult.data||[]; moduleState.payments=paymentResult.data||[];
+      moduleState.financialView={search:"",state:"all",service:"all",from:"",to:"",sortKey:"date",sortDirection:"desc"};
     }
   }
   async function showAdminView(view) {
