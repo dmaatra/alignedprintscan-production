@@ -1,4 +1,5 @@
-import { customerPortalUrl, emailButton, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
+import { renderFullTemplateEmail } from "../_shared/template-preview.mjs";
+import { customerPortalUrl } from "../_shared/customer-email.mjs";
 import { safeDeliveryError } from "../_shared/communication-history.mjs";
 
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
@@ -42,10 +43,11 @@ Deno.serve(async (request) => {
     const body = await request.json();
     requestId = cleanUuid(body.request_id); const templateId = cleanUuid(body.template_id), targetStatus = String(body.status || "").trim();
     if (!requestId || !templateId) throw new Error("A request and message template are required.");
-    const [requestRows, templateRows, quotes, invoices, files] = await Promise.all([
+    const [requestRows, templateRows, quotes, invoices, files, invoiceItems] = await Promise.all([
       rows(`service_requests?select=*&id=eq.${requestId}&limit=1`), rows(`message_templates?select=*&id=eq.${templateId}&active=eq.true&limit=1`),
       rows(`quotes?select=*&service_request_id=eq.${requestId}&order=version.desc&limit=1`), rows(`invoices?select=*&service_request_id=eq.${requestId}&order=created_at.desc`),
       rows(`request_files?select=*&service_request_id=eq.${requestId}&is_active=eq.true&order=created_at.desc`),
+      rows(`invoice_items?select=*&service_request_id=eq.${requestId}&order=created_at.asc`),
     ]);
     const serviceRequest = requestRows[0], template = templateRows[0];
     if (!serviceRequest || !template) throw new Error("Request or active template not found.");
@@ -73,8 +75,8 @@ Deno.serve(async (request) => {
     const recipient = String(body.recipient || customer.email || "").trim();
     const cc = (Array.isArray(body.cc) ? body.cc : String(body.cc || "").split(",")).map((value: unknown) => String(value).trim()).filter(Boolean);
     const subject = String(body.subject || render(template.subject_template, values)).trim();
-    const renderedBody = `${String(body.html || render(template.html_template, values))}${emailButton(values.portal_url, actionLabel)}`;
-    const html = renderCustomerEmailShell({ body: renderedBody, preheader: subject, eyebrow: template.name || "APS Update", title: template.name || "Your Request Update" });
+    const previewContext = { requestId, reference, customer, serviceType: serviceRequest.service_type, serviceName: values.service_name, requestedDate: values.requested_date, requestedTime: values.requested_time, appointmentDate: values.appointment_date, appointmentTime: values.appointment_time, appointmentLocation: values.appointment_location, appointmentLink: values.appointment_link, appointmentInstructions: serviceRequest.appointment_instructions || "", preferredContact: customer.preferred_contact || "", quoteNumber: values.quote_number, quoteVersion: quote?.version || "", quoteAmount: values.quote_amount, quoteItems: invoiceItems.map((item:any) => ({ name:item.description||"Service", quantity:item.quantity||1, rate:`$${Number(item.unit_price||0).toFixed(2)}`, total:`$${Number(item.line_total||0).toFixed(2)}` })), invoiceNumber: values.invoice_number, paymentAmount: values.amount_paid, paymentDate: customerDate(serviceRequest.paid_at), paidAmount: values.amount_paid, balanceDue: values.balance_due, releasedDocumentNames: releasedFiles.map((file:any) => file.file_name), completionDate: values.completion_date, siteUrl: "https://alignedprintscan.com" };
+    const html = renderFullTemplateEmail({ template, context: previewContext, editedBody: String(body.html || render(template.html_template, values)), subjectOverride: subject }).html;
     const text = String(body.text || render(template.text_template || template.html_template.replace(/<[^>]+>/g, " "), values));
     if (!recipient || !subject || !html) throw new Error("Recipient, subject, and message body are required.");
     const inserted = await rest("messages", { method: "POST", body: JSON.stringify({ service_request_id: requestId, template_id: templateId, template_key: template.template_key || null, channel: "email", recipient, cc, subject, rendered_html: html, rendered_text: text, delivery_state: "sending", associated_status: targetStatus || template.associated_status || null, source_type: "admin", source_event: "admin_composed", attempted_at: new Date().toISOString(), created_by: adminId }) });

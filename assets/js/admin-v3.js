@@ -469,7 +469,14 @@
   }
   function renderTemplates() {
     if(!moduleState.templates.length)return '<div class="admin-v3-module-card admin-v3-empty-module"><h3>No templates loaded</h3><p>Apply the workflow migration to register the complete APS template library.</p></div>';
-    return `<div class="admin-v3-module-grid">${moduleState.templates.map(template=>`<article class="admin-v3-module-card"><p class="small-label">${safe(template.associated_status?labelFromStatus(template.associated_status):"General")}</p><h3>${safe(template.name)}</h3><p>${safe(template.description||"")}</p><p><strong>Required attachment:</strong> ${safe(template.required_attachment_type?labelFromStatus(template.required_attachment_type):"None")}</p></article>`).join("")}</div>`;
+    return `<div class="admin-v3-module-grid">${moduleState.templates.map(template=>`<button class="admin-v3-module-card template-library-card" data-template-id="${safe(template.id)}" type="button"><p class="small-label">${safe(template.associated_status?labelFromStatus(template.associated_status):"General")}</p><h3>${safe(template.name)}</h3><p>${safe(template.description||"")}</p><p><strong>Required attachment:</strong> ${safe(template.required_attachment_type?labelFromStatus(template.required_attachment_type):"None")}</p><span class="template-card-action">View specification &amp; full preview →</span></button>`).join("")}</div>`;
+  }
+  async function openTemplateDetail(templateId) {
+    const template=moduleState.templates.find(item=>item.id===templateId); if(!template)return;
+    const {TEMPLATE_SPECIFICATIONS,SYNTHETIC_TEMPLATE_CONTEXT,renderFullTemplateEmail}=await import("../../supabase/functions/_shared/template-preview.mjs");
+    const spec=TEMPLATE_SPECIFICATIONS[template.template_key]; const rendered=renderFullTemplateEmail({template,context:SYNTHETIC_TEMPLATE_CONTEXT}); const conditional=spec.category==="Appointment"||spec.category==="RON"||spec.category==="Mobile"?"Physical location is shown only for physical service; secure-session details are shown only for RON.":spec.category==="Documents"?"Only intentionally released customer documents are included.":spec.category==="Payment"?"Payment and remaining-balance rows appear only when applicable.":"Request-specific panels populate only from available authoritative fields.";
+    moduleContent.innerHTML=`<button class="admin-v3-button admin-v3-button--outline" id="backToTemplates" type="button">← Back to Templates</button><article class="admin-v3-module-card template-specification"><p class="small-label">${safe(spec.category)} · ${safe(spec.classification)}</p><h2>${safe(template.name)}</h2><div class="template-spec-grid"><div><strong>Template key</strong><span>${safe(template.template_key)}</span></div><div><strong>Purpose</strong><span>${safe(spec.purpose)}</span></div><div><strong>Trigger / workflow event</strong><span>${safe(spec.trigger)}</span></div><div><strong>Recipient type</strong><span>Customer for the current APS request</span></div><div><strong>Subject format</strong><span>${safe(template.subject_template)}</span></div><div><strong>Eyebrow / title</strong><span>${safe(spec.eyebrow)} · ${safe(spec.title)}</span></div><div><strong>CTA</strong><span>${safe(spec.cta)} → ${safe(labelFromStatus(spec.tab))}</span></div><div><strong>Required attachment</strong><span>${safe(template.required_attachment_type?labelFromStatus(template.required_attachment_type):"None")}</span></div><div><strong>Conditional fields</strong><span>${safe(conditional)}</span></div><div><strong>Logging path</strong><span>Request → Messages · ${safe(spec.classification)}</span></div></div><section><h3>Exact maintained body wording</h3><pre class="template-body-copy">${safe(template.html_template)}</pre></section><section><h3>Data this template expects</h3><ul class="template-field-list">${spec.fields.map(field=>`<li>${safe(field)}</li>`).join("")}</ul></section><section><h3>Full Email Preview</h3><p class="admin-muted">Synthetic data only: Jane Sample · APS-DEMO1234. No production customer data is loaded here.</p><iframe class="aps-full-email-preview template-library-preview" title="${safe(template.name)} synthetic full email preview" sandbox srcdoc="${safe(rendered.html)}"></iframe></section></article>`;
+    $("#backToTemplates",moduleContent)?.addEventListener("click",()=>{moduleContent.innerHTML=renderTemplates();bindModuleActions();});
   }
   function dateKey(date) {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
@@ -727,6 +734,7 @@
     const newOrderForm = $("#adminCreateRequestForm", moduleContent);
     if (newOrderForm) bindNewOrderWizard(newOrderForm);
     bindCalendarActions();
+    $$(".template-library-card",moduleContent).forEach(card=>card.addEventListener("click",()=>openTemplateDetail(card.dataset.templateId)));
     $("#openLegacySupport", moduleContent)?.addEventListener("click",()=>showAdminView("requests"));
     $("#verifyProofConnection", moduleContent)?.addEventListener("click",()=>runProofInfrastructureCommand("organization_check"));
     $("#registerProofWebhook", moduleContent)?.addEventListener("click",()=>runProofInfrastructureCommand("register_webhook"));
@@ -998,7 +1006,7 @@
       moduleState.messages=data||[];
     }
     if(view==="templates") {
-      const {data}=await adminClient.from("message_templates").select("id,name,description,associated_status,required_attachment_type,active").eq("active",true).order("name");
+      const {data}=await adminClient.from("message_templates").select("*").eq("active",true).order("name");
       moduleState.templates=data||[];
     }
   }
