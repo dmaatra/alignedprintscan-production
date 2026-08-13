@@ -275,6 +275,9 @@ Deno.serve(async (req) => {
         status: "final_balance_due",
         invoice_id: invoice.id,
         note,
+        source_type: "workflow",
+        source_event: "supplemental_invoice_created",
+        idempotency_key: `invoice:${invoice.id}:final_balance_due`,
       }),
     });
 

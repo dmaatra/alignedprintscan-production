@@ -1,5 +1,6 @@
 /** Resolve a pending customer cancellation/reschedule request. */
 import { customerPortalUrl, emailButton, recipientGreeting, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
+import { deliverCustomerCommunication } from "../_shared/communication-history.mjs";
 
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -27,7 +28,8 @@ Deno.serve(async(req)=>{if(req.method==="OPTIONS")return new Response("ok",{head
   await db("request_timeline_events",{method:"POST",body:JSON.stringify({service_request_id:action.service_request_id,event_type:`${action.action_type}_${decision}`,title,detail:message||null,actor_type:"admin",metadata:{customer_action_request_id:actionId,approved_refund_amount:refund}})});
   const reference=ref(action.service_request_id); const subject=`${title}: ${reference}`; const statusUrl=customerPortalUrl(SITE_URL,action.service_request_id,"fulfillment");
   const html=renderCustomerEmailShell({title,preheader:subject,body:`<p>${recipientGreeting(customer)}</p><p>Your ${action.action_type} request for <strong>${reference}</strong> was ${decision}.</p>${message?`<p><strong>Message:</strong> ${message}</p>`:""}${refund>0?`<p><strong>Approved refund:</strong> $${refund.toFixed(2)}</p><p>This records the approved amount for processing; your payment provider may require additional processing time.</p>`:""}${emailButton(statusUrl,"View Request Status")}`,siteUrl:SITE_URL});
-  const mail=await send(customer?.email||action.customer_email,subject,html).catch(()=>({id:null,failed:true}));
-  await db("request_communications",{method:"POST",body:JSON.stringify({service_request_id:action.service_request_id,direction:"outbound",channel:"email",subject,message:`Customer action ${decision}.`,delivery_status:mail.failed?"failed":(mail.skipped?"skipped":"sent"),provider_message_id:mail.id||null})});
+  let delivery:any=null; try{delivery=await deliverCustomerCommunication({supabaseUrl:SUPABASE_URL,serviceRoleKey:SERVICE_ROLE_KEY,requestId:action.service_request_id,recipient:customer?.email||action.customer_email,subject,renderedHtml:html,renderedText:`Your ${action.action_type} request for ${reference} was ${decision}.`,sourceType:"customer_action",sourceEvent:`${action.action_type}_${decision}`,idempotencyKey:`customer-action:${actionId}:${decision}`,metadata:{customer_action_request_id:actionId,decision,portal_tab:"fulfillment"}},()=>send(customer?.email||action.customer_email,subject,html))}catch(_){}
+  const mail=delivery?.message||{};
+  await db("request_communications",{method:"POST",body:JSON.stringify({service_request_id:action.service_request_id,direction:"outbound",channel:"email",subject,message:`Customer action ${decision}.`,delivery_status:mail.delivery_state||"failed",provider_message_id:mail.provider_message_id||null,metadata:{unified_message_id:mail.id||null}})});
   return json({ok:true,status:decision,approved_refund_amount:refund});
 }catch(e){return json({ok:false,error:e instanceof Error?e.message:String(e)},400)}})

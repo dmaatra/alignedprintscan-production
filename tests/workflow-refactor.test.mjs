@@ -185,7 +185,7 @@ test("supplemental invoices preserve earlier balances and support invoice three 
 test("intake confirmation reads the centralized branded template", async () => {
   const source = await read("supabase/functions/send-request-email/index.ts");
   assert.match(source, /message_templates\?select=\*&template_key=eq\.request_received/);
-  assert.match(source, /template_id: template\.id/);
+  assert.match(source, /templateId: template\.id/);
 });
 
 test("completion exceptions are admin-only, reasoned, and separately audited", async () => {

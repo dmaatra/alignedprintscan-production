@@ -1,0 +1,39 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { customerPortalUrl, emailButton, emailPanel, renderCustomerEmailShell } from "../supabase/functions/_shared/customer-email.mjs";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const output = resolve(root, "docs/email-previews");
+const request = { id: "11111111-2222-4333-8444-555555555555", reference: "APS-11111111", firstName: "Jordan", name: "Jordan Ellis", service: "Remote Online Notary", requestedDate: "August 20, 2026", requestedTime: "2:00–3:00 PM CT", appointmentDate: "August 22, 2026", appointmentTime: "3:30 PM CT", location: "Secure online session", quote: "$125.00", invoice: "INV-11111111-01", paid: "$75.00", balance: "$50.00", paymentDate: "August 13, 2026", completionDate: "August 22, 2026" };
+const portal = (tab) => customerPortalUrl("https://alignedprintscan.com", request.id, tab);
+const summary = (...rows) => emailPanel(rows);
+const specs = [
+  ["request_received","Request Received","REQUEST RECEIVED","Your Request Was Received","Thank you for choosing Aligned Print & Scan. Your request has been securely received and is now under review.","View My Request","overview",[["Reference",request.reference],["Service",request.service],["Requested Date",request.requestedDate],["Requested Time",request.requestedTime]],null],
+  ["quote_ready","Quote Ready","QUOTE READY","Your Quote Is Ready",`Your ${request.service} request has been reviewed. Please review the request summary and itemized quote, then approve it or request changes from your secure request page.`,"Review Quote","quote-payment",[["Reference",request.reference],["Client",request.name],["Quote Total",request.quote]],"quote"],
+  ["awaiting_payment_reminder","Awaiting Payment Reminder","PAYMENT DUE","Your Payment Is Ready","Payment is required before the applicable appointment, session, or work begins.","Make Payment","quote-payment",[["Reference",request.reference],["Invoice",request.invoice],["Amount Due",request.balance]],null],
+  ["payment_received","Payment Received","PAYMENT RECEIVED","Your Payment Has Been Received",`Thank you. Your payment for ${request.reference} has been received and recorded. A legitimate remaining balance is shown when applicable.`,"View Payment Status","quote-payment",[["Amount Recorded",request.paid],["Remaining Balance",request.balance],["Payment Date",request.paymentDate]],null],
+  ["appointment_confirmed","Appointment Confirmed","APPOINTMENT CONFIRMED","Your Appointment Is Confirmed",`Your ${request.service} appointment has been confirmed. Please review the details and preparation instructions.`,"View Appointment","fulfillment",[["Date",request.appointmentDate],["Time",request.appointmentTime],["Session",request.location]],null],
+  ["appointment_reminder","Appointment Reminder","APPOINTMENT REMINDER","Your Appointment Is Coming Up","This is a reminder to review your current appointment and preparation details before your service.","View Appointment","fulfillment",[["Date",request.appointmentDate],["Time",request.appointmentTime]],null],
+  ["appointment_rescheduled","Appointment Rescheduled","APPOINTMENT UPDATED","Your Appointment Has Been Updated","Your appointment has been updated. The current confirmed information appears below.","View Updated Appointment","fulfillment",[["Date",request.appointmentDate],["Time",request.appointmentTime]],null],
+  ["ron_session_ready","RON Session Ready","RON SESSION READY","Your Online Notary Session Is Ready","Review the secure session and identity/document preparation information before joining.","View Appointment","fulfillment",[["Date",request.appointmentDate],["Time",request.appointmentTime],["Method","Secure RON session"]],null],
+  ["mobile_appointment_confirmation","Mobile Appointment Confirmation","APPOINTMENT CONFIRMED","Your Mobile Appointment Is Confirmed","Review the confirmed location and preparation instructions for your mobile service.","View Appointment","fulfillment",[["Date",request.appointmentDate],["Time",request.appointmentTime],["Location","123 Example Street, Waxahachie, TX"]],null],
+  ["completed_scan_delivery","Completed Scan Delivery","COMPLETED SCANS","Your Completed Scans Are Ready","Your released customer-facing scan files are available in your secure request.","View Documents","documents",[["Reference",request.reference],["Released File","completed-scan.pdf"]],"deliverable"],
+  ["document_delivery","Document Delivery","DOCUMENTS READY","Your Documents Are Ready","Your released customer-facing documents are available in your secure request.","View Documents","documents",[["Reference",request.reference],["Released File","customer-deliverable.pdf"]],"deliverable"],
+  ["final_invoice","Invoice / Final Invoice","FINAL BALANCE DUE","Your Remaining Balance Is Ready","An additional balance is ready for review. This does not imply that your original payment was missing.","Review & Pay Balance","quote-payment",[["Reference",request.reference],["Invoice",request.invoice],["Amount Already Paid",request.paid],["Remaining Balance",request.balance]],"invoice"],
+  ["order_completed","Order Completed","SERVICE COMPLETED","Your Request Is Complete",`Your ${request.service} request ${request.reference} was completed on ${request.completionDate}.`,"View Completed Request","overview",[["Reference",request.reference],["Completed",request.completionDate]],null],
+  ["cancellation","Cancellation","CANCELLATION CONFIRMED","Your Request Was Cancelled","Your request has been cancelled. A cancellation request acknowledgment would state that review is still pending instead.","View My Request","overview",[["Reference",request.reference]],null],
+  ["general_customer_message","General Customer Message","APS UPDATE","An Update About Your Request","Aligned Print & Scan has an update about your current request. Review the secure request page for the appropriate next step.","View My Request","overview",[["Reference",request.reference],["Service",request.service]],null],
+];
+
+await mkdir(output, { recursive: true });
+const rows = [];
+for (const [key,name,eyebrow,title,copy,label,tab,panel,attachment] of specs) {
+  const subject = `${name}: ${request.reference}`;
+  const body = `<p>Hello ${request.firstName},</p><p>${copy}</p>${summary(...panel)}${key === "quote_ready" ? '<table width="100%" cellpadding="8" style="border-collapse:collapse"><tr><th align="left">Service Item</th><th>Qty</th><th>Rate</th><th>Total</th></tr><tr><td>Online notary service</td><td align="center">1</td><td align="right">$125.00</td><td align="right">$125.00</td></tr></table>' : ""}${emailButton(portal(tab),label)}`;
+  const html = renderCustomerEmailShell({body,preheader:subject,eyebrow,title});
+  await writeFile(resolve(output,`${key}.html`),html);
+  rows.push(`<tr><td><a href="${key}.html">${name}</a></td><td>${key}</td><td>${subject}</td><td>${eyebrow}</td><td>${title}</td><td>${label}</td><td>${tab}</td><td>${attachment || "None"}</td></tr>`);
+}
+await writeFile(resolve(output,"index.html"),`<!doctype html><html><head><meta charset="utf-8"><title>APS Customer Email Preview Matrix</title><style>body{font-family:Arial;padding:24px;color:#161c4d}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:9px;text-align:left}th{background:#161c4d;color:#fff}</style></head><body><h1>APS Customer Email Preview Matrix</h1><p>Synthetic data only. These previews never send email or read production customer records.</p><table><thead><tr><th>Template</th><th>Key</th><th>Sample Subject</th><th>Eyebrow</th><th>Title</th><th>CTA</th><th>Portal Tab</th><th>Attachment</th></tr></thead><tbody>${rows.join("")}</tbody></table></body></html>`);
+console.log(`Generated ${specs.length} synthetic previews in ${output}`);

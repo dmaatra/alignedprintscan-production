@@ -1,4 +1,5 @@
-import { emailButton, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
+import { customerPortalUrl, emailButton, recipientGreeting, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
+import { deliverCustomerCommunication, safeDeliveryError } from "../_shared/communication-history.mjs";
 
 // Aligned Print & Scan — New request notification emails
 // Sends a branded customer confirmation and an admin alert to hello@alignedprintscan.com.
@@ -49,11 +50,11 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const requestId = body.request_id || "";
     const ref = body.reference_number || body.ref || "APS-REQUEST";
-    const statusUrl = `${SITE_URL}/success.html?request_id=${requestId}&ref=${encodeURIComponent(ref)}`;
+    const statusUrl = customerPortalUrl(SITE_URL, requestId, "overview");
 
     let request: any = null;
     let customer: any = {
-      first_name: body.first_name || body.firstName || body.customer?.first_name || "there",
+      first_name: body.first_name || body.firstName || body.customer?.first_name || "",
       last_name: body.last_name || body.customer?.last_name || "",
       email: body.email || body.customer?.email || "",
       phone: body.phone || body.customer?.phone || "",
@@ -76,21 +77,20 @@ Deno.serve(async (req) => {
     const templateResponse = await supabaseFetch("message_templates?select=*&template_key=eq.request_received&active=eq.true&limit=1");
     const template = templateResponse.ok ? (await templateResponse.json())?.[0] : null;
     if (!template) throw new Error("The centralized request_received message template is unavailable.");
-    const templateValues = { request_reference: ref, customer_first_name: customer.first_name || "there", portal_url: statusUrl };
+    const templateValues = { request_reference: ref, customer_first_name: customer.first_name || "", service_name: serviceLabel(request?.service_type), requested_date: request?.preferred_date || "Not provided", requested_time: request?.preferred_time_window || "Not provided", portal_url: statusUrl };
     const customerSubject = renderTemplate(template.subject_template, templateValues);
-    const customerHtml = emailShell(`${renderTemplate(template.html_template, templateValues)}${emailButton(statusUrl, "View My Request")}`, customerSubject);
+    const customerBody = `<p>${recipientGreeting(customer)}</p>${renderTemplate(template.html_template, templateValues).replace(/<p>Hello[^<]*<\/p>/i, "")}<div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong>Reference:</strong> ${esc(ref)}<br><strong>Service:</strong> ${esc(serviceLabel(request?.service_type))}<br><strong>Requested Date:</strong> ${esc(request?.preferred_date || "Not provided")}<br><strong>Requested Time:</strong> ${esc(request?.preferred_time_window || "Not provided")}</div>${emailButton(statusUrl, "View My Request")}`;
+    const customerHtml = renderCustomerEmailShell({ body: customerBody, preheader: customerSubject, eyebrow: "REQUEST RECEIVED", title: "Your Request Was Received", siteUrl: SITE_URL, logoUrl: LOGO_URL, supportEmail: SUPPORT_EMAIL, supportPhone: SUPPORT_PHONE });
+    const customerText = `${recipientGreeting(customer)} Thank you for choosing Aligned Print & Scan. Your request ${ref} has been securely received and is now under review. Service: ${serviceLabel(request?.service_type)}. View your request: ${statusUrl}`;
 
     const adminHtml = emailShell(`<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">New Request</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">New Client Request Received</h1><p>A new request was submitted and needs admin review.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}<br><strong style="color:#161c4d">Client:</strong> ${esc([customer.first_name, customer.last_name].filter(Boolean).join(" ") || "Client")}<br><strong style="color:#161c4d">Email:</strong> ${esc(customer.email)}<br><strong style="color:#161c4d">Phone:</strong> ${esc(customer.phone || "Not provided")}<br><strong style="color:#161c4d">Preferred Contact:</strong> ${esc(customer.preferred_contact || "Not provided")}<br><strong style="color:#161c4d">Service:</strong> ${esc(serviceLabel(request?.service_type))}</div><p><a href="${SITE_URL}/admin-dashboard.html" style="display:inline-block;background:#c8a96b;color:#111522;padding:14px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Open Admin Dashboard</a></p>`, `New request: ${ref}`);
 
-    const customerSend = await sendEmail(customer.email, customerSubject, customerHtml);
-    const adminSend = await sendEmail(ADMIN_EMAIL, `New request received: ${ref}`, adminHtml);
-
-    if (requestId) {
-      await supabaseFetch("messages", { method:"POST", body: JSON.stringify({ service_request_id: requestId, template_id: template.id, recipient: customer.email, subject: customerSubject, rendered_html: customerHtml, rendered_text: renderTemplate(template.text_template || "", templateValues), delivery_state:"sent", provider_message_id: customerSend?.id || null, sent_at:new Date().toISOString() }) });
-      await supabaseFetch("request_status_updates", { method:"POST", body: JSON.stringify({ service_request_id: requestId, status:"under_review", message:"New request confirmation and admin alert sent.", sent_email:true, sent_sms:false }) });
-    }
-
-    return json({ ok:true, customer_email_id: customerSend?.id, admin_email_id: adminSend?.id });
+    const customerDelivery = await deliverCustomerCommunication({ supabaseUrl: SUPABASE_URL, serviceRoleKey: SERVICE_ROLE_KEY, requestId, templateId: template.id, templateKey: "request_received", recipient: customer.email, subject: customerSubject, renderedHtml: customerHtml, renderedText: customerText, associatedStatus: "under_review", sourceType: "automatic", sourceEvent: "request_created", idempotencyKey: `request:${requestId}:request_received`, metadata: { portal_tab: "overview" } }, () => sendEmail(customer.email, customerSubject, customerHtml));
+    let adminSend: any = null;
+    let adminAlertError: string | null = null;
+    try { adminSend = await sendEmail(ADMIN_EMAIL, `New request received: ${ref}`, adminHtml); } catch (error) { adminAlertError = safeDeliveryError(error); }
+    if (requestId) await supabaseFetch("request_status_updates", { method:"POST", body: JSON.stringify({ service_request_id: requestId, status:"under_review", message: adminAlertError ? "Customer acknowledgment sent; administrator alert failed." : "Customer acknowledgment and administrator alert sent.", sent_email:true, sent_sms:false }) });
+    return json({ ok:true, duplicate: customerDelivery.duplicate, customer_email_id: customerDelivery.provider?.id || customerDelivery.message?.provider_message_id || null, admin_email_id: adminSend?.id || null, admin_alert_sent: !adminAlertError, admin_alert_error: adminAlertError });
   } catch (err) {
     return json({ ok:false, error: err instanceof Error ? err.message : String(err) }, 400);
   }

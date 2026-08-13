@@ -303,6 +303,9 @@ Deno.serve(async (request) => {
         request_id: requestId,
         status: requestStatus,
         invoice_id: invoiceId,
+        source_type: "automatic",
+        source_event: "stripe_payment_completed",
+        idempotency_key: `stripe:${session.id}:payment_confirmation`,
       }),
     }).catch(() => null);
 
