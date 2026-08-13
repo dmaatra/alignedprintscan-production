@@ -394,6 +394,9 @@
     financialView: { search:"", state:"all", service:"all", from:"", to:"", sortKey:"date", sortDirection:"desc" },
     customerView: { search:"", service:"all", history:"all", sort:"recent_desc" },
     reviewView: { sort:"priority" },
+    ronInventory: null,
+    ronError: "",
+    ronView: { search:"", session:"all", payment:"all", appointment:"all", proof:"all", returnState:"all", sort:"operational" },
     activeView: "requests",
     newOrderStep: 0,
     newOrderMaxStep: 0,
@@ -409,11 +412,12 @@
   const moduleView = $("#adminModuleView");
   const moduleContent = $("#adminModuleContent");
   let financialTools = null;
+  let ronTools = null;
   const moduleTitles = {
     dashboard: ["Overview", "Operations Dashboard", "Live request, schedule, and revenue indicators."],
     calendar: ["Operations", "Scheduling Center", "Plan and export requested and confirmed APS appointments."],
     review: ["Operations", "Review Queue", "Requests that require a specific administrator decision or correction."],
-    sessions: ["Operations", "RON Sessions", "Cross-order RON preparation and session state."],
+    sessions: ["Operations", "RON Sessions", "Manage Remote Online Notary sessions, Proof readiness, appointments, signer access, and completed notarized documents."],
     invoices: ["Financial", "Invoices", "Request-level invoice status and outstanding balances."],
     payments: ["Financial", "Payments", "Paid-to-date and remaining balance visibility."],
     customers: ["Clients", "Customers", "Canonical customer profiles and complete APS request history."],
@@ -731,12 +735,25 @@
   function formatCustomerPhone(value){const digits=String(value||'').replace(/\D/g,'').replace(/^1(?=\d{10}$)/,'');return digits.length===10?`(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`:String(value||'');}
   function renderCustomerMergeButton(){return `<div class="customer-directory-heading"><p>One row per immutable APS customer ID. Signers and witnesses remain request participants.</p><button id="openCustomerMerge" class="admin-v3-button admin-v3-button--outline" type="button">Merge Customer Profiles</button></div>`;}
   function openCustomerMergeDialog(){const customers=customerDirectoryRows().map(row=>row.customer);if(customers.length<2){alert('At least two active customer profiles are required.');return;}const options=customers.map(c=>`<option value="${safe(c.id)}">${safe(`${c.first_name||''} ${c.last_name||''}`.trim())} · ${safe(c.email||c.phone||c.id)}</option>`).join('');const dialog=document.createElement('dialog');dialog.className='admin-v3-danger-dialog customer-merge-dialog';dialog.innerHTML=`<form method="dialog"><button class="dialog-close" value="cancel" aria-label="Close">×</button><span class="small-label">Administrator-only identity cleanup</span><h2>Merge Customer Profiles</h2><p>Linking a new request and merging existing profiles are separate operations. This merge retires the source profile and preserves its requests under the survivor.</p><label>Source / duplicate customer<select name="source" required><option value="">Select source</option>${options}</select></label><label>Surviving / canonical customer<select name="survivor" required><option value="">Select survivor</option>${options}</select></label><label>Merge reason<input name="reason" required minlength="3"></label><button type="button" class="admin-v3-button admin-v3-button--outline preview-customer-merge">Preview impact</button><div class="customer-merge-preview" role="status"></div><div class="status-actions"><button value="cancel" class="btn secondary">Cancel</button><button type="button" class="btn danger confirm-customer-merge" disabled>Merge Profiles</button></div></form>`;document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());dialog.showModal();const form=dialog.querySelector('form'),preview=dialog.querySelector('.customer-merge-preview'),confirm=dialog.querySelector('.confirm-customer-merge');dialog.querySelector('.preview-customer-merge').addEventListener('click',async()=>{if(!form.reportValidity()||form.elements.source.value===form.elements.survivor.value){preview.textContent='Choose two different profiles.';return;}const {data,error}=await adminClient.functions.invoke('admin-customer-lifecycle',{body:{command:'merge_preview',source_customer_id:form.elements.source.value,surviving_customer_id:form.elements.survivor.value}});if(error||!data?.ok){preview.textContent=data?.error||error?.message||'Preview failed.';return;}const c=data.counts;preview.innerHTML=`<strong>Impact preview</strong><p>${c.requests} requests · ${c.active} active · ${c.completed} completed · ${c.invoices} invoices · ${c.payments} payments · ${c.messages} messages · ${c.documents} documents · ${c.ron} RON requests</p><p>All request-scoped history remains attached to those requests.</p>`;confirm.disabled=false;});confirm.addEventListener('click',async()=>{if(!form.reportValidity())return;confirm.disabled=true;const {data,error}=await adminClient.functions.invoke('admin-customer-lifecycle',{body:{command:'merge',source_customer_id:form.elements.source.value,surviving_customer_id:form.elements.survivor.value,reason:form.elements.reason.value}});if(error||!data?.ok){alert(data?.error||error?.message||'Merge failed.');confirm.disabled=false;return;}dialog.close();await window.loadRequests?.();showAdminView('customers');});}
+  function ronOption(value,label,current){return `<option value="${value}" ${current===value?'selected':''}>${label}</option>`;}
+  function ronBadge(item){return `<span class="ron-state ron-state--${safe(item.key)}">${safe(item.label)}</span>`;}
+  function ronAppointment(row){const request=row.request;if(!request.appointment_date&&!request.preferred_date)return "Not scheduled";const date=request.appointment_date||request.preferred_date;const time=request.appointment_time?` · ${request.appointment_time.slice(0,5)}`:"";return `${financialDate(date)}${time}`;}
+  function renderRonSessions(){
+    if(moduleState.ronError)return `<div class="admin-v3-module-card admin-v3-empty-module"><h3>RON sessions could not load</h3><p>${safe(moduleState.ronError)}</p><button class="admin-v3-button admin-v3-button--outline ron-retry" type="button">Retry</button></div>`;
+    if(!moduleState.ronInventory)return '<div class="admin-v3-module-card"><p>Loading synchronized RON session state…</p></div>';
+    const all=ronTools.buildRonSessionRows(moduleState.ronInventory), filtered=ronTools.filterRonSessions(all,moduleState.ronView), rows=ronTools.sortRonSessions(filtered,moduleState.ronView.sort), hasSearch=Boolean(moduleState.ronView.search), hasFilters=["session","payment","appointment","proof","returnState"].some(key=>moduleState.ronView[key]!=="all");
+    const options=(items,current)=>items.map(([value,label])=>ronOption(value,label,current)).join("");
+    const controls=`<section class="ron-session-controls" aria-label="RON session controls"><label><span>Search</span><input id="ronSearch" type="search" value="${safe(moduleState.ronView.search)}" placeholder="APS reference, customer, phone, or Proof ID"></label><label><span>Session status</span><select id="ronSessionFilter">${options([["all","All"],["needs_attention","Needs Attention"],["preparing","Preparing"],["ready","Ready"],["active","Active / In Progress"],["completed","Completed"],["released","Released"]],moduleState.ronView.session)}</select></label><label><span>Payment</span><select id="ronPaymentFilter">${options([["all","All"],["not_invoiced","Not Invoiced"],["awaiting_payment","Awaiting Payment"],["paid","Paid"]],moduleState.ronView.payment)}</select></label><label><span>Appointment</span><select id="ronAppointmentFilter">${options([["all","All"],["needs_confirmation","Needs Confirmation"],["confirmed","Confirmed"]],moduleState.ronView.appointment)}</select></label><label><span>Proof</span><select id="ronProofFilter">${options([["all","All"],["not_created","Not Created"],["draft","Draft"],["ready_for_activation","Ready for Activation"],["activated","Activated"],["in_progress","In Progress"],["completed","Completed"],["completed_with_rejections","Completed With Rejections"]],moduleState.ronView.proof)}</select></label><label><span>Document return</span><select id="ronReturnFilter">${options([["all","All"],["not_available","Not Available"],["retrieval_pending","Retrieval Pending"],["pending_review","Pending Review"],["released","Released"]],moduleState.ronView.returnState)}</select></label><label><span>Sort</span><select id="ronSort">${options([["operational","Needs Attention First"],["appointment_asc","Appointment: Soonest First"],["appointment_desc","Appointment: Latest First"],["created_desc","Created: Newest First"],["created_asc","Created: Oldest First"],["customer_asc","Customer: A–Z"],["customer_desc","Customer: Z–A"],["reference","Request Reference"],["updated_desc","Last Updated: Newest First"],["updated_asc","Last Updated: Oldest First"]],moduleState.ronView.sort)}</select></label></section>`;
+    if(!all.length)return `${controls}<div class="admin-v3-module-card admin-v3-empty-module"><h3>No RON sessions yet.</h3></div>`;
+    if(!rows.length)return `${controls}<div class="admin-v3-module-card admin-v3-empty-module"><h3>${hasSearch?'No RON sessions found.':hasFilters?'No RON sessions match these filters.':'No RON sessions yet.'}</h3></div>`;
+    return `${controls}<div class="ron-session-list">${rows.map(row=>`<article class="admin-v3-module-card ron-session-card ${row.attention?'ron-session-card--attention':''}"><header><div><span class="small-label">${safe(row.reference)}</span><h2>${safe(`${row.customer.first_name||''} ${row.customer.last_name||''}`.trim()||'Customer')}</h2><p>${safe(labelFromStatus(row.request.workflow_status||row.request.status))} · ${safe(ronAppointment(row))}</p></div>${ronBadge(row.sessionStatus)}</header><div class="ron-readiness-grid"><div><span>Payment</span>${ronBadge(row.payment)}</div><div><span>Appointment</span>${ronBadge(row.appointment)}</div><div><span>Signers</span>${ronBadge(row.signers)}</div><div><span>Documents</span>${ronBadge(row.documents)}</div><div><span>Proof</span>${ronBadge(row.proof)}</div><div><span>Document return</span>${ronBadge(row.documentReturn)}</div></div><footer><div><strong>Next action</strong><span>${safe(row.nextAction.label)}</span>${row.transaction?.proof_transaction_id?`<small>Proof ${safe(row.transaction.proof_transaction_id)}</small>`:''}<small>Updated ${safe(financialDate(row.lastUpdated))}</small></div><button class="admin-v3-button admin-v3-button--navy ron-open-session" data-request-id="${safe(row.request.id)}" data-tab="${safe(row.nextAction.tab||'fulfillment')}" type="button">Open Session</button></footer></article>`).join('')}</div>`;
+  }
   function renderModule(view) {
     const rows=activeRequests();
     if(view==="dashboard") return renderDashboard();
     if(view==="calendar") return renderCalendar();
     if(view==="review") return renderReviewQueue();
-    if(view==="sessions") return table(rows.filter(r=>r.service_type==="ron"),[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Customer",render:r=>{const c=getCustomer(r)||{};return safe(`${c.first_name||""} ${c.last_name||""}`.trim())}},{label:"State",render:r=>safe(labelFromStatus(r.fulfillment_state||r.appointment_state||"needs_preparation"))}]);
+    if(view==="sessions") return renderRonSessions();
     if(view==="new") return renderNewRequest();
     if(view==="invoices"||view==="payments") return renderFinancial(view);
     if(view==="customers") return renderCustomerMergeButton()+renderCustomers();
@@ -748,6 +765,9 @@
   }
   function bindModuleActions() {
     $$(".module-open-request", moduleContent).forEach(button=>button.addEventListener("click",()=>openRequestFromModule(button.dataset.requestId,button.dataset.tab||"overview")));
+    $$(".ron-open-session",moduleContent).forEach(button=>button.addEventListener("click",()=>openRequestFromModule(button.dataset.requestId,button.dataset.tab||"fulfillment")));
+    [["ronSearch","search","input"],["ronSessionFilter","session","change"],["ronPaymentFilter","payment","change"],["ronAppointmentFilter","appointment","change"],["ronProofFilter","proof","change"],["ronReturnFilter","returnState","change"],["ronSort","sort","change"]].forEach(([id,key,type])=>{$(`#${id}`,moduleContent)?.addEventListener(type,event=>{moduleState.ronView[key]=event.target.value;moduleContent.innerHTML=renderRonSessions();bindModuleActions();if(type==="input"){const input=$("#ronSearch",moduleContent);input?.focus();input?.setSelectionRange(input.value.length,input.value.length);}});});
+    $(".ron-retry",moduleContent)?.addEventListener("click",()=>showAdminView("sessions"));
     $("[data-cancel-new]", moduleContent)?.addEventListener("click",()=>{const returnToCalendar=Boolean(moduleState.newOrderCalendarDate);moduleState.newOrderCalendarDate=null;showAdminView(returnToCalendar?"calendar":"requests");});
     const newOrderForm = $("#adminCreateRequestForm", moduleContent);
     if (newOrderForm) bindNewOrderWizard(newOrderForm);
@@ -1026,6 +1046,13 @@
     } catch(error) {status.textContent=`Could not create request: ${error.message||error}`;} finally {submit.disabled=false;}
   }
   async function loadCommunicationData(view) {
+    if(view==="sessions") {
+      ronTools ||= await import("./ron-session-state.mjs");
+      moduleState.ronError="";
+      const {data,error}=await adminClient.functions.invoke("proof-admin-transaction",{body:{command:"get_session_inventory"}});
+      if(error||!data?.ok){moduleState.ronInventory=null;moduleState.ronError=data?.error?.message||data?.error||error?.message||"Synchronized RON state could not be loaded.";}
+      else moduleState.ronInventory=data;
+    }
     if(view==="review") {
       const {data}=await adminClient.from("review_queue_items").select("id,service_request_id,blocker_key,title,detail,target_tab,state,created_at").eq("state","open").order("created_at",{ascending:true});
       moduleState.reviewItems=data||[];
