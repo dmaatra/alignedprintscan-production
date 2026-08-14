@@ -2011,6 +2011,7 @@ async function previewMessage() {
 
 async function saveCompletionFacts() {
   if (!selectedRequest) return;
+  const requestId = selectedRequest.id;
   const deliveryPath = $("#completionDeliveryPath")?.value || "";
   const payload = {
     service_request_id: selectedRequest.id,
@@ -2032,7 +2033,14 @@ async function saveCompletionFacts() {
   if (error || requestError) { result.hidden = false; result.textContent = error?.message || requestError?.message || "Fulfillment facts could not be saved."; return; }
   selectedRequest.document_state = $("#completionDocumentState")?.value || "pending";
   selectedRequest.participant_state = $("#completionParticipantState")?.value || "pending";
-  result.hidden = false; result.textContent = "Fulfillment facts saved.";
+  await loadRequests();
+  await selectRequest(requestId);
+  window.AdminV3?.activateTab("fulfillment");
+  const refreshedResult = $("#completionGateResult");
+  if (refreshedResult) {
+    refreshedResult.hidden = false;
+    refreshedResult.textContent = "Fulfillment facts saved.";
+  }
 }
 
 function renderCompletionBlockers(blockers = []) {
