@@ -184,3 +184,8 @@ test("appointment saves rebuild the selected workspace before restoring fulfillm
   assert.match(adminSource, /async function saveAppointmentDetails\(\)[\s\S]*?const requestId = selectedRequest\.id/);
   assert.match(adminSource, /Object\.assign\(selectedRequest, update\);[\s\S]*?await loadRequests\(\);[\s\S]*?await selectRequest\(requestId\);[\s\S]*?activateTab\("fulfillment"\)/);
 });
+
+test("fulfillment-fact saves rebuild the selected workspace before restoring fulfillment", () => {
+  assert.match(adminSource, /async function saveCompletionFacts\(\)[\s\S]*?const requestId = selectedRequest\.id/);
+  assert.match(adminSource, /await loadRequests\(\);[\s\S]*?await selectRequest\(requestId\);[\s\S]*?activateTab\("fulfillment"\)[\s\S]*?Fulfillment facts saved\./);
+});
