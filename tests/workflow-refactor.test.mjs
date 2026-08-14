@@ -145,6 +145,25 @@ test("message composer uses centralized templates and status-after-send", async 
   assert.match(admin, /message-file-attachment/);
 });
 
+test("Communication Log merges canonical messages with non-duplicated legacy communication rows", async () => {
+  const admin = await read("assets/js/admin.js");
+  const start = admin.indexOf("function mergeCommunicationRecords");
+  const end = admin.indexOf("\n\nasync function getPatch32Records", start);
+  const context = {};
+  vm.runInNewContext(`${admin.slice(start, end)}; this.mergeCommunicationRecords = mergeCommunicationRecords;`, context);
+  const rows = context.mergeCommunicationRecords(
+    [{ id: "message-1", subject: "Payment received", delivery_state: "sent", sent_at: "2026-08-14T07:42:25Z" }],
+    [
+      { id: "legacy-duplicate", subject: "Duplicate bridge", delivery_status: "sent", created_at: "2026-08-14T07:42:26Z", metadata: { unified_message_id: "message-1" } },
+      { id: "legacy-only", subject: "Quote approved", delivery_status: "sent", created_at: "2026-08-14T06:53:15Z" },
+    ],
+  );
+  assert.deepEqual(Array.from(rows, (row) => row.subject), ["Payment received", "Quote approved"]);
+  assert.equal(rows[0].delivery_status, "sent");
+  assert.match(admin, /adminClient\.from\("messages"\)/);
+  assert.match(admin, /adminClient\.from\("request_communications"\)/);
+});
+
 test("message delivery validates attachments and releases status only after send", async () => {
   const source = await read("supabase/functions/send-message/index.ts");
   const sendAt = source.indexOf('fetch("https://api.resend.com/emails"');
