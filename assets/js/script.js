@@ -2475,7 +2475,7 @@ async function initSuccessPage() {
   const activity = result.customer_activity || [];
   const portalTab = params.get("tab") || "overview";
   const tabLink = (tab) => `success.html?request_id=${encodeURIComponent(request.id || requestId || "")}&tab=${tab}`;
-  const primaryAction = customerPrimaryAction({ request, invoices, documents, messages, hasQuote, sessionId });
+  const primaryAction = customerPrimaryAction({ request, invoices, documents: apsDocuments, messages, hasQuote, sessionId });
   const canApprove = primaryAction?.key === "quote";
   const canPay = primaryAction?.key === "payment";
   const actionRequired = primaryAction ? `<section class="next-panel portal-action-required reveal" aria-labelledby="customerActionHeading"><p class="eyebrow">Action Required</p><h3 id="customerActionHeading">${escapePublic(primaryAction.title)}</h3>${primaryAction.detail ? `<p>${escapePublic(primaryAction.detail)}</p>` : ""}<a class="btn primary" href="${tabLink(primaryAction.tab)}" data-portal-action="${escapePublic(primaryAction.tab)}">${escapePublic(primaryAction.label)}</a></section>` : `<section class="portal-no-action reveal"><strong>No action required</strong><span>${escapePublic(copy.body)}</span></section>`;
