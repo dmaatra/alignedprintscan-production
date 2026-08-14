@@ -180,6 +180,12 @@ test("workspace tabs use a stable delegated container after request rerenders", 
   assert.match(adminV3Source, /event\.target\.closest\("\[data-workspace-tab\]"\)/);
 });
 
+test("workspace activation reorganizes freshly rerendered content before switching panels", () => {
+  const activate = adminV3Source.slice(adminV3Source.indexOf("function activateTab"), adminV3Source.indexOf("function filterVisibleRequestCards"));
+  assert.match(activate, /!detailRoot\.querySelector\("\[data-v3-tab-panel\]"\)/);
+  assert.match(activate, /organizeRequestDetail\(\);\s*return;/);
+});
+
 test("appointment saves rebuild the selected workspace before restoring fulfillment", () => {
   assert.match(adminSource, /async function saveAppointmentDetails\(\)[\s\S]*?const requestId = selectedRequest\.id/);
   assert.match(adminSource, /Object\.assign\(selectedRequest, update\);[\s\S]*?await loadRequests\(\);[\s\S]*?await selectRequest\(requestId\);[\s\S]*?activateTab\("fulfillment"\)/);
