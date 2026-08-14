@@ -287,10 +287,10 @@
 
   /** Wire persistent navigation and controls. */
   function bindShellEvents() {
-    $$("[data-workspace-tab]").forEach((button) => {
-      button.addEventListener("click", () => {
-        activateTab(button.dataset.workspaceTab);
-      });
+    $("#workspaceTabs")?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-workspace-tab]");
+      if (!button) return;
+      activateTab(button.dataset.workspaceTab);
     });
 
     $("#requestSearch")?.addEventListener("input", (event) => {
