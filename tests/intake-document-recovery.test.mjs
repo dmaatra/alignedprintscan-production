@@ -66,6 +66,19 @@ test("admin storage remains RLS protected and release is server validated", asyn
   assert.match(admin, /Customer already has access/);
 });
 
+test("document release correction preserves guards without a nonexistent timestamp", async () => {
+  const sql = await read("supabase/migrations/20260814082621_fix_document_release_missing_updated_at.sql");
+  assert.match(sql, /auth\.uid\(\) is null or not public\.is_admin\(\)/);
+  assert.match(sql, /Document not found for this request/);
+  assert.match(sql, /Internal and audit documents cannot be released/);
+  assert.match(sql, /Approve the completed notarized document in APS review before releasing it/);
+  assert.match(sql, /customer_visible = p_release/);
+  assert.match(sql, /eligible_for_delivery = p_release/);
+  assert.match(sql, /insert into public\.request_timeline_events/);
+  assert.match(sql, /revoke all on function public\.admin_set_document_release/);
+  assert.doesNotMatch(sql, /updated_at\s*=/);
+});
+
 test("admin RON intake persists structured signers witnesses and acts", async () => {
   const admin = await read("assets/js/admin-v3.js");
   assert.match(admin, /ron_signer_count[^\n]*max="10"/);
