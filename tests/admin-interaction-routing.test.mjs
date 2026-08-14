@@ -179,3 +179,8 @@ test("workspace tabs use a stable delegated container after request rerenders", 
   assert.match(adminV3Source, /\$\("#workspaceTabs"\)\?\.addEventListener\("click"/);
   assert.match(adminV3Source, /event\.target\.closest\("\[data-workspace-tab\]"\)/);
 });
+
+test("appointment saves rebuild the selected workspace before restoring fulfillment", () => {
+  assert.match(adminSource, /async function saveAppointmentDetails\(\)[\s\S]*?const requestId = selectedRequest\.id/);
+  assert.match(adminSource, /Object\.assign\(selectedRequest, update\);[\s\S]*?await loadRequests\(\);[\s\S]*?await selectRequest\(requestId\);[\s\S]*?activateTab\("fulfillment"\)/);
+});
