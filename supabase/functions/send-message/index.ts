@@ -507,12 +507,19 @@ Deno.serve(async (request) => {
           );
         }
       } else {
+        const statusUpdate: Record<string, unknown> = {
+          status: targetStatus,
+          workflow_status: targetStatus,
+        };
+        if (targetStatus === "appointment_confirmed") {
+          statusUpdate.appointment_confirmed_at = new Date().toISOString();
+          statusUpdate.appointment_state = "scheduled";
+        } else if (targetStatus === "appointment_needs_rescheduling") {
+          statusUpdate.appointment_state = "rescheduling_requested";
+        }
         const response = await rest(`service_requests?id=eq.${requestId}`, {
           method: "PATCH",
-          body: JSON.stringify({
-            status: targetStatus,
-            workflow_status: targetStatus,
-          }),
+          body: JSON.stringify(statusUpdate),
         });
         if (!response.ok) throw new Error(await response.text());
       }
