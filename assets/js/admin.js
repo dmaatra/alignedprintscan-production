@@ -1673,6 +1673,7 @@ async function saveAppointmentDetails() {
   // The dashboard shows the customer's requested date/time as a starting point.
   // Blank fields should NOT wipe existing database values.
   if (!selectedRequest) return;
+  const requestId = selectedRequest.id;
 
   const dateValue =
     $("#appointmentDate")?.value ||
@@ -1741,6 +1742,12 @@ async function saveAppointmentDetails() {
   });
 
   Object.assign(selectedRequest, update);
+  // Rebuild the selected workspace after the realtime request refresh. Without
+  // this, the fulfillment save can leave the visible tab panels detached from
+  // the persistent workspace controller until a full page reload.
+  await loadRequests();
+  await selectRequest(requestId);
+  window.AdminV3?.activateTab("fulfillment");
   showToast("Appointment details saved.");
   return true;
 }
