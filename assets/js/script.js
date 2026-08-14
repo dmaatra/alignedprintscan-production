@@ -185,6 +185,13 @@ function accumulateRequestFiles(input) {
   renderSelectedRequestFiles(input);
 }
 
+function clearSelectedRequestFiles() {
+  for (const inputName of requestFileInputs) {
+    selectedRequestFiles.delete(inputName);
+    renderSelectedRequestFiles(wizard?.elements[inputName]);
+  }
+}
+
 function printCost({
   pages = 0,
   color = "bw",
@@ -1254,6 +1261,7 @@ function initWizard() {
   qsa("input,select,textarea", wizard).forEach((el) =>
     el.addEventListener("change", () => {
       if (el.type === "file") accumulateRequestFiles(el);
+      if (el.name === "documentUploadException" && el.checked) clearSelectedRequestFiles();
       updateConditional();
       calculateEstimate();
       updateContinueState();
