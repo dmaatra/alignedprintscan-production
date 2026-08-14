@@ -34,6 +34,13 @@ test("selected files accumulate and can be removed independently", async () => {
   assert.match(script, /documentUploadException" && el\.checked\) clearSelectedRequestFiles/);
 });
 
+test("print intake clears notary-only native signer requirements", async () => {
+  const script = await read("assets/js/script.js");
+  assert.match(script, /signerHost\.dataset\.service !== activeService/);
+  assert.match(script, /const signerRequired = \["ron", "mobile"\]\.includes\(activeService\)/);
+  assert.match(script, /signerHost\.dataset\.service = activeService/);
+});
+
 test("customer documents preserve provenance and secure request-scoped access", async () => {
   const intake = await read("supabase/functions/public-request-submit/index.ts");
   const upload = await read("supabase/functions/customer-upload-document/index.ts");
