@@ -22,6 +22,9 @@ test("manual payment modal targets one existing invoice and enforces its balance
   assert.doesNotMatch(modal, /createAdditionalInvoice|createMissingInitialInvoice/);
   assert.match(modal, /Payment already recorded/);
   assert.match(modal, /method\.toLowerCase\(\) === "test"/);
+  assert.match(modal, /cancel-manual-payment/);
+  assert.match(modal, /dialog\.close\("cancel"\)/);
+  assert.match(modal, /dialog-close" type="button"/);
 });
 
 test("manual payment fallback cannot duplicate a paid primary invoice", async () => {
