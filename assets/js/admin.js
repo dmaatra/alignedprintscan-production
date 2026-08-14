@@ -1104,20 +1104,41 @@ function defaultInvoiceRows(request = {}) {
 }
 
 
+function mergeCommunicationRecords(canonical = [], legacy = []) {
+  const canonicalIds = new Set(canonical.map((row) => String(row.id || "")));
+  const normalizedCanonical = canonical.map((row) => ({
+    ...row,
+    delivery_status: row.delivery_state || row.delivery_status || "",
+    created_at: row.sent_at || row.failed_at || row.attempted_at || row.created_at,
+  }));
+  const legacyOnly = legacy.filter((row) => {
+    const unifiedId = String(row.metadata?.unified_message_id || "");
+    return !unifiedId || !canonicalIds.has(unifiedId);
+  });
+  return [...normalizedCanonical, ...legacyOnly].sort((a, b) =>
+    new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+}
+
 async function getPatch32Records(requestId) {
-  const [actions, timeline, communications] = await Promise.all([
+  const [actions, timeline, canonicalCommunications, legacyCommunications] = await Promise.all([
     adminClient.from("customer_action_requests").select("*").eq("service_request_id", requestId).order("created_at", { ascending: false }),
     adminClient.from("request_timeline_events").select("*").eq("service_request_id", requestId).order("created_at", { ascending: false }),
+    adminClient.from("messages").select("*").eq("service_request_id", requestId).order("created_at", { ascending: false }),
     adminClient.from("request_communications").select("*").eq("service_request_id", requestId).order("created_at", { ascending: false }),
   ]);
-  return { actions: actions.data || [], timeline: timeline.data || [], communications: communications.data || [] };
+  return {
+    actions: actions.data || [],
+    timeline: timeline.data || [],
+    communications: mergeCommunicationRecords(canonicalCommunications.data || [], legacyCommunications.data || []),
+  };
 }
 
 function patch32AdminPanels(records = {}) {
   const actions = records.actions || [];
   const pending = actions.filter((a) => String(a.status || "") === "pending");
   const actionRows = pending.length ? pending.map((a) => `<div class="admin-action-request" data-action-id="${escapeHtml(a.id)}"><strong>${escapeHtml(String(a.action_type || "request").toUpperCase())}</strong><p>${escapeHtml(a.reason || "No reason provided")}</p>${a.proposed_appointment_at ? `<p><strong>Proposed:</strong> ${new Date(a.proposed_appointment_at).toLocaleString()}</p>` : ""}<label>Resolution message<textarea class="action-resolution-message" placeholder="Message to customer"></textarea></label><label>Approved refund amount<input class="action-refund-amount" type="number" min="0" step="0.01" value="0"></label><div class="status-actions"><button class="btn primary resolve-customer-action" data-decision="approved" type="button">Approve</button><button class="btn dark resolve-customer-action" data-decision="denied" type="button">Deny</button></div></div>`).join("") : '<p class="admin-muted">No pending cancellation or reschedule requests.</p>';
-  const commRows = (records.communications || []).slice(0, 25).map((c) => `<li><strong>${escapeHtml(c.subject || c.channel || "Communication")}</strong><small>${escapeHtml(c.direction || "")} · ${escapeHtml(c.delivery_status || "")} · ${c.created_at ? new Date(c.created_at).toLocaleString() : ""}</small></li>`).join("") || '<li class="admin-muted">No communications logged.</li>';
+  const commRows = (records.communications || []).slice(0, 25).map((c) => `<li><strong>${escapeHtml(c.subject || c.channel || "Communication")}</strong><small>${escapeHtml(c.direction || "")} · ${escapeHtml(c.delivery_state || c.delivery_status || "")} · ${c.created_at ? new Date(c.created_at).toLocaleString() : ""}</small></li>`).join("") || '<li class="admin-muted">No communications logged.</li>';
   const timelineRows = (records.timeline || []).slice(0, 30).map((e) => `<li><strong>${escapeHtml(e.title || e.event_type || "Event")}</strong><p>${escapeHtml(e.detail || "")}</p><small>${escapeHtml(e.actor_type || "system")} · ${e.created_at ? new Date(e.created_at).toLocaleString() : ""}</small></li>`).join("") || '<li class="admin-muted">No timeline events logged.</li>';
   return `<div class="admin-detail-section"><h3>Cancellation & Reschedule Review</h3>${actionRows}</div>
   <div class="admin-detail-section"><h3>Communication Log</h3><ul class="admin-file-list">${commRows}</ul></div>
