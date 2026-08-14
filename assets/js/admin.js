@@ -2125,6 +2125,7 @@ async function updateRequestStatus(status) {
   // Uses the deployed Edge Function so status, history, customer email,
   // admin email, and success page movement stay in sync.
   if (!selectedRequest) return;
+  const sendMessage = !$("#updateStatusWithoutSending")?.checked;
 
   // Completion is blocked while an invoice still has a remaining balance.
   // Administrators should record payment, waive the charge, or void the
@@ -2213,7 +2214,7 @@ async function updateRequestStatus(status) {
           request_id: selectedRequest.id,
           status,
           note,
-          send_message: !$("#updateStatusWithoutSending")?.checked,
+          send_message: sendMessage,
           paid_amount: null,
           appointment: appointmentPayload,
         },

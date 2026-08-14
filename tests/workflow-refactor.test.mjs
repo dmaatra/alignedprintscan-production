@@ -133,6 +133,10 @@ test("status-without-message control uses the canonical transition and cannot fa
   assert.match(handler, /final_payment_received.*openManualPaymentDialog\("final"\)/s);
   assert.match(handler, /updateStatusWithoutSending.*updateRequestStatus\(btn\.dataset\.status\)/s);
   assert.ok(handler.indexOf('openManualPaymentDialog("final")') < handler.indexOf("updateStatusWithoutSending"));
+  const transition = admin.slice(admin.indexOf("async function updateRequestStatus"), admin.indexOf("function populateInvoicePresetSelect"));
+  assert.match(transition, /const sendMessage = !\$\("#updateStatusWithoutSending"\)\?\.checked/);
+  assert.ok(transition.indexOf("const sendMessage") < transition.indexOf("await saveAppointmentDetails"));
+  assert.match(transition, /send_message: sendMessage/);
 });
 
 test("customer portal prioritizes one action-required card", async () => {
