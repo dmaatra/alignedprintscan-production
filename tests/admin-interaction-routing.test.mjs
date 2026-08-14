@@ -167,3 +167,10 @@ test("production files use delegated bindings and preserve PR #12 action paths",
   assert.match(adminSource, /archiveRequestBtn/);
   assert.match(adminSource, /permanentDeleteRequestBtn/);
 });
+
+test("request selection uses one capture-phase delegated binding", async () => {
+  const source = await readFile(new URL("../assets/js/admin-interactions.js", import.meta.url), "utf8");
+  assert.match(source, /"request-selection", "\.request-row"/);
+  assert.match(source, /\{ capture: true \}/);
+  assert.match(source, /rootBindings\.has\(key\)/);
+});

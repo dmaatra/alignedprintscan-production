@@ -4,7 +4,7 @@
 
   const bindings = new WeakMap();
 
-  function bindOnce(root, key, selector, handler) {
+  function bindOnce(root, key, selector, handler, options) {
     if (!root) return;
     const rootBindings = bindings.get(root) || new Set();
     if (rootBindings.has(key)) return;
@@ -14,7 +14,7 @@
       const target = event.target.closest(selector);
       if (!target || !root.contains(target)) return;
       handler(event, target);
-    });
+    }, options);
   }
 
   function adminViewFor(link) {
@@ -34,7 +34,7 @@
   function bindRequestSelection(root, selectRequest) {
     bindOnce(root, "request-selection", ".request-row", (_event, row) => {
       selectRequest(row.dataset.id);
-    });
+    }, { capture: true });
   }
 
   function syncViewHash(view, locationObject = global.location, historyObject = global.history) {
