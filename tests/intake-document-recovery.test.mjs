@@ -31,6 +31,7 @@ test("selected files accumulate and can be removed independently", async () => {
   assert.match(script, /data-remove-selected-file/);
   assert.match(script, /data-add-selected-file/);
   assert.match(script, /filesForInput\(inputName\)/);
+  assert.match(script, /documentUploadException" && el\.checked\) clearSelectedRequestFiles/);
 });
 
 test("customer documents preserve provenance and secure request-scoped access", async () => {
