@@ -474,7 +474,7 @@ function renderRequestList() {
 async function getFiles(requestId) {
   const { data, error } = await adminClient
     .from("request_files")
-    .select("id,file_name,file_path,file_type,file_size,created_at,uploaded_by,document_category,document_classification,customer_visible,eligible_for_delivery,is_active")
+    .select("id,file_name,file_path,file_type,file_size,created_at,uploaded_by,document_category,document_classification,customer_visible,eligible_for_delivery,review_state,is_active")
     .eq("service_request_id", requestId)
     .order("created_at", {
       ascending: false,
@@ -1200,6 +1200,7 @@ async function loadProofControlPanel() {
         <div><span class="small-label">Last synchronization</span><strong>${tx?.last_synced_at ? new Date(tx.last_synced_at).toLocaleString() : "Not synchronized"}</strong></div>
       </div>
       ${tx?.last_error_message || tx?.webhook_manual_review_reason ? `<div class="email-notice"><strong>Administrator attention required</strong><p>${escapeHtml(tx.last_error_message || tx.webhook_manual_review_reason)}</p></div>` : ""}
+      ${!tx && !participants.some(person => person.participant_type === "signer" && person.email) ? '<div class="email-notice"><strong>Proof draft blocked</strong><p>Add and approve at least one signer with an individual email address before creating the Proof draft.</p><button class="btn dark" id="proofOpenCustomer" type="button">Open Customer &amp; Signers</button></div>' : ""}
       <div class="proof-control-section"><h4>Signers</h4>${signers.length ? `<ul class="admin-file-list">${signers.map(signer => `<li><strong>Signer ${signer.signer_position}: ${escapeHtml([signer.first_name,signer.last_name].filter(Boolean).join(" ") || signer.email)}</strong><small>${proofState(signer.configuration_state)} · ${proofState(signer.proof_status)}${signer.access_link_present ? " · Secure access available" : ""}</small></li>`).join("")}</ul>` : '<p class="admin-muted">Approved APS participants have not been mapped to Proof.</p>'}</div>
       <div class="proof-control-section"><h4>Documents</h4>${sourceAssets.length ? `<ul class="admin-file-list">${sourceAssets.map(asset => `<li><strong>${escapeHtml(asset.file_name)}</strong><small>${proofState(asset.upload_state)} · ${proofState(asset.processing_state)} · ${proofState(asset.requirement)}${asset.witness_required ? " · Witness required" : ""}</small></li>`).join("")}</ul>` : '<p class="admin-muted">No APS source documents have been selected for Proof.</p>'}<div id="proofEligibleDocuments"></div></div>
       <div class="proof-control-section"><h4>Completed assets</h4>${completedAssets.length ? `<ul class="admin-file-list">${completedAssets.map(asset => `<li><strong>${escapeHtml(asset.file_name)}</strong><small>${proofState(asset.retrieval_state)} · Internal until explicitly released through APS Documents</small>${asset.retrieval_state === "retrieved" ? `<button class="btn dark proof-stage-asset" data-asset-id="${escapeHtml(asset.id)}" type="button">Stage for Review</button>` : ""}</li>`).join("")}</ul>` : '<p class="admin-muted">No completed notarized documents have been retrieved.</p>'}${tx?.completed_assets_available ? `<div class="status-actions">${sourceAssets.map(asset => `<button class="btn dark proof-retrieve-document" data-source-id="${escapeHtml(asset.id)}" type="button">Retrieve ${escapeHtml(asset.file_name)}</button>`).join("")}<button class="btn dark" id="proofRetrieveAudit" type="button">Retrieve Audit Trail</button></div>` : ""}</div>
@@ -1215,6 +1216,7 @@ async function loadProofControlPanel() {
       if (!primary?.email) throw new Error("An approved signer email is required.");
       await proofCommand("create_draft", { signerEmail: primary.email });
     }));
+    $("#proofOpenCustomer")?.addEventListener("click", () => window.AdminV3?.activateTab("customer"));
     $("#proofConfigureSigners")?.addEventListener("click", () => runProofUiAction(() => proofCommand("configure_approved_signers", { integrationId: tx.id })));
     $("#proofConfirmPreparation")?.addEventListener("click", () => runProofUiAction(async()=>{if(!confirm("Confirm that document preparation was completed in Proof? APS will record your administrator attestation."))return;const {error}=await adminClient.rpc("confirm_proof_document_preparation",{p_transaction_id:tx.id});if(error)throw error;}));
     $("#proofSyncStatus")?.addEventListener("click", () => runProofUiAction(() => proofCommand("refresh", { integrationId: tx.id })));
@@ -1266,6 +1268,8 @@ async function selectRequest(id) {
   renderStats();
   renderRequestList();
   if (!selectedRequest) return;
+  const { error: viewedError } = await adminClient.rpc("admin_mark_request_viewed", { p_request: selectedRequest.id });
+  if (!viewedError) await window.AdminV3?.syncRequestCount?.();
 
   // Keep the Admin Portal v3 header synchronized with the active request.
   window.AdminV3?.syncSelectedRequest(selectedRequest);
@@ -1338,7 +1342,11 @@ async function selectRequest(id) {
     files.map(async (f) => {
       const url = await signedUrl(f.file_path);
       const released = f.customer_visible && f.eligible_for_delivery && f.document_classification !== "internal_document";
-      return `<li>${url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(f.file_name)}</a>` : escapeHtml(f.file_name)}<small>${f.file_type || "file"} · ${f.file_size ? Math.round(f.file_size / 1024) + " KB" : ""} · ${released ? "Released to customer" : "Internal / not released"}</small><button class="btn dark release-document-btn" data-file-id="${escapeHtml(f.id)}" data-released="${released}" type="button">${released ? "Withdraw Release" : "Release to Customer"}</button></li>`;
+      const customerUpload = f.uploaded_by === "customer" && f.document_classification === "customer_document";
+      const provenance = customerUpload ? "Customer Upload" : f.document_classification === "completed_notarized_document" ? "Proof Completed Document" : f.document_classification === "customer_deliverable" ? "APS Deliverable" : f.document_classification === "internal_document" ? "Admin / Internal" : "Admin Upload";
+      const access = customerUpload ? "Customer already has access" : released ? "Released to customer" : "Customer-hidden";
+      const releaseControl = customerUpload ? "" : `<button class="btn dark release-document-btn" data-file-id="${escapeHtml(f.id)}" data-released="${released}" type="button">${released ? "Withdraw Release" : "Release to Customer"}</button>`;
+      return `<li>${url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(f.file_name)}</a>` : escapeHtml(f.file_name)}<small>${escapeHtml(provenance)} · ${f.file_type || "file"} · ${f.file_size ? Math.round(f.file_size / 1024) + " KB" : ""} · ${escapeHtml(access)}</small>${releaseControl}</li>`;
     }),
   );
   const quoteLocked = [
@@ -1442,16 +1450,15 @@ async function selectRequest(id) {
     <div class="admin-detail-section completion-facts-card" data-v3-tab-target="fulfillment">
       <div class="admin-v3-section-heading"><span class="small-label">Completion Gate</span><h3>Authoritative Fulfillment Facts</h3></div>
       <p class="admin-muted">Record what was actually purchased and fulfilled. A zero balance alone does not complete an order.</p>
-      <fieldset><legend>Purchased service components</legend>${["ron","mobile","print_copy","scan","courier"].map(component => `<label class="check"><input class="completion-component" type="checkbox" value="${component}" ${(completionFacts.components || []).includes(component) ? "checked" : ""}> ${escapeHtml(statusLabel(component))}</label>`).join("")}</fieldset>
+      <fieldset><legend>Purchased service components</legend>${({ron:["ron"],mobile:["mobile"],print:["print_copy","scan","courier"]}[selectedRequest.service_type] || []).map(component => `<label class="check"><input class="completion-component" type="checkbox" value="${component}" ${(completionFacts.components || []).includes(component) ? "checked" : ""}> ${escapeHtml(statusLabel(component))}</label>`).join("")}</fieldset>
       <div class="admin-detail-grid">
-        ${[["ron_session_completed","RON session completed"],["mobile_service_completed","Mobile service performed"],["production_completed","Print/Copy production completed"],["scan_completed","Scanning completed"],["pickup_completed","Pickup/handoff completed"],["delivery_completed","Delivery/handoff completed"],["proof_of_delivery_present","Proof of delivery present"]].map(([key,label]) => `<label class="check"><input class="completion-fact" data-key="${key}" type="checkbox" ${completionFacts[key] ? "checked" : ""}> ${label}</label>`).join("")}
+        ${(selectedRequest.service_type === "ron" ? [["ron_session_completed","RON session completed"]] : selectedRequest.service_type === "mobile" ? [["mobile_service_completed","Mobile service performed"]] : [["production_completed","Print/Copy production completed"],["scan_completed","Scanning completed"],["pickup_completed","Pickup/handoff completed"],["delivery_completed","Delivery/handoff completed"],["proof_of_delivery_present","Proof of delivery present"]]).map(([key,label]) => `<label class="check"><input class="completion-fact" data-key="${key}" type="checkbox" ${completionFacts[key] ? "checked" : ""}> ${label}</label>`).join("")}
       </div>
       <div class="admin-detail-grid">
         <label>Document readiness<select id="completionDocumentState"><option value="pending" ${selectedRequest.document_state === "pending" ? "selected" : ""}>Pending / review required</option><option value="approved" ${selectedRequest.document_state === "approved" ? "selected" : ""}>Reviewed and ready</option><option value="not_applicable" ${selectedRequest.document_state === "not_applicable" ? "selected" : ""}>Not applicable</option></select></label>
         <label>Participant / witness readiness<select id="completionParticipantState"><option value="pending" ${selectedRequest.participant_state === "pending" ? "selected" : ""}>Pending / unresolved</option><option value="approved" ${selectedRequest.participant_state === "approved" ? "selected" : ""}>Prepared and ready</option><option value="not_applicable" ${selectedRequest.participant_state === "not_applicable" ? "selected" : ""}>Not applicable</option></select></label>
         <label>Customer-delivery path<select id="completionDeliveryPath"><option value="">Select the applicable path…</option><option value="aps" ${completionFacts.aps_deliverable_required === true ? "selected" : ""}>APS must release a portal deliverable</option><option value="external" ${completionFacts.external_platform_delivery ? "selected" : ""}>External platform delivers final document</option><option value="physical" ${completionFacts.physical_only ? "selected" : ""}>Physical-only; no portal deliverable</option><option value="declined" ${completionFacts.customer_declined_optional_deliverable ? "selected" : ""}>Customer declined optional deliverable</option></select></label>
-        <label class="check"><input id="completionPickupRequired" type="checkbox" ${completionFacts.pickup_required !== false ? "checked" : ""}> Courier pickup is required</label>
-        <label class="check"><input id="completionPodRequired" type="checkbox" ${completionFacts.proof_of_delivery_required ? "checked" : ""}> Proof of delivery is required</label>
+        ${selectedRequest.service_type === "print" ? `<label class="check"><input id="completionPickupRequired" type="checkbox" ${completionFacts.pickup_required === true ? "checked" : ""}> Courier pickup is required</label><label class="check"><input id="completionPodRequired" type="checkbox" ${completionFacts.proof_of_delivery_required ? "checked" : ""}> Proof of delivery is required</label>` : '<span class="admin-muted">Courier pickup and proof of delivery: N/A for this service.</span>'}
       </div>
       <button id="saveCompletionFactsBtn" class="btn primary" type="button">Save Fulfillment Facts</button>
       <div id="completionGateResult" class="email-notice" role="status" aria-live="polite" hidden></div>
@@ -1533,7 +1540,7 @@ async function selectRequest(id) {
       <label>Subject<input id="messageSubject" type="text"></label>
       <label>Message HTML<textarea id="messageBody" rows="10"></textarea></label>
       <fieldset class="message-attachments"><legend>Existing order documents</legend>
-        ${files.length ? files.map(file => `<label class="check"><input class="message-file-attachment" type="checkbox" value="${escapeHtml(file.id)}" ${file.customer_visible && file.eligible_for_delivery && file.document_classification !== "internal_document" ? "" : "disabled"}> ${escapeHtml(file.file_name)} <small>${file.customer_visible && file.eligible_for_delivery ? "Released deliverable" : "Not released"}</small></label>`).join("") : '<p class="admin-muted">No order documents available.</p>'}
+        ${files.length ? files.map(file => { const customerUpload=file.uploaded_by==="customer"&&file.document_classification==="customer_document"; const released=file.customer_visible&&file.eligible_for_delivery&&file.document_classification!=="internal_document"; return `<label class="check"><input class="message-file-attachment" type="checkbox" value="${escapeHtml(file.id)}" ${customerUpload||released ? "" : "disabled"}> ${escapeHtml(file.file_name)} <small>${customerUpload ? "Customer Upload · eligible request attachment" : released ? "Released deliverable" : "Internal / customer-hidden"}</small></label>`; }).join("") : '<p class="admin-muted">No order documents available.</p>'}
       </fieldset>
       <p id="messageRequirement" class="admin-muted">Choose a template to see attachment requirements.</p>
       <div id="messagePreview" class="email-notice" hidden></div>
@@ -1998,12 +2005,14 @@ async function completeWithException() {
 
 async function setDocumentRelease(fileId, released) {
   if (!selectedRequest || !fileId) return;
-  const update = released
-    ? { customer_visible: true, eligible_for_delivery: true, document_classification: "customer_deliverable", review_state: "approved" }
-    : { customer_visible: false, eligible_for_delivery: false };
-  const { error } = await adminClient.from("request_files").update(update).eq("id", fileId).eq("service_request_id", selectedRequest.id);
+  const files = await getFiles(selectedRequest.id);
+  const target = files.find((file) => file.id === fileId);
+  if (!target) { alert("Document not found."); return; }
+  if (target.uploaded_by === "customer" && target.document_classification === "customer_document") { alert("This is a customer upload. The customer already has secure request-scoped access, so release is not applicable."); return; }
+  if (released && target.document_classification === "internal_document") { alert("Internal and audit documents cannot be released. Reclassify an eligible customer deliverable through an authorized workflow first."); return; }
+  const { error } = await adminClient.rpc("admin_set_document_release", { p_request: selectedRequest.id, p_file: fileId, p_release: released });
   if (error) { alert(error.message || "Document release could not be updated."); return; }
-  await adminClient.from("request_timeline_events").insert({ service_request_id: selectedRequest.id, event_type: released ? "document_released" : "document_release_withdrawn", title: released ? "Document released" : "Document release withdrawn", actor_type: "admin", visibility: "customer" });
+  showToast(released ? "Document released to the customer portal." : "Customer release withdrawn.");
   await selectRequest(selectedRequest.id);
   window.AdminV3?.activateTab("documents");
 }

@@ -276,10 +276,13 @@
   }
 
   /** Keep request counters in the new shell synchronized with rendered cards. */
-  function syncRequestCount() {
+  async function syncRequestCount() {
     const count = $$("#requestList .request-row").filter((row) => row.dataset.archived !== "true").length;
     $("#requestCountBadge").textContent = String(count);
-    $("#navRequestCount").textContent = String(count);
+    const { data, error } = await adminClient.rpc("admin_unopened_request_count");
+    const unopened = error ? 0 : Number(data || 0);
+    const badge = $("#navRequestCount");
+    if (badge) { badge.textContent = String(unopened); badge.hidden = unopened === 0; }
   }
 
   /** Wire persistent navigation and controls. */
@@ -660,12 +663,15 @@
           <div class="admin-v3-wizard-heading"><span>Step 3 of 6</span><h2 id="wizardDetailsHeading">Service Details</h2><p>Collect only the intake information needed for the selected service.</p></div>
           <div class="admin-v3-service-fields" data-service-fields="ron"><div class="admin-v3-form-grid">
             ${field("Document type", "document_type", '<input name="document_type" placeholder="Example: Power of attorney">')}
-            ${field("Signer count", "ron_signer_count", '<input name="ron_signer_count" type="number" min="1" value="1" required>')}
+            ${field("Signer count", "ron_signer_count", '<input name="ron_signer_count" type="number" min="1" max="10" value="1" required>')}
             ${field("Notarial acts", "ron_notarization_count", '<input name="ron_notarization_count" type="number" min="1" value="1" required>')}
+            <div id="adminRonSignerFields" class="wide"></div>
+            <div id="adminRonActFields" class="wide"></div>
             ${field("Are witnesses needed?", "ron_witness_need", '<select name="ron_witness_need"><option value="no">No</option><option value="yes">Yes</option><option value="not_sure">Not sure</option></select>')}
             ${field("Witness count", "ron_witness_count", '<select name="ron_witness_count"><option value="0">None</option><option value="1">1</option><option value="2">2</option><option value="not_sure">Not sure</option></select>', "admin-v3-witness-field")}
             ${field("Witness provider", "ron_witness_provider", '<select name="ron_witness_provider"><option value="client">Customer</option><option value="aligned">APS</option><option value="shared">Shared</option><option value="not_sure">Not sure</option></select>', "admin-v3-witness-field")}
             ${field("Customer-provided witnesses", "ron_client_witness_count", '<input name="ron_client_witness_count" type="number" min="0" value="0">', "admin-v3-witness-field")}
+            <div id="adminRonWitnessFields" class="wide admin-v3-witness-field"></div>
             ${field("Technology ready", "ron_tech_ready", '<input name="ron_tech_ready" type="checkbox" class="admin-v3-check">')}
             ${field("Valid ID confirmed", "ron_valid_id", '<input name="ron_valid_id" type="checkbox" class="admin-v3-check">')}
             ${field("Recording consent confirmed", "ron_recording_consent", '<input name="ron_recording_consent" type="checkbox" class="admin-v3-check">')}
@@ -921,6 +927,14 @@
       $$(`.admin-v3-service-fields[data-service-fields="${service}"] .admin-v3-witness-field`, form).forEach((field) => { field.hidden = !show; });
     });
   }
+  function setWizardRonStructuredFields(form) {
+    const signerHost=$("#adminRonSignerFields",form),actHost=$("#adminRonActFields",form),witnessHost=$("#adminRonWitnessFields",form);if(!signerHost||!actHost||!witnessHost)return;
+    const signerCount=Math.min(10,Math.max(1,wizardNumber(form,"ron_signer_count",1))),actCount=Math.max(1,wizardNumber(form,"ron_notarization_count",1));
+    if(Number(signerHost.dataset.count)!==signerCount){signerHost.dataset.count=String(signerCount);signerHost.innerHTML=`<h3>Structured signers</h3>${Array.from({length:signerCount},(_,index)=>`<div class="admin-v3-form-grid"><label>Signer ${index+1} legal ID name<input name="ron_signer_name_${index}" required></label><label>Signer ${index+1} individual email<input name="ron_signer_email_${index}" type="email" required></label><label>Signer ${index+1} phone<input name="ron_signer_phone_${index}" type="tel"></label></div>`).join("")}`;}
+    if(Number(actHost.dataset.count)!==actCount){actHost.dataset.count=String(actCount);actHost.innerHTML=`<h3>Requested notarial acts</h3>${Array.from({length:actCount},(_,index)=>`<label>Act ${index+1}<select name="ron_act_type_${index}" required><option value="acknowledgment">Acknowledgment</option><option value="jurat">Jurat / verification on oath</option><option value="signature_witnessing">Signature witnessing</option><option value="certified_copy">Certified copy (when permitted)</option><option value="unsure">I’m not sure</option></select></label>`).join("")}`;}
+    const allocation=wizardWitnessAllocation(form,"ron"),witnessCount=wizardValue(form,"ron_witness_need")==="yes"?allocation.customer:0;
+    if(Number(witnessHost.dataset.count)!==witnessCount){witnessHost.dataset.count=String(witnessCount);witnessHost.innerHTML=witnessCount?`<h3>Customer-provided witnesses</h3>${Array.from({length:witnessCount},(_,index)=>`<div class="admin-v3-form-grid"><label>Witness ${index+1} legal name<input name="ron_witness_name_${index}" required></label><label>Witness ${index+1} email<input name="ron_witness_email_${index}" type="email"></label><label>Witness ${index+1} phone<input name="ron_witness_phone_${index}" type="tel"></label></div>`).join("")}`:"";}
+  }
   function reviewItem(label, value) { return `<div><dt>${safe(label)}</dt><dd>${safe(value || "Not provided")}</dd></div>`; }
   function renderWizardReview(form) {
     const service = wizardService(form);
@@ -986,11 +1000,12 @@
     moduleState.newOrderMaxStep = 0;
     setWizardService(form);
     setWizardWitnessFields(form);
+    setWizardRonStructuredFields(form);
     form.addEventListener("submit", createAdminRequest);
     form.elements.existing_customer_id?.addEventListener("change", () => selectExistingWizardCustomer(form));
     form.elements.service_type.forEach((control) => control.addEventListener("change", () => { setWizardService(form); setWizardWitnessFields(form); }));
-    form.addEventListener("input", () => updateWizardEstimate(form));
-    form.addEventListener("change", (event) => { if (event.target.name?.endsWith("_witness_need")) setWizardWitnessFields(form); updateWizardEstimate(form); });
+    form.addEventListener("input", () => { setWizardRonStructuredFields(form); updateWizardEstimate(form); });
+    form.addEventListener("change", (event) => { if (event.target.name?.endsWith("_witness_need")) setWizardWitnessFields(form); setWizardRonStructuredFields(form); updateWizardEstimate(form); });
     $("#adminWizardNext", form).addEventListener("click", () => { if (validateWizardStep(form)) showWizardStep(form, moduleState.newOrderStep + 1, true); });
     $("#adminWizardPrevious", form).addEventListener("click", () => showWizardStep(form, moduleState.newOrderStep - 1));
     $$('[data-wizard-jump]', form).forEach((button) => button.addEventListener("click", () => { const target = Number(button.dataset.wizardJump); if (target <= moduleState.newOrderMaxStep) showWizardStep(form, target); }));
@@ -1027,6 +1042,13 @@
         const rawWitnessCount = wizardValue(form, "ron_witness_count");
         const { error } = await adminClient.from("ron_requests").insert({ service_request_id:request.id,document_type:wizardValue(form,"document_type")||null,number_of_signers:wizardNumber(form,"ron_signer_count",1),number_of_notarizations:wizardNumber(form,"ron_notarization_count",1),ron_platform:wizardValue(form,"ron_platform")||null,tech_ready:wizardChecked(form,"ron_tech_ready"),valid_id_confirmed:wizardChecked(form,"ron_valid_id"),consent_to_recording:wizardChecked(form,"ron_recording_consent"),witness_need:wizardValue(form,"ron_witness_need")||"no",witness_count:rawWitnessCount==="not_sure"?null:witnesses.total,witness_provider:wizardValue(form,"ron_witness_provider")||null,client_witness_count:witnesses.customer,provided_witness_count:witnesses.aps,witness_review_required:["not_sure"].includes(wizardValue(form,"ron_witness_need"))||["not_sure"].includes(wizardValue(form,"ron_witness_provider"))||rawWitnessCount==="not_sure" });
         if (error) throw error;
+        const signerCount=Math.min(10,Math.max(1,wizardNumber(form,"ron_signer_count",1)));
+        const participants=Array.from({length:signerCount},(_,index)=>({service_request_id:request.id,participant_type:"signer",full_legal_name:wizardValue(form,`ron_signer_name_${index}`),email:wizardValue(form,`ron_signer_email_${index}`).toLowerCase(),mobile_phone:wizardValue(form,`ron_signer_phone_${index}`)||null,identity_name_confirmed:true,sort_order:index}));
+        for(let index=0;index<witnesses.customer;index++)participants.push({service_request_id:request.id,participant_type:"witness",full_legal_name:wizardValue(form,`ron_witness_name_${index}`),email:wizardValue(form,`ron_witness_email_${index}`).toLowerCase()||null,mobile_phone:wizardValue(form,`ron_witness_phone_${index}`)||null,identity_name_confirmed:Boolean(wizardValue(form,`ron_witness_name_${index}`)),sort_order:signerCount+index});
+        const {error:participantError}=await adminClient.from("request_participants").insert(participants);if(participantError)throw participantError;
+        const actCount=Math.max(1,wizardNumber(form,"ron_notarization_count",1));
+        const acts=Array.from({length:actCount},(_,index)=>{const type=wizardValue(form,`ron_act_type_${index}`)||"unsure";return{service_request_id:request.id,act_number:index+1,act_type:type,requires_admin_review:type==="unsure"};});
+        const {error:actError}=await adminClient.from("request_notarial_acts").insert(acts);if(actError)throw actError;
       }
       if (service === "mobile") {
         const witnesses = wizardWitnessAllocation(form, "mobile");
@@ -1041,6 +1063,7 @@
         if (error) throw error;
       }
       await uploadNewOrderDocuments(request.id, Array.from(form.elements.order_documents?.files||[]));
+      if(wizardValue(form,"email")){const reference=`APS-${request.id.slice(0,8).toUpperCase()}`;const {error:messageError}=await adminClient.functions.invoke("send-request-email",{body:{request_id:request.id,reference_number:reference,email:wizardValue(form,"email"),first_name:wizardValue(form,"first_name"),last_name:wizardValue(form,"last_name")}});if(messageError)console.warn("Admin-created request acknowledgment failed",messageError);}
       const calendarDate=moduleState.newOrderCalendarDate;
       status.textContent="Request created successfully."; await loadRequests();
       if(calendarDate){moduleState.newOrderCalendarDate=null;moduleState.calendarSelectedDate=calendarDate;const selected=dateFromKey(calendarDate);if(selected)moduleState.calendarMonth=new Date(selected.getFullYear(),selected.getMonth(),1,12);showAdminView("calendar");}else{openRequestFromModule(request.id);}
@@ -1107,6 +1130,7 @@
     openRequestFromModule,
     calendarIcs,
     googleCalendarUrl,
+    syncRequestCount,
     calendarIcsForRequest: (id) => {
       const request=moduleState.requests.find(item=>item.id===id);
       return request?calendarIcs(request):"";
