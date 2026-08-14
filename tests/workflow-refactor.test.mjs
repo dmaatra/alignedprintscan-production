@@ -5,18 +5,38 @@ import vm from "node:vm";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("status selection does not record or create payment", async () => {
+test("Payment Received opens the manual recorder while other statuses remain message-driven", async () => {
   const admin = await read("assets/js/admin.js");
-  const statusFunction = admin.slice(admin.indexOf("async function updateRequestStatus"), admin.indexOf("async function saveInvoice"));
-  assert.doesNotMatch(statusFunction, /recordAdminPayment\(/);
+  assert.match(admin, /btn\.dataset\.status === "payment_received"[\s\S]*openManualPaymentDialog\("initial"\)/);
+  assert.match(admin, /btn\.dataset\.status === "final_payment_received"[\s\S]*openManualPaymentDialog\("final"\)/);
   assert.match(admin, /recordPrimaryPaymentBtn/);
   assert.match(admin, /recordSupplementalPaymentBtn/);
 });
 
+test("manual payment modal targets one existing invoice and enforces its balance", async () => {
+  const admin = await read("assets/js/admin.js");
+  const modal = admin.slice(admin.indexOf("async function openManualPaymentDialog"), admin.indexOf("async function requireAdminSession"));
+  assert.match(modal, /invoice_id: target\.id/);
+  assert.match(modal, /max="\$\{outstanding\.toFixed\(2\)\}"/);
+  assert.match(modal, /Amount cannot exceed the outstanding balance/);
+  assert.doesNotMatch(modal, /createAdditionalInvoice|createMissingInitialInvoice/);
+  assert.match(modal, /Payment already recorded/);
+  assert.match(modal, /method\.toLowerCase\(\) === "test"/);
+});
+
 test("manual payment fallback cannot duplicate a paid primary invoice", async () => {
   const source = await read("supabase/functions/record-admin-payment/index.ts");
-  assert.match(source, /The primary invoice is already paid/);
-  assert.match(source, /existingPrimary/);
+  assert.match(source, /Payment recording never creates an invoice/);
+  assert.doesNotMatch(source, /createMissingInitialInvoice|Initial invoice materialized/);
+  assert.match(source, /requestedAmount > invoiceBalance/);
+  assert.match(source, /external_reference: body\.reference/);
+});
+
+test("manual payment attempts carry a unique external reference for retry deduplication", async () => {
+  const admin = await read("assets/js/admin.js");
+  assert.match(admin, /paymentAttemptReference = `manual:/);
+  assert.match(admin, /crypto\.randomUUID\(\)/);
+  assert.match(admin, /reference: reference \|\| paymentAttemptReference/);
 });
 
 test("Stripe webhook verifies signatures and deduplicates sessions", async () => {

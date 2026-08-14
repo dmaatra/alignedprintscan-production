@@ -158,81 +158,6 @@ function findTargetInvoice(
   return candidates.find((invoice) => !isFinalInvoice(invoice)) || null;
 }
 
-function invoiceNumberFromId(requestId: string) {
-  return `INV-${requestId.slice(0, 8).toUpperCase()}-01`;
-}
-
-async function createMissingInitialInvoice(requestId: string) {
-  const requestResponse = await supabaseFetch(
-    `service_requests?select=id,status,quote_amount,initial_payment_amount,estimated_total,invoice_number&id=eq.${requestId}&limit=1`,
-  );
-  const requestRows = await readJson(requestResponse);
-  const request = requestRows?.[0];
-
-  if (!request) {
-    throw new Error("Request not found.");
-  }
-
-  const allowedStatuses = new Set([
-    "awaiting_payment",
-    "payment_pending",
-    "payment_submitted",
-  ]);
-
-  if (!allowedStatuses.has(String(request.status || "").toLowerCase())) {
-    throw new Error(
-      "The quote must be approved before an initial payment can be recorded.",
-    );
-  }
-
-  const amountDue = Number(
-    request.initial_payment_amount ||
-      request.quote_amount ||
-      request.estimated_total ||
-      0,
-  );
-
-  if (!Number.isFinite(amountDue) || amountDue <= 0) {
-    throw new Error("The request does not have a payable initial amount.");
-  }
-
-  const invoiceNumber = String(request.invoice_number || "").endsWith("-01")
-    ? String(request.invoice_number)
-    : invoiceNumberFromId(requestId);
-
-  const insertResponse = await supabaseFetch("invoices", {
-    method: "POST",
-    body: JSON.stringify({
-      service_request_id: requestId,
-      invoice_number: invoiceNumber,
-      invoice_type: "initial",
-      status: "awaiting_payment",
-      payment_status: "unpaid",
-      amount_due: amountDue,
-      balance_due: amountDue,
-      amount_paid: 0,
-      paid_amount: 0,
-      note: "Initial invoice materialized for administrative payment entry.",
-    }),
-  });
-  const insertedRows = await readJson(insertResponse);
-  const invoice = insertedRows?.[0];
-
-  if (!invoice?.id) {
-    throw new Error("The initial invoice could not be created.");
-  }
-
-  await supabaseFetch(
-    `invoice_items?service_request_id=eq.${requestId}&invoice_id=is.null`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ invoice_id: invoice.id }),
-    },
-  );
-
-  return invoice;
-}
-
 async function recalculateRequestFinancials(requestId: string) {
   const invoicesResponse = await supabaseFetch(
     `invoices?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
@@ -296,7 +221,7 @@ Deno.serve(async (request) => {
     const invoiceResponse = await supabaseFetch(
       `invoices?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
     );
-    let invoices = (await readJson(invoiceResponse)) as Array<
+    const invoices = (await readJson(invoiceResponse)) as Array<
       Record<string, unknown>
     >;
     let targetInvoice = requestedInvoiceId
@@ -323,32 +248,11 @@ Deno.serve(async (request) => {
       }
     }
 
-    // Existing requests created before Pass 3.2 may show a quote but have no
-    // physical Invoice #1 row. Materialize it once, then continue normally.
-    if (!targetInvoice && paymentStage !== "final") {
-      const existingPrimary = invoices.find((invoice) =>
-        !isFinalInvoice(invoice)
-      );
-      if (existingPrimary) {
-        throw new Error(
-          invoiceRemainingBalance(existingPrimary) <= 0 ||
-            paidInvoiceStatuses.has(
-              String(existingPrimary.status || "").toLowerCase(),
-            )
-            ? "The primary invoice is already paid. No additional payment or invoice was created."
-            : "The existing primary invoice could not be selected. Choose it explicitly before recording payment.",
-        );
-      }
-      const createdInvoice = await createMissingInitialInvoice(requestId);
-      targetInvoice = createdInvoice;
-      invoices = [...invoices, createdInvoice];
-    }
-
     if (!targetInvoice) {
       throw new Error(
         paymentStage === "final"
           ? "No unpaid final-balance invoice was found for this request."
-          : "No unpaid initial invoice was found for this request.",
+          : "No unpaid initial invoice was found. Payment recording never creates an invoice; issue or repair the invoice first.",
       );
     }
 

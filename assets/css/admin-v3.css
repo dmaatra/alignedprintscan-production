@@ -2071,6 +2071,10 @@ body.admin-v3-body {
 .dialog-close { justify-self: end; border: 0; background: transparent; font-size: 1.6rem; cursor: pointer; }
 .btn.danger { background: #8f1d20; color: #fff; border-color: #8f1d20; }
 .customer-merge-preview { padding: .85rem; background: #f7f5ef; border-radius: .4rem; }
+.manual-payment-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; padding:1rem; background:#f7f5ef; border-radius:.4rem; }
+.manual-payment-summary div { display:grid; gap:.2rem; }
+.manual-payment-summary span { color:#5d6673; font-size:.78rem; }
+.manual-payment-status { min-height:1.25rem; color:#374151; font-weight:700; }
 @media (max-width: 520px) {
   .customer-directory-heading,.admin-v3-review-item header,.customer-request-link { flex-direction: column; }
   .customer-directory-heading .admin-v3-button { width: 100%; }

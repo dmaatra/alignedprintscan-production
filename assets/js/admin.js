@@ -1592,7 +1592,12 @@ async function selectRequest(id) {
     </section>
   `;
   renderInvoiceRows(rows);
-  $$(".status-actions button[data-status]", detail).forEach((btn) => btn.addEventListener("click", () => btn.dataset.status === "completed" ? beginCompletion(messageTemplates) : selectStatusMessage(btn.dataset.status, messageTemplates)));
+  $$(".status-actions button[data-status]", detail).forEach((btn) => btn.addEventListener("click", () => {
+    if (btn.dataset.status === "completed") return beginCompletion(messageTemplates);
+    if (btn.dataset.status === "payment_received") return openManualPaymentDialog("initial");
+    if (btn.dataset.status === "final_payment_received") return openManualPaymentDialog("final");
+    return selectStatusMessage(btn.dataset.status, messageTemplates);
+  }));
   $("#messageTemplateSelect", detail)?.addEventListener("change", () => applyMessageTemplate(messageTemplates, customer, ref));
   $("#previewMessageBtn", detail)?.addEventListener("click", previewMessage);
   $("#sendMessageBtn", detail)?.addEventListener("click", () => sendComposedMessage(false));
@@ -1619,8 +1624,8 @@ async function selectRequest(id) {
     addSelectedPresetInvoiceRow(),
   );
   $("#saveInvoiceBtn")?.addEventListener("click", saveInvoice);
-  $("#recordPrimaryPaymentBtn")?.addEventListener("click", () => recordAdminPayment("initial"));
-  $("#recordSupplementalPaymentBtn")?.addEventListener("click", () => recordAdminPayment("final"));
+  $("#recordPrimaryPaymentBtn")?.addEventListener("click", () => openManualPaymentDialog("initial"));
+  $("#recordSupplementalPaymentBtn")?.addEventListener("click", () => openManualPaymentDialog("final"));
   $("#createAdditionalInvoiceBtn")?.addEventListener(
     "click",
     createAdditionalInvoice,
@@ -1719,52 +1724,83 @@ async function saveAppointmentDetails() {
   return true;
 }
 
-/**
- * Opens a lightweight payment recorder for offline or simulated test payments.
- * Status buttons never force a balance to zero without a payment record.
- */
-function promptForPaymentRecord(paymentStage) {
-  const defaultAmount = Number(
-    selectedRequest?.balance_due_at_appointment ||
-      selectedRequest?.quote_amount ||
-      selectedRequest?.estimated_total ||
-      0,
+function isFinalPaymentInvoice(invoice) {
+  return ["final", "final_balance", "supplemental", "additional"].some((kind) =>
+    String(invoice.invoice_type || "").includes(kind)
+  ) || String(invoice.invoice_number || "").endsWith("-02");
+}
+
+function paymentInvoiceBalance(invoice) {
+  return Math.max(0, Number(invoice.amount_due || 0) - Number(invoice.amount_paid || invoice.paid_amount || 0));
+}
+
+/** Open a visible, testable recorder for money received outside Stripe. */
+async function openManualPaymentDialog(paymentStage) {
+  if (!selectedRequest) return;
+  const invoices = await getInvoices(selectedRequest.id);
+  const target = invoices.find((invoice) =>
+    isFinalPaymentInvoice(invoice) === (paymentStage === "final") && paymentInvoiceBalance(invoice) > 0.009
   );
-
-  const amountText = window.prompt(
-    "Payment amount received:",
-    defaultAmount.toFixed(2),
-  );
-
-  if (amountText === null) return null;
-
-  const amount = Number(amountText);
-  if (!Number.isFinite(amount) || amount <= 0) {
-    alert("Enter a payment amount greater than $0.00.");
-    return null;
+  const matching = invoices.find((invoice) => isFinalPaymentInvoice(invoice) === (paymentStage === "final"));
+  if (!target) {
+    const message = matching
+      ? "Payment already recorded. This invoice has already been paid and has no outstanding balance."
+      : paymentStage === "final"
+        ? "No unpaid supplemental or final invoice is available."
+        : "No unpaid primary invoice is available. Approve the quote before recording payment.";
+    alert(message);
+    return;
   }
 
-  const method = window.prompt(
-    "Payment method (test, cash, check, Zelle, external, or other):",
-    "test",
-  );
-
-  if (method === null) return null;
-
-  const note = window.prompt(
-    "Payment reference or internal note:",
-    paymentStage === "final"
-      ? "Simulated final payment test"
-      : "Simulated initial payment test",
-  );
-
-  return {
-    amount,
-    method: method.trim() || "test",
-    note: note?.trim() || "",
-    payment_stage: paymentStage,
-    is_test: method.trim().toLowerCase() === "test",
-  };
+  const due = Number(target.amount_due || 0);
+  const paid = Number(target.amount_paid || target.paid_amount || 0);
+  const outstanding = paymentInvoiceBalance(target);
+  const paymentAttemptReference = `manual:${selectedRequest.id}:${target.id}:${crypto.randomUUID()}`;
+  const dialog = document.createElement("dialog");
+  dialog.className = "admin-v3-danger-dialog manual-payment-dialog";
+  dialog.innerHTML = `<form method="dialog">
+    <button class="dialog-close" value="cancel" aria-label="Close">×</button>
+    <span class="small-label">Offline / Manual Payment</span>
+    <h2>Record Payment Received</h2>
+    <p>This records money received outside the automated Stripe checkout flow. It does not create a new invoice or charge Stripe.</p>
+    <div class="manual-payment-summary">
+      <div><span>Invoice</span><strong>${escapeHtml(target.invoice_number || "Existing invoice")}</strong></div>
+      <div><span>Invoice total</span><strong>${money(due)}</strong></div>
+      <div><span>Already paid</span><strong>${money(paid)}</strong></div>
+      <div><span>Outstanding</span><strong>${money(outstanding)}</strong></div>
+    </div>
+    <label>Amount received<input name="amount" type="number" min="0.01" max="${outstanding.toFixed(2)}" step="0.01" value="${outstanding.toFixed(2)}" required></label>
+    <label>Payment method / source<input name="method" type="text" placeholder="Zelle, Cash App, cash, check, external, or TEST" required></label>
+    <label>Reference / note<input name="reference" type="text" placeholder="Optional transaction reference or internal note"></label>
+    <div class="status-actions"><button value="cancel" class="btn secondary">Cancel</button><button type="button" class="btn primary record-manual-payment">Record Payment</button></div>
+    <div class="manual-payment-status" role="status" aria-live="polite"></div>
+  </form>`;
+  document.body.append(dialog);
+  dialog.addEventListener("close", () => dialog.remove());
+  const form = dialog.querySelector("form");
+  const submit = dialog.querySelector(".record-manual-payment");
+  const output = dialog.querySelector(".manual-payment-status");
+  submit.addEventListener("click", async () => {
+    if (!form.reportValidity()) return;
+    const amount = Number(form.elements.amount.value);
+    if (amount > outstanding + 0.009) {
+      output.textContent = `Amount cannot exceed the outstanding balance of ${money(outstanding)}.`;
+      return;
+    }
+    const method = form.elements.method.value.trim();
+    const reference = form.elements.reference.value.trim();
+    submit.disabled = true;
+    output.textContent = "Recording payment…";
+    const saved = await recordAdminPayment(paymentStage, {
+      invoice_id: target.id, amount, method,
+      reference: reference || paymentAttemptReference,
+      note: reference, payment_stage: paymentStage,
+      is_test: method.toLowerCase() === "test",
+    });
+    if (saved) dialog.close();
+    else { submit.disabled = false; output.textContent = "Payment was not recorded."; }
+  });
+  dialog.showModal();
 }
 
 /**
@@ -1824,10 +1860,8 @@ async function getFunctionErrorMessage(error) {
  * Test payments bypass Stripe but still create the same linked payment and
  * invoice updates needed to validate Invoice #1 and Invoice #2 behavior.
  */
-async function recordAdminPayment(paymentStage) {
+async function recordAdminPayment(paymentStage, payment) {
   if (!selectedRequest) return false;
-
-  const payment = promptForPaymentRecord(paymentStage);
   if (!payment) return false;
 
   try {
