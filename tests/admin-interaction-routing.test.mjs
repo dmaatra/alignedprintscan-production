@@ -174,3 +174,8 @@ test("request selection uses one capture-phase delegated binding", async () => {
   assert.match(source, /\{ capture: true \}/);
   assert.match(source, /rootBindings\.has\(key\)/);
 });
+
+test("workspace tabs use a stable delegated container after request rerenders", () => {
+  assert.match(adminV3Source, /\$\("#workspaceTabs"\)\?\.addEventListener\("click"/);
+  assert.match(adminV3Source, /event\.target\.closest\("\[data-workspace-tab\]"\)/);
+});
