@@ -489,9 +489,15 @@ function renderSignerAndActFields() {
   const actHost = qs("#notarialActFields");
   const signerCount = Math.max(1, Number(wizard.elements.signerCount?.value || 1));
   const actCount = Math.max(1, Number(wizard.elements.notarizationCount?.value || 1));
-  if (signerHost && Number(signerHost.dataset.count || 0) !== signerCount) {
+  if (
+    signerHost &&
+    (Number(signerHost.dataset.count || 0) !== signerCount ||
+      signerHost.dataset.service !== activeService)
+  ) {
     signerHost.dataset.count = String(signerCount);
-    signerHost.innerHTML = Array.from({ length: signerCount }, (_, index) => `<div class="form-grid"><div><label>Signer ${index + 1} full legal ID name *</label><input name="signerLegalName${index}" required></div><div><label>Signer ${index + 1} individual email${activeService === "ron" ? " *" : " (optional)"}</label><input name="signerEmail${index}" type="email" ${activeService === "ron" ? "required" : ""}></div></div>`).join("");
+    signerHost.dataset.service = activeService;
+    const signerRequired = ["ron", "mobile"].includes(activeService);
+    signerHost.innerHTML = Array.from({ length: signerCount }, (_, index) => `<div class="form-grid"><div><label>Signer ${index + 1} full legal ID name${signerRequired ? " *" : ""}</label><input name="signerLegalName${index}" ${signerRequired ? "required" : ""}></div><div><label>Signer ${index + 1} individual email${activeService === "ron" ? " *" : " (optional)"}</label><input name="signerEmail${index}" type="email" ${activeService === "ron" ? "required" : ""}></div></div>`).join("");
   }
   if (actHost && Number(actHost.dataset.count || 0) !== actCount) {
     actHost.dataset.count = String(actCount);
