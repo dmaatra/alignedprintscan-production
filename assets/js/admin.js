@@ -1617,6 +1617,7 @@ async function selectRequest(id) {
     if (btn.dataset.status === "completed") return beginCompletion(messageTemplates);
     if (btn.dataset.status === "payment_received") return openManualPaymentDialog("initial");
     if (btn.dataset.status === "final_payment_received") return openManualPaymentDialog("final");
+    if ($("#updateStatusWithoutSending", detail)?.checked) return updateRequestStatus(btn.dataset.status);
     return selectStatusMessage(btn.dataset.status, messageTemplates);
   }));
   $("#messageTemplateSelect", detail)?.addEventListener("change", () => applyMessageTemplate(messageTemplates, customer, ref));

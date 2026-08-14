@@ -126,6 +126,15 @@ test("status-message workflow sends before changing status", async () => {
   assert.match(source, /status_changed_without_message/);
 });
 
+test("status-without-message control uses the canonical transition and cannot fabricate payments", async () => {
+  const admin = await read("assets/js/admin.js");
+  const handler = admin.slice(admin.indexOf('$$\(".status-actions button[data-status]"'), admin.indexOf('$("#messageTemplateSelect"'));
+  assert.match(handler, /payment_received.*openManualPaymentDialog\("initial"\)/s);
+  assert.match(handler, /final_payment_received.*openManualPaymentDialog\("final"\)/s);
+  assert.match(handler, /updateStatusWithoutSending.*updateRequestStatus\(btn\.dataset\.status\)/s);
+  assert.ok(handler.indexOf('openManualPaymentDialog("final")') < handler.indexOf("updateStatusWithoutSending"));
+});
+
 test("customer portal prioritizes one action-required card", async () => {
   const html = await read("success.html");
   const script = await read("assets/js/script.js");
