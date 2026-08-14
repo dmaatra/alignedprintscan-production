@@ -2099,3 +2099,5 @@ body.admin-v3-body {
 @media (max-width:1180px) { .ron-session-controls { grid-template-columns:repeat(3,minmax(0,1fr)); } .ron-readiness-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media (max-width:760px) { .ron-session-controls { grid-template-columns:1fr 1fr; } .ron-readiness-grid { grid-template-columns:1fr 1fr; } }
 @media (max-width:520px) { .ron-session-controls,.ron-readiness-grid { grid-template-columns:1fr; } .ron-session-card header,.ron-session-card footer { flex-direction:column; } .ron-session-card footer .admin-v3-button { width:100%; } .ron-session-list,.ron-session-card { max-width:100%; overflow-wrap:anywhere; } .admin-notification-center{position:fixed;top:64px;right:8px;left:8px;width:auto}.admin-notification-toasts{right:12px;bottom:12px} }
+@media (max-width:1180px) { .admin-v3-top-actions .admin-notification-bell { display:inline-flex; } }
+@media (max-width:680px) { .admin-v3-top-actions { display:flex; } .admin-v3-top-actions>.admin-v3-button { display:none; } }
