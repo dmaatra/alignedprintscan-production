@@ -73,6 +73,18 @@ test("customer portal shows authoritative session states without a dead join con
   assert.match(portal, /link && session\?\.state === "ready"/);
 });
 
+test("customer RON preparation covers the required device, document, and identity steps", async () => {
+  const portal = await read("assets/js/script.js");
+  for (const instruction of [
+    "valid government-issued photo ID",
+    "supported device with a working camera and microphone",
+    "reliable internet connection",
+    "required documents have been uploaded",
+    "Do not sign documents before",
+    "complete identity verification if required",
+  ]) assert.match(portal, new RegExp(instruction));
+});
+
 test("completed Proof assets stage into the existing private APS review and release path", async () => {
   const repo = await read("supabase/functions/_shared/proof/completed-asset-repository.ts");
   const lifecycle = await read("supabase/functions/_shared/proof/completed-asset-lifecycle.ts");
