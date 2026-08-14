@@ -221,6 +221,11 @@
   function activateTab(tabName) {
     state.activeTab = tabName;
 
+    if (detailRoot && !detailRoot.querySelector("[data-v3-tab-panel]") && detailRoot.children.length && !state.isOrganizingDetail) {
+      organizeRequestDetail();
+      return;
+    }
+
     $$("[data-workspace-tab]").forEach((button) => {
       const isActive = button.dataset.workspaceTab === tabName;
       button.classList.toggle("is-active", isActive);
