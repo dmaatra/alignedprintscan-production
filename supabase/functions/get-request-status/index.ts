@@ -40,6 +40,69 @@ function pick(source: any, keys: string[]) {
   }, {});
 }
 
+// Customer Activity is a deliberately small public vocabulary. Never pass
+// administrator-authored timeline titles/details through this boundary.
+const CUSTOMER_ACTIVITY_COPY: Record<
+  string,
+  { title: string; detail: string }
+> = {
+  request_submitted: {
+    title: "Request received",
+    detail: "Your request was received and is being reviewed.",
+  },
+  quote_ready: {
+    title: "Quote ready",
+    detail: "Your service quote is ready to review.",
+  },
+  quote_approved: {
+    title: "Quote approved",
+    detail: "Your quote approval was received.",
+  },
+  awaiting_payment: {
+    title: "Payment requested",
+    detail: "Payment information is available in Quote & Payment.",
+  },
+  payment_received: {
+    title: "Payment received",
+    detail: "Your payment was received successfully.",
+  },
+  final_payment_received: {
+    title: "Final payment received",
+    detail: "Your final payment was received successfully.",
+  },
+  appointment_confirmed: {
+    title: "Appointment confirmed",
+    detail:
+      "Your confirmed appointment details are available in Appointment/Fulfillment.",
+  },
+  document_uploaded: {
+    title: "Document received",
+    detail: "A document you provided was received securely.",
+  },
+  documents_uploaded: {
+    title: "Documents received",
+    detail: "Documents you provided were received securely.",
+  },
+  document_released: {
+    title: "Document available",
+    detail: "A document is available in Documents.",
+  },
+  final_balance_due: {
+    title: "Final balance available",
+    detail: "Updated payment information is available in Quote & Payment.",
+  },
+  completed: {
+    title: "Request completed",
+    detail: "Your request has been completed.",
+  },
+};
+
+export function customerActivityEvent(event: any) {
+  const copy =
+    CUSTOMER_ACTIVITY_COPY[String(event?.event_type || "").toLowerCase()];
+  return copy ? { ...copy, created_at: event.created_at } : null;
+}
+
 async function supabaseFetch(path: string, init: RequestInit = {}) {
   return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...init,
@@ -410,9 +473,8 @@ Deno.serve(async (req) => {
       messages,
       customer_activity: timelineEvents
         .filter((event: any) => event.visibility === "customer")
-        .map((event: any) =>
-          pick(event, ["event_type", "title", "detail", "created_at"])
-        ),
+        .map(customerActivityEvent)
+        .filter(Boolean),
       ron_session: ronSession,
       reference_number: refFromId(requestId),
     });

@@ -6,10 +6,10 @@ const supabaseClient = window.supabase
   : null;
 
 const menuBtn = document.querySelector(
-  ".pass-2-public .menu-btn, .pass-3-public .menu-btn",
+  ".site-header .menu-btn",
 );
 const navLinks = document.querySelector(
-  ".pass-2-public .nav-links, .pass-3-public .nav-links",
+  ".site-header .nav-links",
 );
 if (menuBtn && navLinks) {
   const closeMenu = () => {
@@ -1367,7 +1367,7 @@ function invoiceList(items = []) {
     })
     .join("");
   const total = invoiceTotal(items);
-  return `<div class="invoice-public-table-wrap"><table class="invoice-public-table"><thead><tr><th>Service Item</th><th>Qty</th><th>Rate</th><th>Total</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="3">Total</td><td>${money(total)}</td></tr></tfoot></table></div>`;
+  return `<div class="portal-scroll-shell invoice-scroll-shell" data-scroll-cue><div class="invoice-public-table-wrap" tabindex="0"><table class="invoice-public-table"><thead><tr><th>Service Item</th><th>Qty</th><th>Rate</th><th>Total</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="3">Total</td><td>${money(total)}</td></tr></tfoot></table></div><span class="portal-scroll-hint" aria-hidden="true">Swipe to see all invoice columns →</span></div>`;
 }
 
 function invoiceStatusLabel(status = "") {
@@ -2319,9 +2319,12 @@ async function initSuccessPage() {
   const actionRequired = primaryAction ? `<section class="next-panel portal-action-required reveal" aria-labelledby="customerActionHeading"><p class="eyebrow">Action Required</p><h3 id="customerActionHeading">${escapePublic(primaryAction.title)}</h3>${primaryAction.detail ? `<p>${escapePublic(primaryAction.detail)}</p>` : ""}<a class="btn primary" href="${tabLink(primaryAction.tab)}" data-portal-action="${escapePublic(primaryAction.tab)}">${escapePublic(primaryAction.label)}</a></section>` : `<section class="portal-no-action reveal"><strong>No action required</strong><span>${escapePublic(copy.body)}</span></section>`;
   successBox.innerHTML = `
     <div class="success-ref reveal">${escapePublic(reference)}</div>
-    <nav class="customer-portal-tabs" aria-label="Request sections">
-      ${[["overview","Overview / Next Action"],["documents","Documents"],["quote-payment","Quote & Payment"],["fulfillment","Appointment/Fulfillment"],["messages","Messages"],["activity","Activity"]].map(([key,label]) => `<a href="${tabLink(key)}" data-portal-tab="${key}" class="${portalTab === key ? "is-active" : ""}">${label}</a>`).join("")}
-    </nav>
+    <div class="portal-scroll-shell portal-tabs-shell" data-scroll-cue>
+      <nav class="customer-portal-tabs" aria-label="Request sections" tabindex="0">
+        ${[["overview","Overview / Next Action"],["documents","Documents"],["quote-payment","Quote & Payment"],["fulfillment","Appointment/Fulfillment"],["messages","Messages"],["activity","Activity"]].map(([key,label]) => `<a href="${tabLink(key)}" data-portal-tab="${key}" class="${portalTab === key ? "is-active" : ""}">${label}</a>`).join("")}
+      </nav>
+      <span class="portal-scroll-hint" aria-hidden="true">Swipe to see more →</span>
+    </div>
     <section data-portal-panel="overview" ${portalTab !== "overview" ? "hidden" : ""}>
       ${actionRequired}
       ${statusTimeline(displayStatus, request.service_type)}
@@ -2346,7 +2349,7 @@ async function initSuccessPage() {
       <div class="next-panel"><h3>Messages</h3>${messages.length ? `<ul class="portal-message-list">${messages.map(message => `<li><strong>${escapePublic(message.subject)}</strong><p>${escapePublic(message.rendered_text || "")}</p><small>${formatDateValue(message.sent_at || message.created_at)}</small></li>`).join("")}</ul>` : "<p>No customer messages have been sent yet.</p>"}</div>
     </section>
     <section data-portal-panel="activity" ${portalTab !== "activity" ? "hidden" : ""}>
-      <div class="next-panel"><h3>Activity</h3>${activity.length ? `<ol class="portal-activity-list">${activity.map(event => `<li><strong>${escapePublic(event.title || event.event_type || "Request updated")}</strong><p>${escapePublic(event.detail || event.description || "")}</p><small>${formatDateValue(event.created_at)}</small></li>`).join("")}</ol>` : "<p>Your request activity will appear here.</p>"}</div>
+      <div class="next-panel"><h3>Activity</h3>${activity.length ? `<ol class="portal-activity-list">${activity.map(event => `<li><strong>${escapePublic(event.title || "Request updated")}</strong><p>${escapePublic(event.detail || "")}</p><small>${formatDateValue(event.created_at)}</small></li>`).join("")}</ol>` : "<p>Your request activity will appear here.</p>"}</div>
     </section>
     <div class="next-panel support-panel"><h3>Need Help?</h3><a class="btn secondary" href="support.html?ref=${encodeURIComponent(reference)}">Contact Customer Support</a></div>`;
 
@@ -2354,12 +2357,26 @@ async function initSuccessPage() {
     qsa("[data-portal-tab]").forEach(item => item.classList.toggle("is-active", item.dataset.portalTab === tab));
     qsa("[data-portal-panel]").forEach(panel => panel.hidden = panel.dataset.portalPanel !== tab);
     history.replaceState(null, "", tabLink(tab));
+    qs(`[data-portal-tab="${tab}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   };
+  const initOverflowCues = () => qsa("[data-scroll-cue]").forEach(shell => {
+    const scroller = shell.querySelector(".customer-portal-tabs, .invoice-public-table-wrap");
+    if (!scroller) return;
+    const update = () => {
+      const overflow = scroller.scrollWidth > scroller.clientWidth + 2;
+      shell.classList.toggle("has-overflow-left", overflow && scroller.scrollLeft > 2);
+      shell.classList.toggle("has-overflow-right", overflow && scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 2);
+    };
+    scroller.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update, { passive: true });
+    requestAnimationFrame(update);
+  });
   qsa("[data-portal-tab]").forEach(link => link.addEventListener("click", event => {
     event.preventDefault();
     activatePortalTab(link.dataset.portalTab);
   }));
   qsa("[data-portal-action]").forEach(link => link.addEventListener("click", event => { event.preventDefault(); activatePortalTab(link.dataset.portalAction); }));
+  initOverflowCues();
   qs("#approveQuoteBtn")?.addEventListener("click", async () => { const box = qs("#quoteActionStatus"); try { if (box) box.textContent = "Approving your quote…"; await submitQuoteDecision(request.id, reference, "approve", request.current_quote_id || ""); location.reload(); } catch (_) { if (box) box.textContent = "Approval failed. Refresh this page or contact APS."; } });
   bindCustomerActionControls(request.id || requestId);
   const portalInitialInvoice = findInitialInvoice(invoices);

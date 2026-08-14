@@ -54,6 +54,8 @@ export interface ActivationTransaction extends ProofTransactionRecord {
   activated_at: string | null;
   activation_manual_review_reason: string | null;
   proof_email_ownership: boolean;
+  document_preparation_confirmed_at: string | null;
+  document_preparation_confirmed_by: string | null;
 }
 export interface ReadinessContext {
   approvedSignerIdentitySource: boolean;

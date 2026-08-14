@@ -46,6 +46,7 @@ const PRICING = window.ALIGNED_PRICING || {
 const adminClient = window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
+window.adminClient = adminClient;
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -1163,6 +1164,12 @@ function proofState(value) {
   return statusLabel(value || "not_started");
 }
 
+function proofOperatorStepper(data,tx,signers,sourceAssets,completedAssets,appointmentReady){
+  const payment=Boolean(data.invoices?.primaryPaymentReady),signerReady=signers.length>0&&signers.every(s=>s.configuration_state==="configured"),docsReady=sourceAssets.length>0&&sourceAssets.every(a=>["processed","complete"].includes(a.processing_state)||a.upload_state==="processed"),prepared=Boolean(tx?.document_preparation_confirmed_at),activated=tx?.activation_state==="activated",completed=Boolean(tx?.completed_at||tx?.meeting_state==="completed"),retrieved=completedAssets.some(a=>a.retrieval_state==="retrieved"),proofFiles=(data.files||[]).filter(file=>file.document_category==="proof-completed"),reviewed=proofFiles.some(file=>file.review_state==="approved"),released=proofFiles.some(file=>file.customer_visible===true&&file.eligible_for_delivery===true),signerAccess=signers.some(s=>s.access_link_present||s.invitation_state==="invited"),liveStarted=completed||tx?.meeting_state==="in_progress";
+  const stages=[["Business Readiness",payment&&appointmentReady],["Create Proof Draft",Boolean(tx)],["Prepare Signers",signerReady],["Prepare Documents",docsReady],["Tag / Prepare in Proof",prepared,"Admin confirmed"],["Review & Activate",activated],["Signer Access",signerAccess],["Live Notarization",liveStarted],["Proof Completion",completed],["Completed Document Return",retrieved],["APS Review",reviewed],["Customer Release",released],["APS Completion",selectedRequest?.workflow_status==="completed"]];
+  let currentFound=false;return `<ol class="proof-operator-stepper">${stages.map(([label,done,note])=>{let state=done?"complete":currentFound?"waiting":"current";if(!done&&!currentFound)currentFound=true;if(label==="Business Readiness"&&!done)state="blocked";return `<li class="is-${state}"><span>${state.replaceAll('_',' ')}</span><strong>${label}</strong>${note?`<small>${note}</small>`:""}</li>`;}).join("")}</ol>`;
+}
+
 async function loadProofControlPanel() {
   const host = $("#proofControlPanel");
   if (!host || selectedRequest?.service_type !== "ron") return;
@@ -1178,6 +1185,9 @@ async function loadProofControlPanel() {
     host.innerHTML = `
       <div class="admin-v3-section-heading"><span class="small-label">RON Session / Proof</span><h3>Secure Online Notary Orchestration</h3></div>
       <p class="admin-muted">APS owns business readiness and customer delivery. Proof executes the secure notarization.</p>
+      <div class="proof-handoff"><a class="btn dark" href="https://app.proof.com" target="_blank" rel="noopener noreferrer">Open Proof Dashboard ↗</a><p><strong>Next step occurs in Proof</strong> for document tagging, identity verification, the live meeting, signatures, certificates, and seal placement. Proof does not document a stable transaction-specific admin URL, so use the displayed transaction reference in Proof.</p></div>
+      ${tx&&!tx.document_preparation_confirmed_at?'<div class="proof-control-section"><h4>Proof Document Preparation</h4><p class="admin-muted">Complete field placement, certificate-space review, and other Proof-native preparation in Proof. This confirmation is an APS administrator attestation, not Proof verification.</p><button class="btn dark" id="proofConfirmPreparation" type="button">I Completed Document Preparation in Proof</button></div>':tx?.document_preparation_confirmed_at?`<div class="email-notice"><strong>Admin Confirmed</strong><p>Proof document preparation was confirmed ${new Date(tx.document_preparation_confirmed_at).toLocaleString()}.</p></div>`:""}
+      ${proofOperatorStepper(data,tx,signers,sourceAssets,completedAssets,appointmentReady)}
       ${!data.configured ? '<div class="email-notice"><strong>Proof is not configured.</strong><p>Configure the required server-side Proof secrets before using transaction actions.</p></div>' : ""}
       <div class="admin-detail-grid proof-control-grid">
         <div><span class="small-label">RON readiness</span><strong>${data.invoices?.primaryPaymentReady && appointmentReady ? "Business prerequisites ready" : "Preparation required"}</strong></div>
@@ -1197,7 +1207,7 @@ async function loadProofControlPanel() {
         ${!tx ? '<button class="btn primary" id="proofCreateDraft" type="button">Create Proof Draft</button>' : ""}
         ${tx && !signers.length ? '<button class="btn dark" id="proofConfigureSigners" type="button">Map Approved Signers</button>' : ""}
         ${tx ? '<button class="btn dark" id="proofLoadDocuments" type="button">Select APS Documents</button><button class="btn dark" id="proofSyncStatus" type="button">Sync Proof Status</button>' : ""}
-        ${tx && tx.activation_state !== "activated" ? '<button class="btn primary" id="proofActivate" type="button">Activate Prepared Transaction</button>' : ""}
+        ${tx && tx.activation_state !== "activated" ? '<button class="btn primary" id="proofActivate" type="button">Activate &amp; Send to Signer</button>' : ""}
       </div>
       <div id="proofActionStatus" role="status" aria-live="polite"></div>`;
     $("#proofCreateDraft")?.addEventListener("click", async () => runProofUiAction(async () => {
@@ -1206,6 +1216,7 @@ async function loadProofControlPanel() {
       await proofCommand("create_draft", { signerEmail: primary.email });
     }));
     $("#proofConfigureSigners")?.addEventListener("click", () => runProofUiAction(() => proofCommand("configure_approved_signers", { integrationId: tx.id })));
+    $("#proofConfirmPreparation")?.addEventListener("click", () => runProofUiAction(async()=>{if(!confirm("Confirm that document preparation was completed in Proof? APS will record your administrator attestation."))return;const {error}=await adminClient.rpc("confirm_proof_document_preparation",{p_transaction_id:tx.id});if(error)throw error;}));
     $("#proofSyncStatus")?.addEventListener("click", () => runProofUiAction(() => proofCommand("refresh", { integrationId: tx.id })));
     $("#proofLoadDocuments")?.addEventListener("click", () => loadEligibleProofDocuments(tx.id));
     $("#proofActivate")?.addEventListener("click", () => runProofUiAction(async () => {
@@ -2578,18 +2589,6 @@ function subscribeRealtime() {
         await loadRequests();
       },
     )
-    .on(
-      "postgres_changes",
-      {
-        event: "INSERT",
-        schema: "public",
-        table: "service_requests",
-      },
-      async () => {
-        playNewRequestSound();
-        showToast("New request received. Dashboard refreshed.");
-      },
-    )
     .subscribe((status) => {
       if (status === "SUBSCRIBED")
         setText("adminLiveStatus", "Live and listening for new requests.");
@@ -2638,6 +2637,7 @@ async function initDashboard() {
 }
 handleLogin();
 initDashboard();
+window.loadRequests = loadRequests;
 
 // Admin Portal v2 shell: keep planned navigation visibly disabled until its module is implemented.
 document

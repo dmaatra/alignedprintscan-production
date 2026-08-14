@@ -77,6 +77,8 @@ const tx = (p: Partial<ActivationTransaction> = {}): ActivationTransaction => ({
   activated_at: null,
   activation_manual_review_reason: null,
   proof_email_ownership: true,
+  document_preparation_confirmed_at: new Date().toISOString(),
+  document_preparation_confirmed_by: admin,
   ...p,
 });
 const context = (p: Partial<ReadinessContext> = {}): ReadinessContext => ({
@@ -415,6 +417,9 @@ const blocks: [string, (x: ReturnType<typeof setup>) => void, string][] = [
   ["unresolved document flags block", (x) => {
     x.r.c.assets[0].requirement = null;
   }, "DOCUMENT_FLAGS_INCOMPLETE"],
+  ["unconfirmed Proof document preparation blocks", (x) => {
+    x.r.t.document_preparation_confirmed_at = null;
+  }, "DOCUMENT_PREPARATION_NOT_CONFIRMED"],
   ["payment gate failure blocks", (x) => {
     x.r.c.invoices[0].balance_due = 1;
   }, "PAYMENT_REQUIRED"],

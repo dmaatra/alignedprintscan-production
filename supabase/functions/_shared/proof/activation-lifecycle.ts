@@ -347,6 +347,9 @@ export class ProofActivationLifecycle {
     if (c.assets.some((a) => !a.requirement)) {
       b.push("DOCUMENT_FLAGS_INCOMPLETE");
     }
+    if (!tx.document_preparation_confirmed_at) {
+      b.push("DOCUMENT_PREPARATION_NOT_CONFIRMED");
+    }
     const witness = witnessPolicy(c);
     if (witness) b.push(witness);
     const issuedInvoices = c.invoices.filter((invoice) =>
