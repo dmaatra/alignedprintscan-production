@@ -1985,6 +1985,9 @@ function applyMessageTemplate(templates, customer, ref) {
 
 function selectStatusMessage(status, templates) {
   window.AdminV3?.activateTab("messages");
+  if (status === "completed" && !selectedRequest?.completed_at && currentMessagePreviewContext?.context) {
+    currentMessagePreviewContext.context.completionDate = customerPreviewDate(new Date().toISOString(), "Completion pending");
+  }
   const select = $("#messageTemplateSelect");
   const template = templates.find(item => item.associated_status === status);
   $("#messageStatus").value = status;

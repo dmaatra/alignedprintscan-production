@@ -245,6 +245,10 @@ Deno.serve(async (request) => {
       serviceRequest,
       releasedFiles,
     );
+    const effectiveCompletionAt = targetStatus === "completed" &&
+        !serviceRequest.completed_at
+      ? new Date().toISOString()
+      : serviceRequest.completed_at;
     const values = {
       request_reference: reference,
       customer_first_name: customer.first_name || "",
@@ -274,7 +278,7 @@ Deno.serve(async (request) => {
       appointment_location: serviceRequest.appointment_location || "",
       appointment_link: serviceRequest.appointment_link ||
         serviceRequest.ron_session_url || "",
-      completion_date: customerDate(serviceRequest.completed_at),
+      completion_date: customerDate(effectiveCompletionAt),
       released_document_names: releasedFiles.map((file: any) => file.file_name)
         .join(", "),
       portal_url: customerPortalUrl(

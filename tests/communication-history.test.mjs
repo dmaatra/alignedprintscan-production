@@ -95,3 +95,14 @@ test("requested, appointment, payment, and completion dates remain distinct in p
   assert.match(generator, /Remaining Balance/);
   assert.doesNotMatch(generator, /paid in full/i);
 });
+
+test("completion messaging uses the effective transition date before status persistence", async () => {
+  const admin = await read("assets/js/admin.js");
+  const sender = await read("supabase/functions/send-message/index.ts");
+  assert.match(admin, /status === "completed" && !selectedRequest\?\.completed_at/);
+  assert.match(admin, /completionDate = customerPreviewDate\(new Date\(\)\.toISOString\(\), "Completion pending"\)/);
+  assert.match(sender, /effectiveCompletionAt = targetStatus === "completed" &&\s*!serviceRequest\.completed_at/);
+  assert.match(sender, /completion_date: customerDate\(effectiveCompletionAt\)/);
+  assert.ok(sender.indexOf("const effectiveCompletionAt") < sender.indexOf('await fetch("https://api.resend.com/emails"'));
+  assert.ok(sender.indexOf('await fetch("https://api.resend.com/emails"') < sender.lastIndexOf('status: "completed",\n              send_message: false'));
+});
