@@ -219,7 +219,9 @@
 
   /** Show exactly one request workspace panel. */
   function activateTab(tabName) {
-    state.activeTab = tabName;
+    const normalizedTab = tabName === "communication" ? "messages" : tabName;
+    const safeTab = ["overview", "customer", "documents", "quote", "payments", "messages", "fulfillment", "timeline"].includes(normalizedTab) ? normalizedTab : "overview";
+    state.activeTab = safeTab;
 
     if (detailRoot && !detailRoot.querySelector("[data-v3-tab-panel]") && detailRoot.children.length && !state.isOrganizingDetail) {
       organizeRequestDetail();
@@ -227,14 +229,14 @@
     }
 
     $$("[data-workspace-tab]").forEach((button) => {
-      const isActive = button.dataset.workspaceTab === tabName;
+      const isActive = button.dataset.workspaceTab === safeTab;
       button.classList.toggle("is-active", isActive);
       button.setAttribute("aria-selected", String(isActive));
       button.tabIndex = isActive ? 0 : -1;
     });
 
     $$('[data-v3-tab-panel]', detailRoot).forEach((panel) => {
-      const isActive = panel.dataset.v3TabPanel === tabName;
+      const isActive = panel.dataset.v3TabPanel === safeTab;
       panel.classList.toggle("is-active", isActive);
       panel.hidden = !isActive;
     });
