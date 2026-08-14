@@ -1759,7 +1759,7 @@ async function openManualPaymentDialog(paymentStage) {
   const dialog = document.createElement("dialog");
   dialog.className = "admin-v3-danger-dialog manual-payment-dialog";
   dialog.innerHTML = `<form method="dialog">
-    <button class="dialog-close" value="cancel" aria-label="Close">×</button>
+    <button class="dialog-close" type="button" aria-label="Close">×</button>
     <span class="small-label">Offline / Manual Payment</span>
     <h2>Record Payment Received</h2>
     <p>This records money received outside the automated Stripe checkout flow. It does not create a new invoice or charge Stripe.</p>
@@ -1772,7 +1772,7 @@ async function openManualPaymentDialog(paymentStage) {
     <label>Amount received<input name="amount" type="number" min="0.01" max="${outstanding.toFixed(2)}" step="0.01" value="${outstanding.toFixed(2)}" required></label>
     <label>Payment method / source<input name="method" type="text" placeholder="Zelle, Cash App, cash, check, external, or TEST" required></label>
     <label>Reference / note<input name="reference" type="text" placeholder="Optional transaction reference or internal note"></label>
-    <div class="status-actions"><button value="cancel" class="btn secondary">Cancel</button><button type="button" class="btn primary record-manual-payment">Record Payment</button></div>
+    <div class="status-actions"><button type="button" class="btn secondary cancel-manual-payment">Cancel</button><button type="button" class="btn primary record-manual-payment">Record Payment</button></div>
     <div class="manual-payment-status" role="status" aria-live="polite"></div>
   </form>`;
   document.body.append(dialog);
@@ -1780,6 +1780,8 @@ async function openManualPaymentDialog(paymentStage) {
   const form = dialog.querySelector("form");
   const submit = dialog.querySelector(".record-manual-payment");
   const output = dialog.querySelector(".manual-payment-status");
+  dialog.querySelector(".dialog-close").addEventListener("click", () => dialog.close("cancel"));
+  dialog.querySelector(".cancel-manual-payment").addEventListener("click", () => dialog.close("cancel"));
   submit.addEventListener("click", async () => {
     if (!form.reportValidity()) return;
     const amount = Number(form.elements.amount.value);
