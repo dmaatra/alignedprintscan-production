@@ -186,6 +186,13 @@ test("workspace activation reorganizes freshly rerendered content before switchi
   assert.match(activate, /organizeRequestDetail\(\);\s*return;/);
 });
 
+test("legacy communication shortcuts resolve to the Messages panel and unknown routes fail safe", () => {
+  const activate = adminV3Source.slice(adminV3Source.indexOf("function activateTab"), adminV3Source.indexOf("function filterVisibleRequestCards"));
+  assert.match(activate, /tabName === "communication" \? "messages" : tabName/);
+  assert.match(activate, /\.includes\(normalizedTab\) \? normalizedTab : "overview"/);
+  assert.match(adminV3Source, /activateTab\("communication"\)/);
+});
+
 test("appointment saves rebuild the selected workspace before restoring fulfillment", () => {
   assert.match(adminSource, /async function saveAppointmentDetails\(\)[\s\S]*?const requestId = selectedRequest\.id/);
   assert.match(adminSource, /Object\.assign\(selectedRequest, update\);[\s\S]*?await loadRequests\(\);[\s\S]*?await selectRequest\(requestId\);[\s\S]*?activateTab\("fulfillment"\)/);
