@@ -143,6 +143,47 @@ const PRICING = window.ALIGNED_PRICING || {
 };
 let activeService = "ron";
 let currentStep = 0;
+const selectedRequestFiles = new Map();
+const requestFileInputs = new Set(["ronFiles", "mobileFiles", "mobilePrintFiles", "printFiles"]);
+
+function filesForInput(name) {
+  return [...(selectedRequestFiles.get(name)?.values() || [])];
+}
+
+function requestFileKey(file) {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function renderSelectedRequestFiles(input) {
+  if (!input?.name || !requestFileInputs.has(input.name)) return;
+  const box = input.closest(".upload-box") || input.parentElement;
+  let host = box?.parentElement?.querySelector(`[data-selected-files="${input.name}"]`);
+  if (!host && box) {
+    host = document.createElement("div");
+    host.className = "selected-document-list";
+    host.dataset.selectedFiles = input.name;
+    box.insertAdjacentElement("afterend", host);
+  }
+  if (!host) return;
+  const files = filesForInput(input.name);
+  host.innerHTML = files.length
+    ? `<strong>Selected documents</strong><ul>${files.map((file) => `<li><span>${escapePublic(file.name)}</span><button type="button" data-remove-selected-file="${escapePublic(requestFileKey(file))}" data-file-input="${escapePublic(input.name)}">Remove</button></li>`).join("")}</ul><button class="btn secondary visible-secondary" type="button" data-add-selected-file="${escapePublic(input.name)}">+ Add another document</button>`
+    : "";
+}
+
+function accumulateRequestFiles(input) {
+  if (!input?.name || !requestFileInputs.has(input.name)) return;
+  const current = selectedRequestFiles.get(input.name) || new Map();
+  [...(input.files || [])].forEach((file) => current.set(requestFileKey(file), file));
+  selectedRequestFiles.set(input.name, current);
+  input.value = "";
+  if (current.size && wizard?.elements.documentUploadException?.checked) {
+    wizard.elements.documentUploadException.checked = false;
+    if (wizard.elements.documentUploadExceptionReason) wizard.elements.documentUploadExceptionReason.value = "";
+    if (wizard.elements.documentUploadExceptionDetail) wizard.elements.documentUploadExceptionDetail.value = "";
+  }
+  renderSelectedRequestFiles(input);
+}
 
 function printCost({
   pages = 0,
@@ -475,7 +516,7 @@ function fieldValue(name) {
   const el = wizard?.elements[name];
   if (!el) return "";
   if (el.type === "checkbox") return el.checked;
-  if (el.type === "file") return el.files && el.files.length > 0;
+  if (el.type === "file") return filesForInput(name).length > 0 || (el.files && el.files.length > 0);
   return String(el.value || "").trim();
 }
 
@@ -689,8 +730,7 @@ async function countPdfPagesFromFile(file) {
 async function detectUploadedPdfPageCount(inputNames = []) {
   let total = 0;
   for (const name of inputNames) {
-    const input = wizard?.elements[name];
-    const files = input?.files ? [...input.files] : [];
+    const files = filesForInput(name);
     for (const file of files) total += await countPdfPagesFromFile(file);
   }
   return total || null;
@@ -859,7 +899,6 @@ async function submitRequestToSupabase(e) {
     ]);
     const urgencyFlags = appointmentUrgencyFlags(f.preferredDate.value || null);
     const servicePayload = {
-      customer_id: customer.id,
       service_type: activeService,
       status: "under_review",
       preferred_date: f.preferredDate.value || null,
@@ -1088,6 +1127,97 @@ async function submitRequestToSupabase(e) {
   }
 }
 
+async function selectedFilesPayload() {
+  const categoryByInput = {
+    ronFiles: "ron-documents",
+    mobileFiles: "mobile-documents",
+    mobilePrintFiles: "mobile-print-files",
+    printFiles: "print-scan-files",
+  };
+  const payload = [];
+  for (const [inputName, category] of Object.entries(categoryByInput)) {
+    for (const file of filesForInput(inputName)) {
+      payload.push({ name: file.name, type: file.type || "application/octet-stream", size: file.size, category, base64: await fileToBase64(file) });
+    }
+  }
+  return payload;
+}
+
+async function submitPublicRequestSecurely(event) {
+  event.preventDefault();
+  if (!validateStep(true)) return;
+  if (!supabaseClient) {
+    alert("The request system is not connected yet. Please contact Aligned Print & Scan directly.");
+    return;
+  }
+  setSubmitState(true, "Securely submitting your request…");
+  try {
+    const f = wizard.elements;
+    const { normalizePersonInput, normalizeEmail } = await import("./aps-data-standard.mjs");
+    const customer = { ...normalizePersonInput({ first_name: f.firstName.value, last_name: f.lastName.value, email: f.email.value, phone: f.phone.value }), preferred_contact: f.contactMethod?.value || null };
+    const files = await selectedFilesPayload();
+    const exception = f.documentUploadException?.checked;
+    if (files.length && exception) throw new Error("Remove the upload exception when documents are selected.");
+    const urgency = appointmentUrgencyFlags(f.preferredDate.value || null);
+    const request = {
+      service_type: activeService,
+      status: "under_review",
+      workflow_status: "under_review",
+      preferred_date: f.preferredDate.value || null,
+      preferred_time_window: f.timeWindow.value || null,
+      notes: f.notes.value || null,
+      estimated_total: estimateNumber(),
+      request_completeness: "submitted",
+      document_state: exception ? "pending" : "received",
+      participant_state: ["ron", "mobile"].includes(activeService) ? "submitted" : "not_applicable",
+      fulfillment_state: "not_started",
+      document_upload_exception_reason: exception ? f.documentUploadExceptionReason?.value || null : null,
+      document_upload_exception_detail: exception ? f.documentUploadExceptionDetail?.value || null : null,
+      detected_pdf_page_count: await detectUploadedPdfPageCount(["ronFiles", "mobilePrintFiles", "printFiles"]),
+      ...urgency,
+    };
+    const participants = [];
+    const notarialActs = [];
+    if (["ron", "mobile"].includes(activeService)) {
+      const signerCount = Math.max(1, numericValue("signerCount"));
+      for (let index = 0; index < signerCount; index += 1) participants.push({ participant_type: "signer", role: "signer", full_legal_name: f[`signerLegalName${index}`]?.value?.trim() || null, email: normalizeEmail(f[`signerEmail${index}`]?.value) || null, identity_name_confirmed: true, sort_order: index });
+      const actCount = Math.max(1, numericValue("notarizationCount"));
+      for (let index = 0; index < actCount; index += 1) notarialActs.push({ act_number: index + 1, act_type: f[`notarialActType${index}`]?.value || "unsure" });
+      const allocation = witnessAllocation(activeService);
+      for (let index = 0; index < allocation.customerProvides; index += 1) participants.push({ participant_type: "witness", role: "witness", witness_source: "customer", full_legal_name: f[`${activeService}WitnessLegalName${index}`]?.value?.trim() || null, email: normalizeEmail(f[`${activeService}WitnessEmail${index}`]?.value) || null, identity_name_confirmed: true, sort_order: signerCount + index });
+      if (allocation.alignedProvides > 0) participants.push({ participant_type: "witness", role: "witness", witness_source: "aps", full_legal_name: null, email: null, identity_name_confirmed: false, quantity: allocation.alignedProvides, sort_order: signerCount + allocation.customerProvides });
+    }
+    let serviceDetail = {};
+    if (activeService === "ron") {
+      const allocation = witnessAllocation("ron");
+      serviceDetail = { document_type: f.documentType.value || null, number_of_signers: numericValue("signerCount"), number_of_notarizations: numericValue("notarizationCount"), ron_platform: null, tech_ready: checkedValue("techReady"), valid_id_confirmed: checkedValue("validId"), consent_to_recording: checkedValue("recordingConsent"), witness_need: f.ronWitnessNeed?.value || "no", witness_count: f.ronWitnessCount?.value === "not_sure" ? null : allocation.total, witness_provider: f.ronWitnessProvider?.value || null, client_witness_count: allocation.customerProvides, provided_witness_count: allocation.alignedProvides, witness_review_required: f.ronWitnessNeed?.value === "not_sure" || f.ronWitnessProvider?.value === "not_sure" || f.ronWitnessCount?.value === "not_sure" };
+    } else if (activeService === "mobile") {
+      const allocation = witnessAllocation("mobile");
+      const printAddon = checkedValue("mobilePrintAddon");
+      const scanAddon = checkedValue("mobileScanAddon");
+      const printTotal = printAddon ? printCost({ pages: numericValue("mobilePrintPages"), color: f.mobileColor?.value, sides: f.mobileSides?.value, paperSize: f.mobilePaperSize?.value, paperType: f.mobilePaperType?.value }) : 0;
+      serviceDetail = { street_address: f.street.value || null, unit: null, city: f.city.value || null, state: "TX", zip: f.zip.value || null, number_of_signers: numericValue("signerCount"), number_of_notarizations: numericValue("notarizationCount"), witnesses_needed: f.mobileWitnessNeed?.value === "yes", witness_need: f.mobileWitnessNeed?.value || "no", witness_count: f.mobileWitnessCount?.value === "not_sure" ? null : allocation.total, witness_provider: f.mobileWitnessProvider?.value || null, client_witness_count: allocation.customerProvides, provided_witness_count: allocation.alignedProvides, witness_review_required: f.mobileWitnessNeed?.value === "not_sure" || f.mobileWitnessProvider?.value === "not_sure" || f.mobileWitnessCount?.value === "not_sure", print_add_on: printAddon, scan_back_needed: false, scan_to_pdf_needed: scanAddon, travel_miles: null, travel_fee: 50, dispatch_payment_required: 50 + printTotal };
+    } else {
+      const fulfillment = f.fulfillment?.value || "courier";
+      const pages = numericValue("pages");
+      const color = f.color?.value === "color";
+      const printTotal = printCost({ pages, color: f.color?.value, sides: f.sides?.value, paperSize: f.paperSize?.value, paperType: f.paperType?.value });
+      serviceDetail = { fulfillment_type: fulfillment, delivery_address: ["courier", "mobile-service", "mobile-notary"].includes(fulfillment) ? [f.printStreet?.value, f.printCity?.value, f.printZip?.value].filter(Boolean).join(", ") : null, black_white_pages: color ? 0 : pages, color_pages: color ? pages : 0, paper_size: f.paperSize?.value || null, print_sides: f.sides?.value || null, paper_type: f.paperType?.value || null, scan_pages: numericValue("scanPages"), delivery_fee: fulfillment === "courier" ? 20 : 0, print_total: printTotal, courier_requested: fulfillment === "courier", mobile_document_service_requested: fulfillment === "mobile-service", courier_fee: fulfillment === "courier" ? 20 : 0, mobile_document_service_fee: fulfillment === "mobile-service" ? 20 : 0, copy_pages: pages };
+    }
+    const { data, error } = await supabaseClient.functions.invoke("public-request-submit", { body: { customer, request, service_detail: serviceDetail, participants, notarial_acts: notarialActs, files } });
+    if (error || data?.ok === false || !data?.request_id) throw new Error(data?.error || error?.message || "Request submission failed.");
+    const requestId = data.request_id;
+    const ref = `APS-${requestId.slice(0, 8).toUpperCase()}`;
+    await sendRequestNotifications(requestId, ref, customer);
+    localStorage.setItem("aligned_last_request", JSON.stringify({ ref, service: activeService, total: qs("#estimateTotal")?.textContent || "", name: f.firstName.value, email: f.email.value, phone: f.phone.value, requestId }));
+    window.location.href = `success.html?request_id=${encodeURIComponent(requestId)}&service=${activeService}&ref=${encodeURIComponent(ref)}`;
+  } catch (error) {
+    console.error("public_request_submission_failed", error);
+    setSubmitState(false, "We could not submit your request. Please try again or contact Aligned Print & Scan.");
+    alert("We could not submit your request. Please try again or contact Aligned Print & Scan.");
+  }
+}
+
 function initWizard() {
   if (!wizard) return;
   qsa("label", wizard).forEach((label, index) => {
@@ -1123,12 +1253,23 @@ function initWizard() {
   );
   qsa("input,select,textarea", wizard).forEach((el) =>
     el.addEventListener("change", () => {
+      if (el.type === "file") accumulateRequestFiles(el);
       updateConditional();
       calculateEstimate();
       updateContinueState();
     }),
   );
-  wizard.addEventListener("submit", submitRequestToSupabase);
+  wizard.addEventListener("click", (event) => {
+    const remove = event.target.closest("[data-remove-selected-file]");
+    if (remove) {
+      selectedRequestFiles.get(remove.dataset.fileInput)?.delete(remove.dataset.removeSelectedFile);
+      renderSelectedRequestFiles(wizard.elements[remove.dataset.fileInput]);
+      updateContinueState();
+    }
+    const add = event.target.closest("[data-add-selected-file]");
+    if (add) wizard.elements[add.dataset.addSelectedFile]?.click();
+  });
+  wizard.addEventListener("submit", submitPublicRequestSecurely);
   const params = new URLSearchParams(location.search);
   applyService(params.get("service") || "ron");
 }
@@ -2211,6 +2352,7 @@ async function uploadAdditionalCustomerFiles(requestId) {
   if (error || data?.ok === false) throw new Error(data?.error || error?.message || "Documents could not be uploaded.");
   if (statusBox) statusBox.textContent = `${files.length} document(s) uploaded successfully.`;
   input.value = "";
+  setTimeout(() => location.reload(), 700);
 }
 
 function bindCustomerActionControls(requestId) {
@@ -2308,8 +2450,9 @@ async function initSuccessPage() {
     : request.customers || {};
   const documents = result.customer_documents || [];
   const completedNotarizedDocuments = documents.filter(file => file.document_classification === "completed_notarized_document");
-  const customerProvidedDocuments = documents.filter(file => file.document_classification !== "completed_notarized_document");
-  const portalDocumentList = files => files.length ? `<ul class="portal-document-list">${files.map(file => `<li><strong>${escapePublic(file.file_name)}</strong><span>${escapePublic(file.document_classification || "Customer document")}</span>${file.download_url ? `<a class="btn dark" href="${escapePublic(file.download_url)}" target="_blank" rel="noopener">Download</a>` : ""}</li>`).join("")}</ul>` : "<p>None released yet.</p>";
+  const customerProvidedDocuments = documents.filter(file => file.uploaded_by === "customer" && file.document_classification === "customer_document");
+  const apsDocuments = documents.filter(file => file.document_classification !== "completed_notarized_document" && !customerProvidedDocuments.includes(file));
+  const portalDocumentList = (files, empty = "None available yet.") => files.length ? `<ul class="portal-document-list">${files.map(file => `<li><strong>${escapePublic(file.file_name)}</strong><span>${escapePublic(file.uploaded_by === "customer" ? "Customer Upload" : file.document_classification || "APS document")}</span>${file.download_url ? `<a class="btn dark" href="${escapePublic(file.download_url)}" target="_blank" rel="noopener">View / Download</a>` : ""}</li>`).join("")}</ul>` : `<p>${escapePublic(empty)}</p>`;
   const messages = result.messages || [];
   const activity = result.customer_activity || [];
   const portalTab = params.get("tab") || "overview";
@@ -2334,7 +2477,8 @@ async function initSuccessPage() {
       ${printControls(reference)}
     </section>
     <section data-portal-panel="documents" ${portalTab !== "documents" ? "hidden" : ""}>
-      <div class="next-panel reveal"><h3>Documents You Provided</h3><p>Only files intentionally released by APS appear here.</p>${portalDocumentList(customerProvidedDocuments)}</div>
+      <div class="next-panel reveal"><h3>Documents You Provided</h3><p>Files you uploaded with this request or later through Manage This Request.</p>${portalDocumentList(customerProvidedDocuments, "You have not uploaded any documents yet.")}</div>
+      <div class="next-panel reveal"><h3>Documents from Aligned Print &amp; Scan</h3><p>Customer deliverables intentionally released by APS.</p>${portalDocumentList(apsDocuments, "No APS deliverables have been released yet.")}</div>
       ${request.service_type === "ron" ? `<div class="next-panel reveal"><h3>Completed Notarized Documents</h3><p>Reviewed notarized documents appear here only after APS releases them to you.</p>${portalDocumentList(completedNotarizedDocuments)}</div>` : ""}
       <div id="customerActionsPanel">${customerActionPanel(request, reference, customerActions)}</div>
     </section>

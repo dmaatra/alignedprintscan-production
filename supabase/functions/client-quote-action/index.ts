@@ -111,6 +111,7 @@ async function logTimeline(
   detail: string,
   actorType = "system",
   metadata: Record<string, unknown> = {},
+  visibility = "internal",
 ) {
   const response = await supabaseFetch("request_timeline_events", {
     method: "POST",
@@ -121,6 +122,7 @@ async function logTimeline(
       detail,
       actor_type: actorType,
       metadata,
+      visibility,
     }),
   });
 
@@ -194,7 +196,10 @@ async function findRequestId(
   return id;
 }
 
-async function materializeInitialInvoice(requestId: string, expectedQuoteId = "") {
+async function materializeInitialInvoice(
+  requestId: string,
+  expectedQuoteId = "",
+) {
   const requestResponse = await supabaseFetch(
     `service_requests?select=id,quote_amount,initial_payment_amount,estimated_total,invoice_number,current_quote_id&id=eq.${requestId}&limit=1`,
   );
@@ -217,7 +222,9 @@ async function materializeInitialInvoice(requestId: string, expectedQuoteId = ""
   }
   const sourceQuoteId = String(request.current_quote_id || "").trim() || null;
   if (sourceQuoteId && expectedQuoteId !== sourceQuoteId) {
-    throw new Error("This quote is no longer current. Refresh before approving.");
+    throw new Error(
+      "This quote is no longer current. Refresh before approving.",
+    );
   }
   if (sourceQuoteId) {
     const quoteResponse = await supabaseFetch(
@@ -409,6 +416,7 @@ Deno.serve(async (request) => {
         `Invoice ${invoice.invoice_number} was created and is awaiting payment.`,
         "customer",
         { invoice_id: invoice.id, invoice_number: invoice.invoice_number },
+        "customer",
       );
       await logTimeline(
         requestId,

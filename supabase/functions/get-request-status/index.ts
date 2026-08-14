@@ -346,11 +346,14 @@ Deno.serve(async (req) => {
     );
     const files = (await readJsonOrEmpty(filesRes)) || [];
     const customerDocuments = await Promise.all(
-      files.filter((file: any) =>
-        file.is_active !== false && file.customer_visible === true &&
-        file.eligible_for_delivery === true &&
-        file.document_classification !== "internal_document"
-      ).map(async (file: any) => {
+      files.filter((file: any) => {
+        const ownUpload = file.uploaded_by === "customer" &&
+          file.document_classification === "customer_document";
+        const releasedDeliverable = file.customer_visible === true &&
+          file.eligible_for_delivery === true &&
+          file.document_classification !== "internal_document";
+        return file.is_active !== false && (ownUpload || releasedDeliverable);
+      }).map(async (file: any) => {
         const signResponse = await fetch(
           `${SUPABASE_URL}/storage/v1/object/sign/service-request-files/${file.file_path}`,
           {
@@ -370,6 +373,7 @@ Deno.serve(async (req) => {
           file_type: file.file_type,
           file_size: file.file_size,
           document_classification: file.document_classification,
+          uploaded_by: file.uploaded_by,
           created_at: file.created_at,
           download_url: signed?.signedURL
             ? `${SUPABASE_URL}/storage/v1${signed.signedURL}`
