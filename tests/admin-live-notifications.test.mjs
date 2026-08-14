@@ -51,3 +51,9 @@ test("client subscribes to an authenticated private channel and refetches author
   assert.match(js, /from\("admin_notifications"\).*\.eq\("id",id\)\.single\(\)/s);
   assert.doesNotMatch(js, /from\("messages"\)/);
 });
+
+test("notification bell remains accessible at dashboard responsive widths", async () => {
+  const css = await read("assets/css/admin-v3.css");
+  assert.match(css, /@media \(max-width:1180px\) \{ \.admin-v3-top-actions \.admin-notification-bell \{ display:inline-flex; \} \}/);
+  assert.match(css, /@media \(max-width:680px\) \{ \.admin-v3-top-actions \{ display:flex; \}/);
+});
