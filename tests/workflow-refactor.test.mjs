@@ -256,6 +256,8 @@ test("customer completion copy is service-specific and hides gate internals", as
   const portal = await read("assets/js/script.js");
   assert.match(portal, /Your Notarization Is Complete/);
   assert.match(portal, /Your Completed Scans Are Ready/);
+  assert.match(portal, /Your Document Order Is Complete/);
+  assert.match(portal, /printing, scanning, and courier delivery are complete/);
   assert.match(portal, /Your Delivery Is Complete/);
   const copy = portal.slice(portal.indexOf("function customerCompletionCopy"), portal.indexOf("function invoiceTotal"));
   assert.doesNotMatch(copy, /completion RPC|service-aware gate|override reason|unresolved review item/i);

@@ -1492,8 +1492,12 @@ function customerCompletionCopy(request = {}, detail = {}) {
   const type = workflowKind(request.service_type);
   if (type === "ron") return { ...publicStatusCopy.completed, headline: "Your Notarization Is Complete", title: "Notarization Complete", body: "Your remote online notarization is complete. Available documents and receipts remain in this request." };
   if (type === "mobile") return { ...publicStatusCopy.completed, headline: "Your Mobile Service Is Complete", title: "Mobile Service Complete", body: detail.scan_to_pdf_needed ? "Your mobile service and requested scan delivery are complete." : "Your mobile notary appointment is complete." };
-  if (Number(detail.scan_pages || 0) > 0 && Number(detail.black_white_pages || 0) + Number(detail.color_pages || 0) === 0) return { ...publicStatusCopy.completed, headline: "Your Completed Scans Are Ready", title: "Scans Complete", body: "Your scanning service is complete. Your released scans are available in Documents." };
-  if (String(detail.fulfillment_type || "").toLowerCase() === "courier") return { ...publicStatusCopy.completed, headline: "Your Delivery Is Complete", title: "Delivery Complete", body: "Your courier delivery and handoff are complete." };
+  const scanPages = Number(detail.scan_pages || 0);
+  const printPages = Number(detail.black_white_pages || 0) + Number(detail.color_pages || 0);
+  const fulfillment = String(detail.fulfillment_type || "").toLowerCase();
+  if (scanPages > 0 && printPages > 0) return { ...publicStatusCopy.completed, headline: "Your Document Order Is Complete", title: "Print & Scan Complete", body: fulfillment === "courier" ? "Your printing, scanning, and courier delivery are complete. Your released scans are available in Documents." : "Your printing and scanning services are complete. Your released scans are available in Documents." };
+  if (scanPages > 0) return { ...publicStatusCopy.completed, headline: "Your Completed Scans Are Ready", title: "Scans Complete", body: "Your scanning service is complete. Your released scans are available in Documents." };
+  if (fulfillment === "courier") return { ...publicStatusCopy.completed, headline: "Your Delivery Is Complete", title: "Delivery Complete", body: "Your courier delivery and handoff are complete." };
   return { ...publicStatusCopy.completed, headline: "Your Document Service Is Complete", title: "Document Service Complete", body: "Your print, copy, or document-service fulfillment is complete." };
 }
 
