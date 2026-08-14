@@ -12,9 +12,28 @@ test("admin RON control panel reuses guarded server-side Proof commands", async 
   assert.match(admin, /Map Approved Signers/);
   assert.match(admin, /Select APS Documents/);
   assert.match(admin, /Sync Proof Status/);
-  assert.match(admin, /Activate Prepared Transaction/);
+  assert.match(admin, /Activate &amp; Send to Signer/);
   assert.match(admin, /confirm\("Activate this prepared Proof transaction/);
   assert.match(admin, /selectedRequest\.service_type === "ron"/);
+  assert.match(admin, /proofOperatorStepper/);
+  assert.match(admin, /Open Proof Dashboard/);
+  assert.match(admin, /Next step occurs in Proof/);
+  assert.match(admin, /I Completed Document Preparation in Proof/);
+  assert.match(admin, /confirm_proof_document_preparation/);
+});
+
+test("RON operator guidance names all thirteen business-facing stages", async () => {
+  const admin = await read("assets/js/admin.js");
+  for (const label of ["Business Readiness","Create Proof Draft","Prepare Signers","Prepare Documents","Tag / Prepare in Proof","Review & Activate","Signer Access","Live Notarization","Proof Completion","Completed Document Return","APS Review","Customer Release","APS Completion"]) assert.match(admin, new RegExp(label.replace(/[&/]/g, ".")));
+});
+
+test("Proof handoff uses the official dashboard without fabricating an admin transaction URL", async () => {
+  const admin = await read("assets/js/admin.js");
+  const v3 = await read("assets/js/admin-v3.js");
+  assert.match(admin, /https:\/\/app\.proof\.com/);
+  assert.match(v3, /https:\/\/app\.proof\.com/);
+  assert.doesNotMatch(admin, /app\.proof\.com\/transactions\/\$\{/);
+  assert.match(admin, /does not document a stable transaction-specific admin URL/);
 });
 
 test("approved APS request participants are the sole signer mapping source", async () => {
@@ -79,4 +98,14 @@ test("Proof credentials remain server-side and migration grants no browser acces
   assert.doesNotMatch(admin, /PROOF_API_KEY|PROOF_WEBHOOK_SECRET/);
   assert.doesNotMatch(portal, /PROOF_API_KEY|PROOF_WEBHOOK_SECRET/);
   assert.doesNotMatch(migration, /grant .*authenticated|grant .*anon/i);
+});
+
+test("Proof preparation confirmation is admin-only, audited, and enforced before activation", async () => {
+  const migration = await read("supabase/migrations/20260814002401_admin_live_notifications.sql");
+  const activation = await read("supabase/functions/_shared/proof/activation-lifecycle.ts");
+  assert.match(migration, /confirm_proof_document_preparation/);
+  assert.match(migration, /not public\.is_admin\(\)/);
+  assert.match(migration, /proof_document_preparation_admin_confirmed/);
+  assert.match(migration, /'internal'/);
+  assert.match(activation, /DOCUMENT_PREPARATION_NOT_CONFIRMED/);
 });
