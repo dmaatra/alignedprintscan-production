@@ -2040,7 +2040,8 @@ function ronNextStepPanel(request = {}, detail = {}, session = null) {
     ready: ["Session Ready", "Your secure online notary session is ready. Use the signer-specific invitation sent to your email."],
     completed: ["Session Completed", "Your secure online notarization is complete. APS will release reviewed completed documents here when available."],
   }[session?.state] || ["Preparing Your Session", "APS will provide secure-session instructions when all requirements are ready."];
-  return `<div class="next-panel reveal"><h3>${copy[0]}</h3><p>${copy[1]}</p>${link && session?.state === "ready" ? `<a class="btn primary" href="${escapePublic(link)}" target="_blank" rel="noopener">Join Secure Notary Session</a>` : ""}</div>`;
+  const preparation = `<ul class="portal-preparation-list"><li>Have a valid government-issued photo ID ready.</li><li>Use a supported device with a working camera and microphone.</li><li>Use a reliable internet connection.</li><li>Make sure all required documents have been uploaded.</li><li>Do not sign documents before the notarization session.</li><li>Be prepared to complete identity verification if required.</li></ul>`;
+  return `<div class="next-panel reveal"><h3>${copy[0]}</h3><p>${copy[1]}</p>${preparation}${link && session?.state === "ready" ? `<a class="btn primary" href="${escapePublic(link)}" target="_blank" rel="noopener">Join Secure Notary Session</a>` : ""}</div>`;
 }
 async function submitQuoteDecision(requestId, reference, decision, quoteId = "") {
   if (!supabaseClient || !requestId)
