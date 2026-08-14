@@ -106,3 +106,12 @@ test("completion messaging uses the effective transition date before status pers
   assert.ok(sender.indexOf("const effectiveCompletionAt") < sender.indexOf('await fetch("https://api.resend.com/emails"'));
   assert.ok(sender.indexOf('await fetch("https://api.resend.com/emails"') < sender.lastIndexOf('status: "completed",\n              send_message: false'));
 });
+
+test("appointment messages persist canonical appointment readiness state", async () => {
+  const sender = await read("supabase/functions/send-message/index.ts");
+  assert.match(sender, /targetStatus === "appointment_confirmed"/);
+  assert.match(sender, /statusUpdate\.appointment_confirmed_at = new Date\(\)\.toISOString\(\)/);
+  assert.match(sender, /statusUpdate\.appointment_state = "scheduled"/);
+  assert.match(sender, /targetStatus === "appointment_needs_rescheduling"/);
+  assert.match(sender, /statusUpdate\.appointment_state = "rescheduling_requested"/);
+});
