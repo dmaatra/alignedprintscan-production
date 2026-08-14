@@ -149,6 +149,13 @@ test("customer portal prioritizes one action-required card", async () => {
   assert.match(script, /Document needed/);
 });
 
+test("completed portal treats only APS-released documents as a customer deliverable action", async () => {
+  const script = await read("assets/js/script.js");
+  assert.match(script, /const apsDocuments = documents\.filter/);
+  assert.match(script, /customerPrimaryAction\(\{ request, invoices, documents: apsDocuments, messages, hasQuote, sessionId \}\)/);
+  assert.doesNotMatch(script, /customerPrimaryAction\(\{ request, invoices, documents, messages, hasQuote, sessionId \}\)/);
+});
+
 test("message composer uses centralized templates and status-after-send", async () => {
   const admin = await read("assets/js/admin.js");
   assert.match(admin, /Message Composer/);
