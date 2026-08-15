@@ -179,6 +179,15 @@ Deno.serve(async (req) => {
       "appointment_link",
       "appointment_platform",
       "appointment_instructions",
+      "customer_reported_source",
+      "customer_reported_source_detail",
+      "acquisition_landing_page",
+      "acquisition_referrer_host",
+      "acquisition_utm_source",
+      "acquisition_utm_medium",
+      "acquisition_utm_campaign",
+      "acquisition_utm_content",
+      "first_touch_source",
     ]);
     requestPayload.request_source = adminRequest ? "admin" : "website";
     const resolution = await rows(
@@ -200,6 +209,21 @@ Deno.serve(async (req) => {
     const result = Array.isArray(resolution) ? resolution[0] : resolution;
     requestId = String(result?.request_id || "");
     if (!requestId) throw new Error("The request record could not be created.");
+    const customerId = String(result?.customer_id || "");
+    if (customerId && input.request.first_touch_source) {
+      await api(
+        `customers?id=eq.${
+          encodeURIComponent(customerId)
+        }&first_acquisition_source=is.null`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            first_acquisition_source: input.request.first_touch_source,
+            first_acquisition_at: new Date().toISOString(),
+          }),
+        },
+      );
+    }
     if (adminRequest) {
       await rows(
         await api(`service_requests?id=eq.${encodeURIComponent(requestId)}`, {

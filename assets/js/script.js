@@ -1210,6 +1210,9 @@ async function submitPublicRequestSecurely(event) {
     const exception = f.documentUploadException?.checked;
     if (files.length && exception) throw new Error("Remove the upload exception when documents are selected.");
     const urgency = appointmentUrgencyFlags(f.preferredDate.value || null);
+    const acquisition = window.APSGrowth?.attribution?.() || {};
+    const requestTouch = acquisition.request_touch || {};
+    const firstTouch = acquisition.first_touch || {};
     const request = {
       service_type: activeService,
       status: "under_review",
@@ -1225,6 +1228,15 @@ async function submitPublicRequestSecurely(event) {
       document_upload_exception_reason: exception ? f.documentUploadExceptionReason?.value || null : null,
       document_upload_exception_detail: exception ? f.documentUploadExceptionDetail?.value || null : null,
       detected_pdf_page_count: await detectUploadedPdfPageCount(["ronFiles", "mobilePrintFiles", "printFiles"]),
+      customer_reported_source: f.customerReportedSource?.value || null,
+      customer_reported_source_detail: f.customerReportedSource?.value === "other" ? f.customerReportedSourceOther?.value?.trim() || null : null,
+      acquisition_landing_page: requestTouch.landing_page || null,
+      acquisition_referrer_host: requestTouch.referrer_host || null,
+      acquisition_utm_source: requestTouch.utm_source || null,
+      acquisition_utm_medium: requestTouch.utm_medium || null,
+      acquisition_utm_campaign: requestTouch.utm_campaign || null,
+      acquisition_utm_content: requestTouch.utm_content || null,
+      first_touch_source: firstTouch.utm_source || firstTouch.referrer_host || "direct",
       ...urgency,
     };
     const participants = [];
@@ -1257,6 +1269,7 @@ async function submitPublicRequestSecurely(event) {
     }
     const { data, error } = await supabaseClient.functions.invoke("public-request-submit", { body: { customer, request, service_detail: serviceDetail, participants, notarial_acts: notarialActs, files } });
     if (error || data?.ok === false || !data?.request_id) throw new Error(data?.error || error?.message || "Request submission failed.");
+    window.APSGrowth?.event?.("request_submitted", { service_category: window.APSGrowth.serviceCategory(activeService) }, "request_submitted");
     const requestId = data.request_id;
     const ref = `APS-${requestId.slice(0, 8).toUpperCase()}`;
     await sendRequestNotifications(requestId, ref, customer);
@@ -1288,9 +1301,13 @@ function initWizard() {
     label.htmlFor = control.id;
   });
   tabs.forEach((t) =>
-    t.addEventListener("click", () => applyService(t.dataset.service)),
+    t.addEventListener("click", () => {
+      applyService(t.dataset.service);
+      window.APSGrowth?.event?.("service_selected", { service_category: window.APSGrowth.serviceCategory(t.dataset.service) }, `service_selected:${t.dataset.service}`);
+    }),
   );
   qs("#nextStep").addEventListener("click", () => {
+    if (currentStep === 0) window.APSGrowth?.event?.("request_started", { service_category: window.APSGrowth.serviceCategory(activeService) });
     if (validateStep(true)) showStep(currentStep + 1);
     else updateContinueState();
   });
@@ -1306,6 +1323,10 @@ function initWizard() {
     if (!el.matches("input,select,textarea")) return;
     if (el.type === "file") accumulateRequestFiles(el);
     if (el.name === "documentUploadException" && el.checked) clearSelectedRequestFiles();
+    if (el.name === "customerReportedSource") {
+      const wrap = qs("#customerReportedSourceOtherWrap");
+      if (wrap) wrap.hidden = el.value !== "other";
+    }
     updateConditional();
     calculateEstimate();
     updateContinueState();
@@ -1323,6 +1344,7 @@ function initWizard() {
   wizard.addEventListener("submit", submitPublicRequestSecurely);
   const params = new URLSearchParams(location.search);
   applyService(params.get("service") || "ron");
+  window.APSGrowth?.event?.("request_service_view", { service_category: window.APSGrowth.serviceCategory(activeService) });
 }
 initWizard();
 
@@ -2268,6 +2290,7 @@ async function startEmbeddedPayment(requestId, invoiceId) {
     embeddedCheckoutInstance = null;
   }
   embeddedCheckoutLoading = true;
+  window.APSGrowth?.event?.("payment_checkout_started", {}, "payment_checkout_started");
   box.innerHTML =
     '<div class="email-notice"><h3>Preparing secure payment…</h3><p>Please do not refresh this page while the payment form is loading.</p></div>';
   try {
@@ -2577,7 +2600,9 @@ async function initSuccessPage() {
   }));
   qsa("[data-portal-action]").forEach(link => link.addEventListener("click", event => { event.preventDefault(); activatePortalTab(link.dataset.portalAction); }));
   initOverflowCues();
-  qs("#approveQuoteBtn")?.addEventListener("click", async () => { const box = qs("#quoteActionStatus"); try { if (box) box.textContent = "Approving your quote…"; await submitQuoteDecision(request.id, reference, "approve", request.current_quote_id || ""); location.reload(); } catch (_) { if (box) box.textContent = "Approval failed. Refresh this page or contact APS."; } });
+  if (hasQuote) window.APSGrowth?.event?.("quote_viewed", {}, "quote_viewed");
+  window.APSGrowth?.event?.("customer_portal_opened", {}, "customer_portal_opened");
+  qs("#approveQuoteBtn")?.addEventListener("click", async () => { const box = qs("#quoteActionStatus"); try { if (box) box.textContent = "Approving your quote…"; await submitQuoteDecision(request.id, reference, "approve", request.current_quote_id || ""); window.APSGrowth?.event?.("quote_approved", {}, "quote_approved"); location.reload(); } catch (_) { if (box) box.textContent = "Approval failed. Refresh this page or contact APS."; } });
   bindCustomerActionControls(request.id || requestId);
   const portalInitialInvoice = findInitialInvoice(invoices);
   qs("#startPaymentBtn")?.addEventListener("click", event => startEmbeddedPayment(request.id || requestId, event.currentTarget?.dataset?.invoiceId || portalInitialInvoice?.id || null));
@@ -2682,6 +2707,7 @@ async function initSuccessPage() {
     try {
       if (statusBox) statusBox.textContent = "Approving your quote…";
       await submitQuoteDecision(request.id, reference, "approve");
+      window.APSGrowth?.event?.("quote_approved", {}, "quote_approved");
       if (statusBox)
         statusBox.textContent =
           "Quote approved. Refreshing secure payment options…";
