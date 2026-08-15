@@ -104,6 +104,16 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/admin-service-adjustment/index.ts"
 
+[functions.customer-request-action]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/customer-request-action/index.ts"
+
+[functions.admin-resolve-customer-action]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/admin-resolve-customer-action/index.ts"
+
 # Proof calls this endpoint without a Supabase JWT. The handler authenticates
 # X-Notarize-Signature against the exact raw body with PROOF_WEBHOOK_SECRET.
 [functions.proof-webhook]
