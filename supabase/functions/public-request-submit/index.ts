@@ -1,4 +1,6 @@
-/** Atomic-enough, server-authorized public intake orchestration.
+import { requireProofAdmin } from "../_shared/proof/admin-auth.ts";
+
+/** Atomic-enough, server-authorized intake orchestration.
  * Browser callers never receive service-role credentials or direct table write access.
  */
 const corsHeaders = {
@@ -64,7 +66,7 @@ function allowed(source: Record<string, unknown>, keys: string[]) {
   );
 }
 
-function validate(body: Record<string, unknown>) {
+function validate(body: Record<string, unknown>, adminRequest = false) {
   const customer = cleanObject(body.customer);
   const request = cleanObject(body.request);
   const detail = cleanObject(body.service_detail);
@@ -89,7 +91,7 @@ function validate(body: Record<string, unknown>) {
   if (files.length > MAX_FILES) {
     throw new Error(`Select no more than ${MAX_FILES} documents.`);
   }
-  if (!files.length && !exceptionReason) {
+  if (!adminRequest && !files.length && !exceptionReason) {
     throw new Error(
       "Upload at least one document or select why it cannot be uploaded yet.",
     );
@@ -97,7 +99,7 @@ function validate(body: Record<string, unknown>) {
   if (files.length && exceptionReason) {
     throw new Error("Remove the upload exception when documents are selected.");
   }
-  if (service !== "print") {
+  if (service === "ron" || (!adminRequest && service === "mobile")) {
     const signers = participants.filter((person) =>
       person.participant_type === "signer"
     );
@@ -149,7 +151,10 @@ Deno.serve(async (req) => {
   let requestId = "";
   const storedPaths: string[] = [];
   try {
-    const input = validate(cleanObject(await req.json()));
+    const body = cleanObject(await req.json());
+    const adminRequest = body.admin_request === true;
+    if (adminRequest) await requireProofAdmin(req);
+    const input = validate(body, adminRequest);
     const requestPayload = allowed(input.request, [
       "service_type",
       "status",
@@ -167,8 +172,15 @@ Deno.serve(async (req) => {
       "detected_pdf_page_count",
       "is_same_day_request",
       "is_next_day_request",
+      "appointment_date",
+      "appointment_time",
+      "appointment_timezone",
+      "appointment_location",
+      "appointment_link",
+      "appointment_platform",
+      "appointment_instructions",
     ]);
-    requestPayload.request_source = "website";
+    requestPayload.request_source = adminRequest ? "admin" : "website";
     const resolution = await rows(
       await api("rpc/aps_create_request_with_customer", {
         method: "POST",
@@ -179,6 +191,7 @@ Deno.serve(async (req) => {
             "email",
             "phone",
             "preferred_contact",
+            ...(adminRequest ? ["customer_id"] : []),
           ]),
           p_request: requestPayload,
         }),
@@ -311,7 +324,9 @@ Deno.serve(async (req) => {
       if (!raw.length || raw.length > MAX_FILE_BYTES) {
         throw new Error(`${name} is empty or larger than 10 MB.`);
       }
-      const path = `${requestId}/customer/${crypto.randomUUID()}-${name}`;
+      const path = `${requestId}/${
+        adminRequest ? "admin" : "customer"
+      }/${crypto.randomUUID()}-${name}`;
       const upload = await fetch(
         `${SUPABASE_URL}/storage/v1/object/service-request-files/${path}`,
         {
@@ -338,10 +353,14 @@ Deno.serve(async (req) => {
             file_path: path,
             file_type: mime,
             file_size: raw.length,
-            uploaded_by: "customer",
-            document_category: String(file.category || "intake"),
-            document_classification: "customer_document",
-            customer_visible: true,
+            uploaded_by: adminRequest ? "admin" : "customer",
+            document_category: String(
+              file.category || (adminRequest ? "admin-intake" : "intake"),
+            ),
+            document_classification: adminRequest
+              ? "supporting_document"
+              : "customer_document",
+            customer_visible: !adminRequest,
             eligible_for_delivery: false,
             review_state: "pending",
             is_active: true,
@@ -357,9 +376,13 @@ Deno.serve(async (req) => {
           event_type: "request_received",
           title: "Request received",
           detail: input.files.length
-            ? `Customer submitted ${input.files.length} document(s) with the request.`
+            ? `${
+              adminRequest ? "Administrator" : "Customer"
+            } submitted ${input.files.length} document(s) with the request.`
+            : adminRequest
+            ? "Administrator created the request without attached documents."
             : "Customer submitted a request without documents and supplied an upload exception.",
-          actor_type: "customer",
+          actor_type: adminRequest ? "admin" : "customer",
           visibility: "customer",
           metadata: {
             file_count: input.files.length,
