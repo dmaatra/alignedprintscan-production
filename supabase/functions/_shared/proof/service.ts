@@ -198,6 +198,16 @@ export class ProofService {
     signers: ConfigureSignerInput[],
   ): Promise<ProofProviderTransaction> {
     assertProviderId(transactionId);
+    const providerSigners = signers.map((signer) => ({
+      email: signer.email,
+      first_name: signer.firstName || undefined,
+      middle_name: signer.middleName || undefined,
+      last_name: signer.lastName || undefined,
+      external_id: signer.externalId,
+      order: signer.order,
+      entity: signer.entity || undefined,
+      capacity: signer.capacity || undefined,
+    }));
     const data = await this.client.request<unknown>(
       `/v1/transactions/${encodeURIComponent(transactionId)}`,
       {
@@ -205,18 +215,12 @@ export class ProofService {
         retry: false,
         json: {
           draft: true,
-          signers: signers.map((signer) => ({
-            email: signer.email,
-            first_name: signer.firstName || undefined,
-            middle_name: signer.middleName || undefined,
-            last_name: signer.lastName || undefined,
-            external_id: signer.externalId,
-            // Proof's signer schema declares signing order as a string even
-            // though APS stores it as a numeric position.
-            order: String(signer.order),
-            entity: signer.entity || undefined,
-            capacity: signer.capacity || undefined,
-          })),
+          // Drafts created with Proof's primary `signer` field must continue
+          // to use that field when APS enriches a single signer. Sending a
+          // one-item `signers` array attempts to add a second signer instead.
+          ...(providerSigners.length === 1
+            ? { signer: providerSigners[0] }
+            : { signers: providerSigners }),
         },
       },
     );
