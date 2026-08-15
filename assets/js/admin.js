@@ -1241,7 +1241,10 @@ async function loadProofControlPanel() {
     $("#proofOpenCustomer")?.addEventListener("click", () => window.AdminV3?.activateTab("customer"));
     $("#proofConfigureSigners")?.addEventListener("click", () => runProofUiAction(() => proofCommand("configure_approved_signers", { integrationId: tx.id })));
     $("#proofConfirmPreparation")?.addEventListener("click", () => runProofUiAction(async()=>{if(!confirm("Confirm that document preparation was completed in Proof? APS will record your administrator attestation."))return;const {error}=await adminClient.rpc("confirm_proof_document_preparation",{p_transaction_id:tx.id});if(error)throw error;}));
-    $("#proofSyncStatus")?.addEventListener("click", () => runProofUiAction(() => proofCommand("refresh", { integrationId: tx.id })));
+    $("#proofSyncStatus")?.addEventListener("click", () => runProofUiAction(async () => {
+      await proofCommand("refresh", { integrationId: tx.id });
+      await proofCommand("refresh_signers", { integrationId: tx.id });
+    }));
     $("#proofLoadDocuments")?.addEventListener("click", () => loadEligibleProofDocuments(tx.id));
     $("#proofActivate")?.addEventListener("click", () => runProofUiAction(async () => {
       const readiness = await proofCommand("evaluate_activation_readiness", { integrationId: tx.id, confirmActivation: false });
@@ -1713,6 +1716,10 @@ async function saveAppointmentDetails() {
   const update = {
     appointment_date: dateValue,
     appointment_time: timeValue,
+    appointment_timezone:
+      selectedRequest.appointment_timezone ||
+      Intl.DateTimeFormat().resolvedOptions().timeZone ||
+      "America/Chicago",
     appointment_platform: platformValue,
     appointment_location: locationValue,
     appointment_link: linkValue,

@@ -256,7 +256,19 @@ export class ProofActivationLifecycle {
     }
     const provider = await this.service.getTransaction(tx.proof_transaction_id),
       rows = await this.repo.listSigners(tx.id),
-      updated = await this.persistProvider(rows, provider.signers ?? [], admin);
+      invitationSent = providerInvitationSent(provider),
+      updated = await this.persistProvider(
+        rows,
+        provider.signers ?? [],
+        admin,
+        invitationSent,
+      );
+    if (invitationSent) {
+      await this.repo.recordActivation(
+        tx,
+        tx.activated_at || provider.updatedAt || new Date().toISOString(),
+      );
+    }
     return { kind: "signers", signers: updated.map(signerProjection) };
   }
   private async activate(
@@ -323,6 +335,14 @@ export class ProofActivationLifecycle {
         proof_email_ownership: true,
         updated_by: admin,
       });
+      const rows = await this.repo.listSigners(tx.id);
+      await this.persistProvider(
+        rows,
+        provider.signers ?? [],
+        admin,
+        providerInvitationSent(provider),
+      );
+      await this.repo.recordActivation(tx, now);
       await this.audit(tx, "activate", "succeeded", admin);
       return {
         kind: "activation",
@@ -446,6 +466,7 @@ export class ProofActivationLifecycle {
     rows: SignerRecord[],
     provider: ProofProviderSigner[],
     admin: string,
+    invitationSent = false,
   ) {
     const out = [];
     for (const row of rows) {
@@ -455,7 +476,14 @@ export class ProofActivationLifecycle {
           proof_signer_id: match?.id ?? row.proof_signer_id,
           proof_status: match?.status ?? row.proof_status,
           configuration_state: match ? "configured" : row.configuration_state,
-          access_link_present: Boolean(match?.accessLinkPresent),
+          invitation_state: invitationSent && row.invitation_state === "not_invited"
+            ? "invited"
+            : row.invitation_state,
+          invited_at: invitationSent
+            ? row.invited_at ?? new Date().toISOString()
+            : row.invited_at,
+          access_link_present: row.access_link_present ||
+            Boolean(match?.accessLinkPresent),
           configured_at: match ? new Date().toISOString() : row.configured_at,
           last_synced_at: new Date().toISOString(),
           updated_by: admin,
@@ -607,6 +635,10 @@ function editable(tx: ActivationTransaction) {
 }
 function editableProvider(tx: ProofProviderTransaction) {
   return tx.status === "started" || tx.detailedStatus === "draft";
+}
+
+function providerInvitationSent(tx: ProofProviderTransaction) {
+  return tx.status === "sent" || tx.detailedStatus === "sent_to_signer";
 }
 function validTimezone(v: string | null) {
   if (!v) return false;
