@@ -1621,6 +1621,7 @@ function finalBalanceInvoices(invoices = []) {
 function paymentSchedulePanel({
   request = {},
   invoices = [],
+  refunds = [],
   quoteItems = [],
   additionalItems = [],
   quoteAmount = 0,
@@ -1682,6 +1683,8 @@ function paymentSchedulePanel({
     ? paidInitial + paidFinalAmount
     : Number(request.paid_amount || 0) || 0;
   const balanceDue = Math.max(0, totalServiceValue - paidToDate);
+  const refundedTotal = refunds.filter(item => String(item.status) === "succeeded").reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const netRetained = Math.max(0, paidToDate - refundedTotal);
   const recordedInitialPaid = Number(
     initial?.amount_paid ?? initial?.paid_amount ?? 0,
   ) || 0;
@@ -1767,6 +1770,7 @@ function paymentSchedulePanel({
       <div><span class="small-label">Initial Payment</span><strong>${initialPaid ? `${money(paidInitial)} paid` : `${money(initialAmount)} due`}</strong></div>
       ${finals.length ? `<div><span class="small-label">Final Balance</span><strong>${money(finalIssuedTotal)}${activeFinal ? " due" : " paid"}</strong></div>` : ""}
       <div><span class="small-label">Paid to Date</span><strong>${money(paidToDate)}</strong></div>
+      ${refundedTotal > 0 ? `<div><span class="small-label">Refunded</span><strong>${money(refundedTotal)}</strong></div><div><span class="small-label">Net Retained</span><strong>${money(netRetained)}</strong></div>` : ""}
       <div><span class="small-label">Balance Due</span><strong>${money(balanceDue)}</strong></div>
     </div>
     <div class="payment-schedule-list clean-payment-schedule receipt-archive-list">
@@ -2392,7 +2396,7 @@ function customerActionPanel(request, reference, customerActions = []) {
   return `<div class="next-panel reveal customer-action-panel">
     <h3>Manage This Request</h3>
     <p>Upload additional documents or request a cancellation/reschedule. Paid services are reviewed before cancellation or refund decisions are made.</p>
-    ${pending ? `<div class="email-notice"><strong>Request under review:</strong> ${escapePublic(String(pending.action_type || "request"))}</div>` : ""}
+    ${pending ? `<div class="email-notice"><strong>${pending.action_type === "cancel" ? "Cancellation Requested" : "Reschedule Requested"}:</strong> APS will review the request before changing service or financial records.</div>` : request.cancellation_state === "refund_pending" ? '<div class="email-notice"><strong>Refund Pending:</strong> APS approved a refund and is completing the original-payment process.</div>' : ["partially_refunded","refunded"].includes(request.cancellation_state) ? '<div class="email-notice"><strong>Refund Processed:</strong> See Quote &amp; Payment for the current financial result.</div>' : request.cancellation_state === "cancelled" ? '<div class="email-notice"><strong>Cancellation Confirmed</strong></div>' : ""}
     <label>Email used on this request<input id="customerActionEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>
     <label>Reason / details<textarea id="customerActionReason" placeholder="Tell us what changed or what you need."></textarea></label>
     <label>Proposed new date and time<input id="proposedAppointmentAt" type="datetime-local"></label>
@@ -2475,6 +2479,7 @@ async function initSuccessPage() {
   const invoices = result.invoices || [];
   const additionalItems = result.additional_invoice_items || [];
   const customerActions = result.customer_actions || [];
+  const refunds = result.refunds || [];
   const reference =
     result.reference_number ||
     ref ||
@@ -2563,7 +2568,7 @@ async function initSuccessPage() {
       <div id="customerActionsPanel">${customerActionPanel(request, reference, customerActions)}</div>
     </section>
     <section data-portal-panel="quote-payment" ${portalTab !== "quote-payment" ? "hidden" : ""}>
-      ${hasQuote ? `<div class="next-panel invoice-panel reveal"><h3>Prepared Service Quote</h3>${invoiceList(items)}${quoteNote ? `<div class="email-notice slim-note"><h3>APS Note</h3><p>${escapePublic(quoteNote)}</p></div>` : ""}</div><div id="paymentSchedule">${paymentSchedulePanel({ request, invoices, quoteItems: items, additionalItems, quoteAmount })}</div>` : '<div class="next-panel"><h3>Quote &amp; Payment</h3><p>Your quote is being prepared.</p></div>'}
+      ${hasQuote ? `<div class="next-panel invoice-panel reveal"><h3>Prepared Service Quote</h3>${invoiceList(items)}${quoteNote ? `<div class="email-notice slim-note"><h3>APS Note</h3><p>${escapePublic(quoteNote)}</p></div>` : ""}</div><div id="paymentSchedule">${paymentSchedulePanel({ request, invoices, refunds, quoteItems: items, additionalItems, quoteAmount })}</div>` : '<div class="next-panel"><h3>Quote &amp; Payment</h3><p>Your quote is being prepared.</p></div>'}
       ${canApprove ? `<div class="next-panel" id="quoteActionPanel"><h3>Review Quote</h3><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" role="status"></div></div>` : ""}
       ${receiptPanel({ ...request, status: displayStatus }, reference)}
     </section>
@@ -2693,7 +2698,7 @@ async function initSuccessPage() {
     <div class="email-notice status-${statusClass} reveal"><h3>${escapePublic(copy.title)}</h3><p>${escapePublic(copy.body)}</p></div>
     <div id="customerActionsPanel">${customerActionPanel(request, reference, customerActions)}</div>
     ${hasQuote ? `<div class="next-panel invoice-panel reveal"><h3>Prepared Service Quote</h3><p class="premium-intro">This is the full estimated service quote for your request. Payments are handled below based on the approved schedule.</p>${invoiceList(items)}<p class="admin-muted">Quote Reference: <strong>QUOTE-${escapePublic(reference.replace(/^APS-/, ""))}</strong></p>${quoteNote ? `<div class="email-notice slim-note"><h3>Client Note</h3><p>${escapePublic(quoteNote)}</p></div>` : ""}</div>` : ""}
-    ${hasQuote ? `<div id="paymentSchedule">${paymentSchedulePanel({ request, invoices, quoteItems: items, additionalItems, quoteAmount })}</div>` : ""}
+    ${hasQuote ? `<div id="paymentSchedule">${paymentSchedulePanel({ request, invoices, refunds, quoteItems: items, additionalItems, quoteAmount })}</div>` : ""}
     ${canApprove ? `<div class="next-panel reveal" id="quoteActionPanel"><h3>Review Quote</h3><p>Please review the itemized quote and service details. Approving the quote moves your request to the secure payment step. If anything needs to change, request an edit before paying.</p><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" class="form-submit-status" role="status" aria-live="polite"></div></div>` : ""}
     
     ${receiptPanel({ ...request, status: displayStatus }, reference)}

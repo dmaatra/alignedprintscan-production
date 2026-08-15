@@ -13,7 +13,11 @@ async function db(path:string,init:RequestInit={}){return fetch(`${SUPABASE_URL}
 async function rows(r:Response){if(!r.ok)throw new Error(await r.text());return r.json()}
 function ref(id:string){return `APS-${id.slice(0,8).toUpperCase()}`}
 async function send(to:string,subject:string,html:string){if(!RESEND_API_KEY||!to)return {id:null,skipped:true};const r=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${RESEND_API_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({from:FROM_EMAIL,to:[to],subject,html})});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d?.message||"Email failed");return d}
+async function requireAdmin(request:Request){const token=request.headers.get("Authorization")||"";if(!token.startsWith("Bearer "))throw new Error("Administrator authentication is required.");const auth=await fetch(`${SUPABASE_URL}/auth/v1/user`,{headers:{apikey:SERVICE_ROLE_KEY,Authorization:token}});if(!auth.ok)throw new Error("Administrator authentication is required.");const check=await fetch(`${SUPABASE_URL}/rest/v1/rpc/is_admin`,{method:"POST",headers:{apikey:SERVICE_ROLE_KEY,Authorization:token,"Content-Type":"application/json"},body:"{}"});if(!check.ok||await check.json()!==true)throw new Error("Administrator access is required.")}
 Deno.serve(async(req)=>{if(req.method==="OPTIONS")return new Response("ok",{headers:corsHeaders});try{
+  await requireAdmin(req);
+  return json({ok:false,error:"This legacy resolver is retired. Use the guided cancellation/reschedule/refund workflow."},410);
+  /* Legacy implementation retained below only for release-history comparison; it is unreachable. */
   const b=await req.json().catch(()=>({})); const actionId=String(b.action_id||"").trim(); const decision=String(b.decision||"").toLowerCase(); const message=String(b.admin_message||"").trim(); const refund=Math.max(0,Number(b.approved_refund_amount||0));
   if(!actionId||!["approved","denied"].includes(decision))throw new Error("Action ID and a valid decision are required.");
   const actionRows=await rows(await db(`customer_action_requests?select=*&id=eq.${actionId}&limit=1`)); const action=actionRows?.[0]; if(!action)return json({ok:false,error:"Action request not found."},404);

@@ -386,6 +386,10 @@ Deno.serve(async (req) => {
       `customer_action_requests?select=*&service_request_id=eq.${requestId}&order=created_at.desc`,
     );
     const customerActions = (await readJsonOrEmpty(actionsRes)) || [];
+    const refundsRes = await supabaseFetch(
+      `refunds?select=id,invoice_id,payment_id,amount,refund_method,status,issued_at,created_at&service_request_id=eq.${requestId}&status=in.(pending,processing,succeeded)&order=created_at.desc`,
+    );
+    const refunds = (await readJsonOrEmpty(refundsRes)) || [];
 
     const timelineRes = await supabaseFetch(
       `request_timeline_events?select=*&service_request_id=eq.${requestId}&order=created_at.desc&limit=100`,
@@ -474,6 +478,7 @@ Deno.serve(async (req) => {
           "updated_at",
         ])
       ),
+      refunds,
       messages,
       customer_activity: timelineEvents
         .filter((event: any) => event.visibility === "customer")
