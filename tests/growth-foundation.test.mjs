@@ -16,6 +16,7 @@ const sendMessage = read("supabase/functions/send-message/index.ts");
 const templatePreview = read("supabase/functions/_shared/template-preview.mjs");
 const manual = read("docs/APS_SYSTEM_OPERATIONS_WORKFLOW_MANUAL.md");
 const sitemap = read("sitemap.xml");
+const searchVerification = read("google7bace5a38d37ffed.html");
 const robots = read("robots.txt");
 const publicPages = ["index.html","pricing.html","remote-online-notary.html","mobile-notary.html","print-scan.html","faq.html","terms.html","privacy.html","accessibility.html","support.html"];
 
@@ -88,6 +89,11 @@ test("admin presents compact attribution and review state", () => {
 test("sitemap contains canonical public pages only", () => {
   for (const path of ["remote-online-notary.html","mobile-notary.html","print-scan.html","pricing.html","faq.html","terms.html","privacy.html"]) assert.match(sitemap, new RegExp(path.replace(".", "\\.")));
   for (const privatePath of ["admin-dashboard","admin-login","success.html","request_id","document","proof"]) assert.doesNotMatch(sitemap, new RegExp(privatePath, "i"));
+});
+test("Search Console verification and submitted sitemap status are documented", () => {
+  assert.equal(searchVerification, "google-site-verification: google7bace5a38d37ffed.html");
+  for (const phrase of ["Search Console URL-prefix property", "VERIFIED", "HTML-file method", "sitemap.xml", "SUBMITTED", "owner Google setup remaining—NONE"]) assert.match(manual, new RegExp(phrase, "i"));
+  assert.match(manual, /google7bace5a38d37ffed\.html/);
 });
 test("private routes are excluded from crawling", () => {
   assert.match(robots, /Disallow: \/admin-dashboard\.html/); assert.match(robots, /Disallow: \/success\.html/); assert.match(read("success.html"), /noindex,nofollow/);
