@@ -150,6 +150,26 @@ export class ProofActivationLifecycle {
           "Rejected signer claims no longer match the approved APS signer set.",
         );
       }
+      const provider = await this.service.getTransaction(
+        tx.proof_transaction_id!,
+      );
+      const providerSigners = provider.signers ?? [];
+      if (
+        providerSigners.length === existing.length &&
+        existing.every((row) => this.providerMatch(row, providerSigners))
+      ) {
+        const recovered = await this.persistProvider(
+          existing,
+          providerSigners,
+          admin,
+        );
+        await this.repo.updateTransaction(tx.id, {
+          signer_configuration_state: "configured",
+          updated_by: admin,
+        });
+        await this.audit(tx, "configure_signers", "succeeded", admin);
+        return { kind: "signers", signers: recovered.map(signerProjection) };
+      }
       claimed = [];
       for (const row of existing) {
         claimed.push(
@@ -429,7 +449,7 @@ export class ProofActivationLifecycle {
   ) {
     const out = [];
     for (const row of rows) {
-      const match = provider.find((p) => p.externalId === row.external_id);
+      const match = this.providerMatch(row, provider);
       out.push(
         await this.repo.updateSigner(row.id, {
           proof_signer_id: match?.id ?? row.proof_signer_id,
@@ -443,6 +463,13 @@ export class ProofActivationLifecycle {
       );
     }
     return out;
+  }
+  private providerMatch(row: SignerRecord, provider: ProofProviderSigner[]) {
+    const external = provider.find((p) => p.externalId === row.external_id);
+    if (external) return external;
+    const email = row.email.toLowerCase();
+    const matches = provider.filter((p) => p.email === email);
+    return matches.length === 1 ? matches[0] : undefined;
   }
   private async markSigner(
     tx: ActivationTransaction,
