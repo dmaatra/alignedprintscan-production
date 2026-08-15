@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin-dashboard.html
+Disallow: /admin-login.html
+Disallow: /success.html
+
+Sitemap: https://alignedprintscan.com/sitemap.xml

@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <link rel="canonical" href="https://alignedprintscan.com/pricing.html" />
     <title>Pricing & Request Service | Aligned Print & Scan</title>
     <meta
       content="Premium guided estimates and service requests for remote online notary, mobile notary, print, scan, and document support services."
@@ -883,6 +884,21 @@
                   name="notes"
                   placeholder="Share details, special instructions, delivery notes, document questions, or anything else we should review."
                 ></textarea>
+                <label for="customerReportedSource">How did you hear about Aligned Print &amp; Scan? <span class="optional">Optional</span></label>
+                <select id="customerReportedSource" name="customerReportedSource">
+                  <option value="">Select an option</option>
+                  <option value="google">Google Search / Google Maps</option>
+                  <option value="facebook">Facebook</option>
+                  <option value="instagram">Instagram</option>
+                  <option value="proof">Proof</option>
+                  <option value="referral">Referral / Word of Mouth</option>
+                  <option value="returning_customer">Returning Customer</option>
+                  <option value="other">Other</option>
+                </select>
+                <div id="customerReportedSourceOtherWrap" hidden>
+                  <label for="customerReportedSourceOther">Other source <span class="optional">Optional</span></label>
+                  <input id="customerReportedSourceOther" name="customerReportedSourceOther" maxlength="120" />
+                </div>
                 <div class="legal-checks">
                   <label class="check">
                     <input name="notLegalAdvice" required type="checkbox" />
@@ -953,15 +969,15 @@
               <a
                 aria-label="Instagram"
                 href="https://www.instagram.com/aligned.printscan"
-                rel="noopener"
+                rel="noopener noreferrer"
                 target="_blank"
               >
                 IG
               </a>
               <a
-                aria-label="Facebook"
-                href="https://www.facebook.com/alignedprintscan"
-                rel="noopener"
+                aria-label="Aligned Print & Scan on Facebook"
+                href="https://www.facebook.com/profile.php?id=61593146406891"
+                rel="noopener noreferrer"
                 target="_blank"
               >
                 FB
@@ -969,7 +985,7 @@
               <a
                 aria-label="YouTube"
                 href="https://www.youtube.com/@alignedprintscan"
-                rel="noopener"
+                rel="noopener noreferrer"
                 target="_blank"
               >
                 YT
@@ -989,6 +1005,8 @@
     </footer>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="assets/js/pricing-config.js"></script>
+    <script src="assets/js/aps-growth-config.js?v=20260815-growth"></script>
+    <script src="assets/js/aps-growth.js?v=20260815-growth"></script>
     <script src="assets/js/script.js?v=20260813-customer-lifecycle"></script>
   </body>
 </html>

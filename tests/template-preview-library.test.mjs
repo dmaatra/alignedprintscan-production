@@ -6,8 +6,8 @@ import { SYNTHETIC_TEMPLATE_CONTEXT, TEMPLATE_SPECIFICATIONS, renderFullTemplate
 const read = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const templates = Object.keys(TEMPLATE_SPECIFICATIONS).map((template_key,index)=>({id:`template-${index}`,template_key,name:template_key.replaceAll("_"," "),subject_template:`Update: {{request_reference}}`,html_template:"<p>Hello {{customer_first_name}},</p><p>Maintained body wording.</p>"}));
 
-test("all fifteen active template specifications define expected data and full synthetic previews",()=>{
-  assert.equal(templates.length,15);
+test("all sixteen maintained template specifications define expected data and full synthetic previews",()=>{
+  assert.equal(templates.length,16);
   for(const template of templates){const spec=TEMPLATE_SPECIFICATIONS[template.template_key];assert.ok(spec.fields.length>=4,template.template_key);const rendered=renderFullTemplateEmail({template});assert.match(rendered.html,/Aligned Print &amp; Scan|Aligned Print & Scan/);assert.match(rendered.html,/Need assistance\?/);assert.match(rendered.html,/Aligned Print & Scan LLC/);assert.match(rendered.html,/APS-DEMO1234/);assert.match(rendered.html,/<img /);assert.match(rendered.html,/<a href=/);assert.doesNotMatch(rendered.html,/86d1e803|Brandi|bnturnbo/i);}
 });
 
