@@ -67,4 +67,4 @@ Sections: Overview, Documents, Quote & Payment, Appointment/Fulfillment, Message
 
 ## Analytics state
 
-GA4 instrumentation is implemented but dormant until an owner supplies a valid `G-…` Measurement ID. Search Console technical prerequisites exist, but property verification is owner-controlled. The APS database remains authoritative for request, quote, payment, completion, service, attribution, and revenue relationships.
+GA4 is active with the owner-supplied public Measurement ID `G-4KXRE49B0B`. It initializes once on the maintained analytics path, uses an allowlisted/deduplicated event taxonomy, disables advertising signals, and sends only sanitized service category and canonical path context. Search Console technical prerequisites exist, but property verification is owner-controlled. The APS database remains authoritative for request, quote, payment, completion, service, attribution, and revenue relationships; GA4 measures public traffic and approved funnel interactions only.

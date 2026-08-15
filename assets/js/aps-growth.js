@@ -47,6 +47,8 @@
   function loadAnalytics() {
     const id = measurementId();
     if (!id || !ANALYTICS_PATHS.has(location.pathname)) return false;
+    if (global.__APS_GA4_INITIALIZED_ID === id) return true;
+    global.__APS_GA4_INITIALIZED_ID = id;
     global.dataLayer = global.dataLayer || [];
     global.gtag = global.gtag || function () { global.dataLayer.push(arguments); };
     global.gtag("js", new Date());
