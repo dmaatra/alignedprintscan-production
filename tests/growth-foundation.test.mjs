@@ -10,22 +10,28 @@ const script = read("assets/js/script.js");
 const admin = read("assets/js/admin.js");
 const wizard = read("assets/js/admin-v3.js");
 const migration = read("supabase/migrations/20260815093428_growth_attribution_review_foundation.sql");
+const activationMigration = read("supabase/migrations/20260815101226_activate_google_review_workflow.sql");
 const submit = read("supabase/functions/public-request-submit/index.ts");
+const sendMessage = read("supabase/functions/send-message/index.ts");
 const manual = read("docs/APS_SYSTEM_OPERATIONS_WORKFLOW_MANUAL.md");
 const sitemap = read("sitemap.xml");
 const robots = read("robots.txt");
 const publicPages = ["index.html","pricing.html","remote-online-notary.html","mobile-notary.html","print-scan.html","faq.html","terms.html","privacy.html","accessibility.html","support.html"];
 
-test("official Facebook link is exact, accessible, and safe on every public page", () => {
-  for (const file of publicPages) {
+test("official Facebook and Google Business links are exact, accessible, and safe on every public footer", () => {
+  for (const file of [...publicPages, "success.html"]) {
     const html = read(file);
     assert.match(html, /https:\/\/www\.facebook\.com\/profile\.php\?id=61593146406891/);
     assert.match(html, /aria-label="Aligned Print & Scan on Facebook"/);
+    assert.match(html, /https:\/\/share\.google\/rBUN6hRZiTF5UZPwz/);
+    assert.match(html, /aria-label="Aligned Print & Scan on Google Business Profile \(opens in a new tab\)"/);
     assert.match(html, /rel="noopener noreferrer"/);
   }
 });
-test("Google-owned values are not fabricated", () => {
-  assert.match(config, /google: ""/); assert.match(config, /googleBusinessProfile: ""/); assert.match(config, /MEASUREMENT_ID = ""/);
+test("owner-supplied Google destinations are centralized exactly while GA4 remains unconfigured", () => {
+  assert.match(config, /google: "https:\/\/g\.page\/r\/CeY4X1XsHwJFEAI\/review"/);
+  assert.match(config, /googleBusinessProfile: "https:\/\/share\.google\/rBUN6hRZiTF5UZPwz"/);
+  assert.match(config, /MEASUREMENT_ID = ""/);
 });
 test("optional customer-reported source supports maintained choices and Other", () => {
   assert.match(pricing, /customerReportedSource/); assert.doesNotMatch(pricing, /customerReportedSource" required/);
@@ -56,7 +62,16 @@ test("review eligibility is completion, balance, and release aware", () => {
   assert.match(migration, /workflow_status,new\.status\) <> 'completed'/); assert.match(migration, /amount_due/); assert.match(migration, /amount_paid/); assert.match(migration, /eligible_for_delivery = true/); assert.match(migration, /customer_visible = false/);
 });
 test("review state and template are neutral and idempotent", () => {
-  assert.match(migration, /not_eligible','eligible','sent/); assert.match(migration, /if new\.review_request_state = 'sent'/i); assert.match(migration, /How was your experience/); assert.doesNotMatch(migration, /5-star|satisfied\?/i); assert.match(migration, /active\n\) values[\s\S]*false/);
+  assert.match(migration, /not_eligible','eligible','sent/); assert.match(migration, /if new\.review_request_state = 'sent'/i); assert.match(migration, /How was your experience/); assert.doesNotMatch(migration, /5-star|satisfied\?/i);
+  assert.match(activationMigration, /active = true/); assert.match(activationMigration, /not conditioned on satisfaction or sentiment/); assert.doesNotMatch(activationMigration, /5-star|positive review|incentive/i);
+  assert.match(sendMessage, /review-request:\$\{requestId\}:google/); assert.match(sendMessage, /review_request_state !== "eligible"/); assert.match(sendMessage, /review_request_state: "sent"/); assert.match(sendMessage, /event_type: "review_request_sent"/); assert.match(sendMessage, /review_received: false/);
+  assert.match(sendMessage, /https:\/\/g\.page\/r\/CeY4X1XsHwJFEAI\/review/);
+});
+test("completed portal review CTA uses only the configured direct destination", () => {
+  assert.match(script, /APS_REVIEW_DESTINATIONS\?\.google/);
+  assert.match(script, /Share an Optional Google Review/);
+  assert.match(script, /noopener noreferrer/);
+  assert.doesNotMatch(script, /google\.com\/search\?q=Aligned/);
 });
 test("admin presents compact attribution and review state", () => {
   assert.match(admin, /How Customer Found APS/); assert.match(admin, /Technical Source/); assert.match(admin, /Review Request/);
@@ -75,7 +90,7 @@ test("structured data uses verified identity without fake ratings or locations",
   const index = read("index.html"); assert.match(index, /Aligned Print & Scan LLC/); assert.match(index, /sameAs/); assert.doesNotMatch(index, /aggregateRating|streetAddress|reviewCount|openingHours/);
 });
 test("manual is current, canonical, and complete", () => {
-  assert.match(manual, /ffa1fced0bca64cf30d558afffab0043e5624512/);
+  assert.match(manual, /9bc6149fc563ae68932e67110dcbd96d77c09005/);
   for (const heading of ["Terminology","Admin global modules","Eight-tab request workspace","RON operator playbook","Mobile Notary playbook","Print & Scan playbook","Financial operations","Document lifecycle","Troubleshooting","Quick checklists","Data\/security matrix","Maintenance standard"]) assert.match(manual, new RegExp(heading, "i"));
   for (const tab of ["Overview","Customer","Documents","Quote","Payments","Messages","Fulfillment","Timeline"]) assert.match(manual, new RegExp(`\\| ${tab} \\|`));
   for (const portal of ["Quote & Payment","Appointment/Fulfillment","Activity"]) assert.match(manual, new RegExp(portal.replace("&", "&")));

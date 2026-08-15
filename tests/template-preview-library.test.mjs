@@ -34,6 +34,14 @@ test("quote, payment, invoice, and document previews expose only appropriate cur
   assert.match(byKey("final_invoice"),/INV-DEMO1234-01/);assert.match(byKey("document_delivery"),/sample-customer-copy\.pdf/);
 });
 
+test("review invitation renders the exact owner-controlled Google destination",()=>{
+  const template=templates.find(item=>item.template_key==="review_request");
+  const rendered=renderFullTemplateEmail({template,context:{...SYNTHETIC_TEMPLATE_CONTEXT,actionUrl:"https://g.page/r/CeY4X1XsHwJFEAI/review"}});
+  assert.equal(rendered.portal,"https://g.page/r/CeY4X1XsHwJFEAI/review");
+  assert.match(rendered.html,/href="https:\/\/g\.page\/r\/CeY4X1XsHwJFEAI\/review"/);
+  assert.doesNotMatch(rendered.html,/success\.html\?request_id=demo-request/);
+});
+
 test("global cards are buttons and detail view exposes specification, expected data, and sandboxed full preview",async()=>{
   const source=await read("assets/js/admin-v3.js");
   assert.match(source,/button class="admin-v3-module-card template-library-card"/);

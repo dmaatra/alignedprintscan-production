@@ -2237,7 +2237,8 @@ function completedSuccessView({
   reference = "",
   displayStatus = "completed",
 } = {}) {
-  const reviewButtons = `<div class="cta-row review-buttons"><a class="btn primary" href="${escapePublic(request.review_link_google || "https://www.google.com/search?q=Aligned+Print+%26+Scan+reviews")}" target="_blank" rel="noopener">Leave a Google Review</a><a class="btn secondary" href="${escapePublic(request.review_link_yelp || "support.html")}">Share Feedback</a></div>`;
+  const googleReviewUrl = window.APS_REVIEW_DESTINATIONS?.google || request.review_link_google || "";
+  const reviewButtons = googleReviewUrl ? `<div class="cta-row review-buttons"><a class="btn primary" href="${escapePublic(googleReviewUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Share an optional Google review for Aligned Print & Scan (opens in a new tab)">Share an Optional Google Review</a><a class="btn secondary" href="support.html">Contact Customer Support</a></div>` : "";
   return `
     <div class="success-ref reveal">${escapePublic(reference)}</div>
     ${statusTimeline(displayStatus, request.service_type)}
@@ -2512,8 +2513,9 @@ async function initSuccessPage() {
     "-",
   );
 
-  const reviewButtons = completed
-    ? `<div class="cta-row review-buttons"><a class="btn primary" href="${escapePublic(request.review_link_google || "https://www.google.com/search?q=Aligned+Print+%26+Scan+reviews")}" target="_blank" rel="noopener">Leave a Google Review</a><a class="btn secondary" href="${escapePublic(request.review_link_yelp || "support.html")}">Share Feedback</a></div>`
+  const googleReviewUrl = window.APS_REVIEW_DESTINATIONS?.google || request.review_link_google || "";
+  const reviewButtons = completed && googleReviewUrl
+    ? `<div class="cta-row review-buttons"><a class="btn primary" href="${escapePublic(googleReviewUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Share an optional Google review for Aligned Print & Scan (opens in a new tab)">Share an Optional Google Review</a><a class="btn secondary" href="support.html">Contact Customer Support</a></div>`
     : "";
   const prepVideo = request.prep_video_url
     ? `<div class="next-panel reveal"><h3>Appointment Preparation Video</h3><p>Watch this preparation guide before your session or appointment.</p><div class="video-embed"><iframe src="${escapePublic(request.prep_video_url)}" title="Preparation video" allowfullscreen></iframe></div></div>`
