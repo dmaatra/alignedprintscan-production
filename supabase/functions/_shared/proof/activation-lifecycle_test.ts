@@ -5,6 +5,7 @@ import {
   witnessPolicy,
 } from "./activation-lifecycle.ts";
 import { ProofError } from "./errors.ts";
+import type { ProofProviderSigner } from "./service.ts";
 import type {
   ActivationTransaction,
   ReadinessContext,
@@ -172,6 +173,7 @@ class Service {
   activateCalls = 0;
   error: unknown = null;
   providerStatus = "sent_to_signer";
+  providerSigners: ProofProviderSigner[] = [];
   async configureTransactionSigners(
     _id: string,
     s: Array<{ externalId: string }>,
@@ -183,13 +185,14 @@ class Service {
       signers: s.map((x, i) => ({
         id: `si_${i}`,
         externalId: x.externalId,
+        email: null,
         status: "ready",
         accessLinkPresent: true,
       })),
     };
   }
   async getTransaction() {
-    return provider(this.providerStatus);
+    return { ...provider(this.providerStatus), signers: this.providerSigners };
   }
   async activateDraftTransaction() {
     this.activateCalls++;
@@ -358,6 +361,39 @@ Deno.test("definitively rejected signer configuration can be corrected safely", 
     }],
   }, admin) as { signers: Array<{ configurationState: string }> };
   assertEquals(x.s.configureCalls, 1);
+  assertEquals(result.signers[0].configurationState, "configured");
+});
+Deno.test("rejected primary signer can reconcile by exact provider email", async () => {
+  const x = setup();
+  x.r.s = [{
+    ...signer(),
+    proof_signer_id: null,
+    aps_signer_reference: "approved-signer-1",
+    signer_position: 1,
+    email: "signer@example.test",
+    configuration_state: "rejected",
+  }];
+  x.r.c.signers = x.r.s;
+  x.s.providerSigners = [{
+    id: "si_existing",
+    externalId: null,
+    email: "signer@example.test",
+    status: "ready",
+    accessLinkPresent: false,
+  }];
+  const result = await x.l.execute({
+    command: "configure_signers",
+    integrationId: id,
+    signers: [{
+      apsSignerReference: "approved-signer-1",
+      order: 1,
+      firstName: "A",
+      lastName: "Signer",
+      email: "signer@example.test",
+    }],
+  }, admin) as { signers: Array<{ configurationState: string }> };
+  assertEquals(x.s.configureCalls, 0);
+  assertEquals(x.r.s[0].proof_signer_id, "si_existing");
   assertEquals(result.signers[0].configurationState, "configured");
 });
 Deno.test("ambiguous signer result retained", async () => {

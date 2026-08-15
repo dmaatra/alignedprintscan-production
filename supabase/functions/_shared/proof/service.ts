@@ -27,6 +27,7 @@ export interface ProofProviderTransaction {
 export interface ProofProviderSigner {
   id: string | null;
   externalId: string | null;
+  email: string | null;
   status: string | null;
   accessLinkPresent: boolean;
 }
@@ -428,6 +429,8 @@ export function sanitizeTransaction(
     updatedAt: safeTimestamp(object.date_updated),
     signers: Array.isArray(object.signers)
       ? object.signers.map(sanitizeSigner)
+      : object.signer && typeof object.signer === "object"
+      ? [sanitizeSigner(object.signer)]
       : [],
   };
 }
@@ -437,6 +440,7 @@ function sanitizeSigner(value: unknown): ProofProviderSigner {
   return {
     id: safeString(signer.id ?? signer.signer_id),
     externalId: safeString(signer.external_id),
+    email: safeString(signer.email)?.toLowerCase() ?? null,
     status: safeString(signer.status),
     accessLinkPresent: Boolean(
       signer.transaction_access_link ?? signer.access_link,
