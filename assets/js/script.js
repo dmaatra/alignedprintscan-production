@@ -439,6 +439,42 @@ function providedWitnessCount(service) {
   return witnessAllocation(service).alignedProvides;
 }
 
+function controlIsActive(control) {
+  for (let node = control; node && node !== wizard; node = node.parentElement) {
+    if (
+      node.hidden ||
+      node.getAttribute?.("aria-hidden") === "true" ||
+      node.style?.display === "none" ||
+      (node.classList?.contains("wizard-step") &&
+        !node.classList.contains("active"))
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Keep browser-native validation aligned with the wizard's visible state.
+ * Safari rejects submission before the submit handler when a hidden required
+ * control remains enabled, so inactive steps and conditional branches must be
+ * removed from native validation without losing their active requirements.
+ */
+function syncActiveValidationControls() {
+  if (!wizard) return;
+  qsa("input, select, textarea", wizard).forEach((control) => {
+    if (control.dataset.activeRequired === undefined) {
+      control.dataset.activeRequired = String(control.required);
+      control.dataset.activeDisabled = String(control.disabled);
+    }
+    const active = controlIsActive(control);
+    control.required =
+      active && control.dataset.activeRequired === "true";
+    control.disabled =
+      !active || control.dataset.activeDisabled === "true";
+  });
+}
+
 function updateConditional() {
   if (!wizard) return;
   qsa("[data-addon]").forEach((el) => {
@@ -470,6 +506,7 @@ function updateConditional() {
   });
   renderSignerAndActFields();
   renderWitnessIdentityFields();
+  syncActiveValidationControls();
 }
 
 function renderWitnessIdentityFields() {
@@ -522,6 +559,7 @@ function showStep(n) {
   );
   qs("#prevStep").style.visibility = currentStep === 0 ? "hidden" : "visible";
   qs("#nextStep").style.display = currentStep === 4 ? "none" : "inline-flex";
+  syncActiveValidationControls();
   updateContinueState();
 }
 
@@ -1257,22 +1295,21 @@ function initWizard() {
     else updateContinueState();
   });
   qs("#prevStep").addEventListener("click", () => showStep(currentStep - 1));
-  qsa("input,select,textarea", wizard).forEach((el) =>
-    el.addEventListener("input", () => {
-      updateConditional();
-      calculateEstimate();
-      updateContinueState();
-    }),
-  );
-  qsa("input,select,textarea", wizard).forEach((el) =>
-    el.addEventListener("change", () => {
-      if (el.type === "file") accumulateRequestFiles(el);
-      if (el.name === "documentUploadException" && el.checked) clearSelectedRequestFiles();
-      updateConditional();
-      calculateEstimate();
-      updateContinueState();
-    }),
-  );
+  wizard.addEventListener("input", (event) => {
+    if (!event.target.matches("input,select,textarea")) return;
+    updateConditional();
+    calculateEstimate();
+    updateContinueState();
+  });
+  wizard.addEventListener("change", (event) => {
+    const el = event.target;
+    if (!el.matches("input,select,textarea")) return;
+    if (el.type === "file") accumulateRequestFiles(el);
+    if (el.name === "documentUploadException" && el.checked) clearSelectedRequestFiles();
+    updateConditional();
+    calculateEstimate();
+    updateContinueState();
+  });
   wizard.addEventListener("click", (event) => {
     const remove = event.target.closest("[data-remove-selected-file]");
     if (remove) {
