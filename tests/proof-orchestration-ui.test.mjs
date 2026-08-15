@@ -10,6 +10,8 @@ test("admin RON control panel reuses guarded server-side Proof commands", async 
   assert.match(admin, /proof-admin-document/);
   assert.match(admin, /Create Proof Draft/);
   assert.match(admin, /Map Approved Signers/);
+  assert.match(admin, /signerMappingRetryable/);
+  assert.match(admin, /Retry Approved Signer Mapping/);
   assert.match(admin, /Select APS Documents/);
   assert.match(admin, /Sync Proof Status/);
   assert.match(admin, /Activate &amp; Send to Signer/);

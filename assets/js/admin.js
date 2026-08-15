@@ -1199,6 +1199,7 @@ async function loadProofControlPanel() {
     const tx = data.transaction;
     const participants = data.participants || [];
     const signers = data.signers || [];
+    const signerMappingRetryable = signers.length > 0 && signers.every(signer => ["rejected", "failed"].includes(signer.configuration_state));
     const assets = data.assets || [];
     const sourceAssets = assets.filter(asset => asset.asset_type === "source_document");
     const completedAssets = assets.filter(asset => ["completed_document", "audit_trail"].includes(asset.asset_type));
@@ -1227,7 +1228,7 @@ async function loadProofControlPanel() {
       <div class="proof-control-section"><h4>Completed assets</h4>${completedAssets.length ? `<ul class="admin-file-list">${completedAssets.map(asset => `<li><strong>${escapeHtml(asset.file_name)}</strong><small>${proofState(asset.retrieval_state)} · Internal until explicitly released through APS Documents</small>${asset.retrieval_state === "retrieved" ? `<button class="btn dark proof-stage-asset" data-asset-id="${escapeHtml(asset.id)}" type="button">Stage for Review</button>` : ""}</li>`).join("")}</ul>` : '<p class="admin-muted">No completed notarized documents have been retrieved.</p>'}${tx?.completed_assets_available ? `<div class="status-actions">${sourceAssets.map(asset => `<button class="btn dark proof-retrieve-document" data-source-id="${escapeHtml(asset.id)}" type="button">Retrieve ${escapeHtml(asset.file_name)}</button>`).join("")}<button class="btn dark" id="proofRetrieveAudit" type="button">Retrieve Audit Trail</button></div>` : ""}</div>
       <div class="status-actions proof-actions">
         ${!tx ? '<button class="btn primary" id="proofCreateDraft" type="button">Create Proof Draft</button>' : ""}
-        ${tx && !signers.length ? '<button class="btn dark" id="proofConfigureSigners" type="button">Map Approved Signers</button>' : ""}
+        ${tx && (!signers.length || signerMappingRetryable) ? `<button class="btn dark" id="proofConfigureSigners" type="button">${signerMappingRetryable ? "Retry Approved Signer Mapping" : "Map Approved Signers"}</button>` : ""}
         ${tx ? '<button class="btn dark" id="proofLoadDocuments" type="button">Select APS Documents</button><button class="btn dark" id="proofSyncStatus" type="button">Sync Proof Status</button>' : ""}
         ${tx && tx.activation_state !== "activated" ? '<button class="btn primary" id="proofActivate" type="button">Activate &amp; Send to Signer</button>' : ""}
       </div>
