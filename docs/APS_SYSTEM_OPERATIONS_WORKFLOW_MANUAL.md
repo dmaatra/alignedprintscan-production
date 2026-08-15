@@ -1,9 +1,9 @@
 # ALIGNED PRINT & SCAN
-# System Operations & Workflow Manual
+# Operations, Policies & Standard Operating Procedures Manual
 
-Version: 1.1
+Version: 2.0
 Updated: 2026-08-15
-Production baseline inspected: PR #46 merge `9bc6149fc563ae68932e67110dcbd96d77c09005`
+Production baseline inspected: PR #50 merge `07e466622923f9c640e20887b0e5afbbe77661d2`
 Services: Remote Online Notary (RON), Mobile Notary, Print & Scan
 Integrations: Supabase, Stripe, Resend, Proof, Vercel; Google Business Profile/review configured; GA4/Search Console owner configuration pending
 
@@ -11,24 +11,24 @@ Integrations: Supabase, Stripe, Resend, Proof, Vercel; Google Business Profile/r
 
 ## Contents
 
-1. Purpose and certification status
-2. Architecture and ownership
-3. Terminology
-4. Customer entry and experience
-5. Admin global modules
-6. Request workspace
-7. RON playbook
-8. Mobile Notary playbook
-9. Print & Scan playbook
-10. Financial operations
-11. Document lifecycle
-12. Communications and notifications
-13. Acquisition, analytics, search, and reviews
-14. Troubleshooting
-15. Quick checklists
-16. Customer-side reference
-17. Data/security matrix
-18. Maintenance standard
+- [Part I — Foundation](#part-i--foundation)
+- [Part II — Customer lifecycle](#part-ii--customer-lifecycle)
+- [Part III — Admin dashboard](#part-iii--admin-dashboard)
+- [Part IV — Request workspace](#part-iv--request-workspace)
+- [Part V — Service playbooks](#part-v--service-playbooks)
+- [Part VI — Financial operations](#part-vi--financial-operations)
+- [Part VII — Changes, scheduling, cancellation, and refunds](#part-vii--changes-scheduling-cancellation-and-refunds)
+- [Part VIII — Documents](#part-viii--documents)
+- [Part IX — Communications](#part-ix--communications)
+- [Part X — Customer support](#part-x--customer-support)
+- [Part XI — Public policies](#part-xi--public-policies)
+- [Part XII — Growth and analytics](#part-xii--growth-and-analytics)
+- [Part XIII — Security and compliance](#part-xiii--security-and-compliance)
+- [Part XIV — Troubleshooting](#part-xiv--troubleshooting)
+- [Part XV — Quick reference](#part-xv--quick-reference)
+- [Appendices](#appendices)
+
+## Part I — Foundation
 
 ## 1. Purpose and certification status
 
@@ -106,6 +106,8 @@ flowchart LR
 | Completion Gate | Authoritative service-aware blocker evaluation; Proof completion or payment alone cannot bypass it. |
 | Archive / Protected Delete | Archive hides active work but preserves history. Protected delete is admin-only and limited to eligible test/junk records. |
 
+## Part II — Customer lifecycle
+
 ## 4. Customer entry and experience
 
 ### Public Request Service
@@ -134,6 +136,8 @@ Six steps collect customer, service, details, schedule/fulfillment, pricing/docu
 
 Never expose internal notes, raw event keys, provider secrets, admin blockers, audit files, unreleased deliverables, or inappropriate raw Proof identifiers.
 
+## Part III — Admin dashboard
+
 ## 5. Admin global modules
 
 | Module | Purpose and operating notes |
@@ -149,6 +153,8 @@ Never expose internal notes, raw event keys, provider secrets, admin blockers, a
 | Settings | Maintained operational preferences/configuration. |
 | New Order | Service-aware administrator request wizard. |
 
+## Part IV — Request workspace
+
 ## 6. Eight-tab request workspace
 
 | Tab | Use / customer effect / cautions |
@@ -161,6 +167,8 @@ Never expose internal notes, raw event keys, provider secrets, admin blockers, a
 | Messages | Preview centralized template, edit permitted body/subject, send, and optionally update status. Sending changes external state and logs Messages/Timeline. |
 | Fulfillment | Appointment, service facts, RON orchestration, completion gate. Save facts before completion. |
 | Timeline | Immutable operational/customer-visible events; not a substitute for Communication Log. |
+
+## Part V — Service playbooks
 
 ## 7. RON operator playbook
 
@@ -190,6 +198,8 @@ Request → review signer/acts/documents/location → quote → approval → pri
 
 Request → retain source documents → review print/scan/copy/paper/fulfillment specifications → quote → approval → invoice/payment → production → upload Completed Scan or other APS deliverable when applicable → pickup/courier/delivery facts → explicit customer release when portal delivery applies → complete. Source, Completed Scan, and internal supporting documents remain separate.
 
+## Part VI — Financial operations
+
 ## 10. Financial operations
 
 ### Stripe
@@ -201,6 +211,8 @@ Customer checkout for one invoice → Stripe confirmation → idempotent APS rec
 Open Payments → choose existing invoice → enter exact amount, method/source, unique external reference, and TEST indicator only for synthetic certification → record once. Duplicate external references are rejected. Partial payment leaves the invoice open. Payment Received must not create another invoice.
 
 Invoice #1 is never rewritten after payment. Invoice #2 is used only for later approved charges. Completion requires every required non-void/non-cancelled balance to be zero or an audited allowed exception.
+
+## Part VIII — Documents
 
 ## 11. Document lifecycle
 
@@ -214,11 +226,15 @@ Invoice #1 is never rewritten after payment. Invoice #2 is used only for later a
 
 Portal groups: Documents You Provided; Documents from Aligned Print & Scan; Completed Notarized Documents.
 
+## Part IX — Communications
+
 ## 12. Communications and notifications
 
 Central templates cover request received, quote ready, payment reminders/receipts, appointment messages, RON ready, scan/document delivery, final invoice, completion, cancellation, general message, and the disabled-until-configured neutral review request.
 
 Every successful customer-facing email must persist recipient, subject, template/type, direction, delivery state, timestamp, provider identifier when available, and rendered content/metadata in Messages. Timeline records the event; Customer Activity receives only customer-safe events; Notifications alert administrators. Failed sends must never display Sent.
+
+## Part XII — Growth and analytics
 
 ## 13. Acquisition, analytics, search, and reviews
 
@@ -248,6 +264,8 @@ No satisfaction question, rating request, gating, incentives, scraping, or Yelp 
 
 Public canonical pages appear in `sitemap.xml`. Admin, login, request-specific portal, and document/Proof routes are excluded by robots/noindex and never included in analytics page URLs. RON language accurately states that the Texas online notary must be in Texas; the signer may be elsewhere subject to law, recipient acceptance, and Proof eligibility. Mobile and Print & Scan remain local to the supported Waxahachie/Ellis County area without invented offices.
 
+## Part XIV — Troubleshooting
+
 ## 14. Troubleshooting
 
 | Symptom | Likely state / where to check | Safe next action / do not force |
@@ -271,6 +289,8 @@ Public canonical pages appear in `sitemap.xml`. Admin, login, request-specific p
 | Realtime alert missing | Auth/session/subscription/notification row | Refresh read-only state; do not create duplicate event |
 | Archive/restore | Visibility lifecycle | Use archive/restore; preserve history |
 | Protected deletion | Non-test/protected dependencies | Archive instead; never force-delete legitimate records |
+
+## Part XV — Quick reference
 
 ## 15. Quick checklists
 
@@ -305,3 +325,268 @@ Under Review: acknowledgment and request summary. Quote Ready/Awaiting Approval:
 ## 18. Maintenance standard
 
 When a release materially changes workflow, portal/admin controls, finance, documents, templates, Proof, analytics, reviews, or security boundaries, update this manual in the same release or immediately afterward. Validate claims against current code and production; retain the evidence labels **CONFIRMED IN CODE**, **CONFIRMED IN DOCUMENTATION**, **HISTORICAL OR POSSIBLY OUTDATED**, and **UNKNOWN / OWNER CONFIRMATION REQUIRED**.
+
+## Part VII — Changes, scheduling, cancellation, and refunds
+
+## 19. Request Changes SOP
+
+**Purpose:** preserve the customer’s request while placing cancellation or rescheduling under administrator review.
+
+**When to use:** a verified customer asks to cancel or proposes a new appointment. **Do not use when:** merely correcting contact information, changing a quote, or resolving a completed-service complaint.
+
+**Procedure:** customer opens Request Changes → selects cancellation or reschedule → supplies the applicable reason/date/time → submits once. APS verifies request/email scope, persists a deduplicated action, creates customer-safe Activity and Timeline entries, and surfaces actionable work in Review Queue. Financial, service, invoice, payment, Proof, and release state remain unchanged until an administrator decides.
+
+**Customer sees:** “Cancellation Requested” or the reschedule-review acknowledgment—not a promised refund. **Do not:** cancel, void, refund, recreate Proof, or change status solely because a request was submitted.
+
+## 20. Appointment Scheduling and Rescheduling SOP
+
+**Prerequisites:** correct request, current appointment/provider/dispatch/production facts, customer communication destination, and authority to change the schedule.
+
+1. Open the request and Fulfillment.
+2. Confirm service type and existing appointment.
+3. Open the guided reschedule workflow.
+4. Record new date/time, reason, and whether customer- or APS-requested.
+5. Review the policy band: 24+ hours normally no fee; under 24 hours is discretionary; repeated changes require review.
+6. Record an applied fee only through an existing disclosed charge/invoice path. A waiver requires a private internal reason.
+7. Save the authoritative appointment.
+8. Send the maintained reschedule communication; use Send & Update Status only if it represents the saved transition.
+9. Verify Messages and Timeline.
+
+RON retains its existing Proof mapping unless authoritative provider behavior requires otherwise. Mobile review includes dispatch/travel. Print & Scan review includes production scheduling and work already begun. Internal waiver notes never enter customer payloads.
+
+## 21. Admin Cancellation Review SOP
+
+**Owner:** authorized administrator. **Prerequisites:** exact request; invoice/payment/refund history; service/appointment/fulfillment/document state; Proof state for RON.
+
+1. Open Review Queue or the request Overview/Payments action.
+2. Run **Preview Cancellation**. Preview is read-only.
+3. Verify request, service, appointment, current status, quote, invoices, paid/refunded/net/outstanding totals, work performed, delivery, and applicable policy band.
+4. Select reason: Customer requested, APS unable to fulfill, Duplicate request, Service unavailable, or Other.
+5. Record effective date and customer-facing explanation.
+6. Enter only a retained amount supported by earned work, reserved capacity, approved late-cancellation amount, consumed material, or documented nonrecoverable external cost.
+7. If waiving an otherwise applicable fee, enable waiver and enter the required internal reason.
+8. Select no payment, refund due, Stripe refund, or externally completed offline refund as facts require.
+9. Review the confirmation summary. Do not proceed if it identifies the wrong payment/invoice or exceeds the remaining refundable amount.
+10. Execute once, then verify request state, refund ledger, Messages, Timeline, Review Queue, and portal.
+
+### Cancellation decision table
+
+| Service and stage | Normal result | Retention boundary |
+|---|---|---|
+| Mobile 24+ hours | cancel/reschedule without late fee | documented nonrecoverable cost only |
+| Mobile 2–24 hours | administrator review; up to $25 | earned/committed work plus disclosed cost |
+| Mobile under 2 hours/no-show | administrator review; up to current $50 base | committed appointment/travel; not unperformed acts |
+| RON before preparation/provider cost | refund unearned APS charges | no invented Proof fee |
+| RON after preparation/provider cost | stage/cost review | supported earned/nonrecoverable amount |
+| RON after notarization | service-remedy review | not an ordinary cancellation |
+| Print before production | generally refundable | documented nonrecoverable cost |
+| Print during production | partial refund review | completed work and consumed material |
+| Print completed correctly | generally nonrefundable | APS error may justify correction/remedy |
+| APS unable to fulfill | refund unearned APS charges | supported external cost only; no cancellation charge |
+
+## 22. Refund SOP
+
+Refund is a separate immutable financial record. The original invoice and payment remain unchanged.
+
+### Stripe refund
+
+Use only for the exact original Stripe payment. Confirm remaining refundable amount → enter exact partial/full amount and reason → submit once → wait for Stripe’s authoritative response → verify provider refund ID/status and APS ledger → verify totals/Timeline/communication. The server uses an idempotency key; retries must return/repair the existing result. Never mark processed before provider confirmation and never place a Stripe secret in browser code.
+
+### Manual/offline refund
+
+APS cannot move Zelle, Cash App, cash, or other offline money. Return funds externally first. Then choose **Record Refund**, select the original payment, and record exact amount, method, issue date, unique external reference, and reason. The screen means “record a refund already issued outside APS.” Duplicate reference and over-refund attempts are rejected.
+
+### Financial projection
+
+Example: invoice $60; payment +$60; refund −$35; paid $60; refunded $35; net retained $25; outstanding $0. A refund does not reopen the invoice as unpaid. Existing refunds reduce remaining refundable amount.
+
+### Customer communication
+
+Use Refund Due before provider/external completion and Refund Processed only after authoritative completion. Approved refunds are initiated promptly; availability depends on the original method, provider, and financial institution. Every successful message belongs in Communication Log and Timeline.
+
+## 23. No-Show, Late Cancellation, and APS-Cancelled Service
+
+Late-cancellation amounts are not punitive. They represent legitimately reserved capacity, travel/committed service, preparation, materials, or nonrecoverable provider cost. Administrator discretion is allowed when APS has not departed, substantially prepared, or committed meaningful resources. Never expose private waiver analysis.
+
+When APS cannot perform, refund unearned APS charges and do not retain a cancellation amount merely because APS cancelled. Preserve supported nonrecoverable external-cost facts and provide a clear customer-facing explanation.
+
+## Part X — Customer support
+
+## 24. Customer Support SOP
+
+For every case: verify identity/scope → inspect the authoritative request tab and Timeline/Messages → reply through the canonical communication path → record the outcome → escalate at the maintained boundary. Do not give legal advice, choose notarial certificate language, fabricate provider state, promise a refund before review, or claim a failed send succeeded.
+
+| Topic | Inspect | Allowed first response/action | Escalate when |
+|---|---|---|---|
+| Missing information | Overview/Customer/Fulfillment | request the exact missing fact | identity conflict or repeated failure |
+| Missing/upload trouble | Documents and function result | validate active branch/file constraints; authorized retry | storage/RLS failure |
+| Quote/change | Quote/current items | explain or revise before approval | disputed scope after work began |
+| Payment/Stripe | invoice/payment/provider result | explain current totals; safe sync | dispute, provider mismatch, chargeback |
+| Offline payment/refund | payment/refund ledger | record only actual external movement | unverifiable reference/amount |
+| Cancellation/reschedule | action/preview/fulfillment | acknowledge review; follow guided SOP | earned/provider-cost ambiguity |
+| Mobile arrival/location | appointment/location/Messages | clarify confirmed facts | safety, no-show, material dispute |
+| Print production | source/specification/stage | report authoritative production state | error/remedy decision |
+| Proof invitation/KBA | APS stage and Proof record | sync/open Proof; direct native identity help to Proof | provider/identity incident |
+| Completed document delay | completion/asset/retrieval/review | wait or idempotent retry | persistent secure retrieval failure |
+| Portal/download | scoped access/release state | verify exact link/release; safe re-auth | RLS/authorization concern |
+| Complaint/correction | all history and deliverables | preserve facts; route remedy review | legal/safety/notarial misconduct |
+
+## Part XI — Public policies
+
+## 25. Current Terms — Operational Text
+
+The public Terms remain the authoritative complete legal page. The following current operative text is reproduced for day-to-day use:
+
+- Customers may request cancellation or rescheduling; submission does not itself cancel service, void an invoice, or guarantee a refund.
+- Mobile requests cancelled 24 or more hours before the appointment generally have no late-cancellation amount. Between 2 and 24 hours APS may apply up to $25. Under 2 hours or no-show APS may retain up to the current $50 Mobile Appointment Base when legitimately earned or committed. Unperformed unrelated notarial work is not automatically retained.
+- RON outcomes depend on actual preparation, Proof/provider cost, and whether notarization occurred. APS does not invent a fixed Proof fee. A completed notarization is handled as completion/correction/service-remedy review, not ordinary cancellation.
+- Print & Scan is generally refundable before production. After production begins, completed work, consumed materials, and authorized production may be retained. Correctly completed work is generally nonrefundable unless APS authorizes a correction or remedy.
+- If APS cannot perform, APS refunds unearned APS charges and considers actual nonrecoverable external costs under the disclosed circumstances.
+- Original payment and invoice history remain. Partial/full refunds are separate records. Offline refunds are recorded only after funds are returned externally.
+- Approved refunds are initiated promptly; appearance time depends on payment method, provider, and financial institution.
+
+Always consult `terms.html` for the complete currently served terms, including service, payment, liability, acceptable-use, and legal provisions.
+
+## 26. Current Privacy — Operational Text
+
+APS stores customer/request/service data, cancellation/reschedule reasons, support and communications history, invoice/payment/refund records, provider refund identifiers, document metadata/content, and operational audit events as needed to provide and document services. APS shares only the necessary data with maintained processors/providers. Stripe processes payment details; Proof handles Proof-native identity/KBA/notarization data. APS does not claim to receive full KBA answers or credentials. Internal notes and provider error payloads are not customer portal content. See `privacy.html` for the complete current policy and rights/contact language.
+
+## 27. Accessibility Statement — Operational Text
+
+APS aims to provide keyboard-operable, labeled, responsive public, portal, and admin experiences with readable contrast, useful errors, and focus-managed dialogs. Only active/visible conditional form controls participate in native required validation. Report access barriers through the published support channel. See `accessibility.html` for the complete current statement.
+
+## 28. Cancellation, Refund, and Rescheduling FAQ
+
+- **How do I cancel?** Open Request Changes and submit Request Cancellation. APS reviews work, costs, terms, and refund eligibility before changing financial state.
+- **How do I reschedule?** Propose a new date/time through Request Changes or contact APS. Availability and already committed costs may affect the result.
+- **Will I receive a refund?** Unearned amounts are generally refundable; earned work, reserved capacity, consumed materials, and supported nonrecoverable costs may be retained.
+- **What about a Mobile appointment?** 24+ hours normally has no late fee; 2–24 hours may be up to $25; under 2 hours/no-show may be up to the current $50 base when legitimately committed.
+- **What if Proof identity verification started?** APS reviews actual stage/provider cost; identity/KBA and notarization remain Proof-native.
+- **Can Print & Scan be cancelled after production starts?** Yes, but completed work/materials may be retained and only unperformed work may be refundable.
+- **How long do refunds take?** APS initiates approved refunds promptly; the original method/provider/institution controls appearance time.
+- **How will I know?** APS sends the maintained confirmation after authoritative processing and the portal shows the safe refund state/totals.
+- **What if APS cancels?** APS refunds unearned APS charges and explains any supported external-cost handling.
+- **How do I request another change?** Use Request Changes or the published support channel and include the APS reference without sending sensitive identity documents by ordinary email.
+
+See `faq.html` for the complete current FAQ, including service, documents, payment, Proof, and delivery topics.
+
+## Part XIII — Security and compliance
+
+## 29. Data Handling and Access SOP
+
+- Use least privilege and authenticated admin functions for financial/service decisions.
+- Never paste credentials, access tokens, customer PII, KBA, or document contents into documentation or support notes beyond legitimate business need.
+- Treat request references as identifiers, not authentication.
+- Keep storage private and release only exact eligible outputs.
+- Do not weaken RLS/server filtering to repair a browser symptom.
+- Preserve original financial/provenance/audit records; correct through linked new records.
+- Proof-native identity, signing, certificate, seal, and audit actions occur in Proof.
+- Archive preserves history; protected delete is limited and is never a routine cleanup tool.
+
+## 30. Audit and Record Expectations
+
+Every consequential workflow must leave an authoritative business record plus appropriate Timeline history. Successful customer-facing communications also require a Communication Log row; Timeline is not a substitute. Provider retries must be idempotent. Failed provider actions remain failed/pending and must not be presented as successful.
+
+## Appendices
+
+## Appendix A — Complete Template Specification Standard
+
+Every maintained template records name, purpose, trigger, recipient, automatic/manual mode, prerequisite, subject, dynamic fields, CTA/deep link, permitted attachments, Send Message versus Send & Update Status, status effect, Messages result, Timeline result, portal effect, and idempotency rule. The current catalog is in `docs/manual-source/WORKFLOW_CATALOGS.md`; synthetic previews live in `docs/email-previews/`.
+
+## Appendix B — Status Catalog
+
+| Family | Source of truth | Operator rule | Unsafe transition |
+|---|---|---|---|
+| Request | `service_requests.status` plus workflow facts | use guided business action | status-only cosmetic change |
+| Invoice | invoice and line-item ledger | preserve issued/paid history | rewrite paid primary invoice |
+| Payment | payment record/provider confirmation | exact invoice/idempotency | duplicate receipt/payment |
+| Refund | refund ledger/provider state | exact original payment and remaining amount | negative payment/fabricated completion |
+| Document | provenance/review/release columns | explicit review/release | expose by filename/UI filtering alone |
+| Customer action | pending/approved/denied record | review once | irreversible public one-click cancel |
+| Proof | transaction projection and provider events | sync existing mapping | fake/recreate/complete provider state |
+| Review request | eligibility/sent evidence | send once when eligible | infer received from link click |
+
+## Appendix C — Completion Gate Matrix
+
+| Gate | RON | Mobile | Print & Scan |
+|---|---|---|---|
+| Financial | all required balances resolved | same | same |
+| Appointment/service | Proof completion required for normal path | appointment/service facts | production/fulfillment facts |
+| Participants/documents | signer/witness/document readiness | applicable people/documents | source/specifications |
+| Delivery | Proof asset retrieved, reviewed, released | physical-only or eligible APS output | pickup/courier/physical or released output |
+| Forbidden shortcut | activation/payment alone | payment alone | production status alone |
+
+## Appendix D — Troubleshooting Pattern
+
+For every incident document: **Symptom → usual meaning → authoritative screen/log → safe procedure → do not do → escalation boundary.** Never “fix” display by manufacturing a business event. Common recovery paths are: reload read-only state; synchronize an existing provider transaction; retry an idempotent authorized action; repair missing logging without resending; satisfy the exact completion/release blocker; or escalate a provider/security mismatch.
+
+## Appendix E — Printable Quick Reference Cards
+
+### New RON
+
+Customer/signers/acts → source document → quote/invoice/payment → appointment → readiness → exactly-one Proof draft → prepare/tag → activate once → signer access → Proof-native notarization → sync/retrieve → APS review → release → complete.
+
+### New Mobile
+
+Customer/participants/acts/location → document readiness → quote/invoice/payment → confirm appointment → perform service → record physical/deliverable path → resolve later charges → complete.
+
+### New Print & Scan
+
+Customer/source/specifications → quote/invoice/payment → production facts → Completed Scan/output → pickup/courier/portal release → complete.
+
+### Cancellation / Refund / Reschedule
+
+Open exact pending action → preview → verify service stage and ledgers → apply policy with documented discretion → preserve original money/history → execute once → verify Messages/Timeline/Review Queue/portal.
+
+### Document Release
+
+Exact request/file → provenance/classification → review → eligibility → explicit release → Timeline → correct portal group/download.
+
+### Completion
+
+Read blockers → financial → service facts → people/documents → delivery/release → complete only when all applicable facts pass.
+
+## Appendix F — Alphabetical Glossary
+
+- **Acknowledgment:** notarial act in which a signer acknowledges execution; APS does not choose it for the customer.
+- **Activation:** consequential Proof action making signer access/invitation available; not notarization.
+- **Admin New Order:** authenticated six-step request creation workflow.
+- **Archive:** reversible active-work hiding that preserves history.
+- **Cancellation Requested:** customer action awaiting administrator review.
+- **Completed Scan:** APS-produced scan output, separate from customer source.
+- **Completion Gate:** service-aware authoritative blockers preventing false completion.
+- **Customer Activity:** filtered customer-safe Timeline projection.
+- **Customer Upload:** customer-originated source file.
+- **Document Readiness:** operational prerequisite; not release.
+- **Idempotency:** same business command cannot create a duplicate external/internal event.
+- **Invoice:** independent amount due; not a payment.
+- **KBA:** Proof-native knowledge-based identity step never collected by APS.
+- **Manual Payment:** administrator record of money already received outside Stripe.
+- **Messages:** canonical customer Communication Log.
+- **Net Retained:** payments minus processed refunds; not outstanding balance.
+- **No-Show:** missed appointment requiring guided policy review, not automatic punishment.
+- **Proof:** external RON provider for identity, signing, notarization, and native records.
+- **Refund:** linked financial record reducing net retained while preserving payment.
+- **Release to Customer:** explicit authorization for an eligible private output.
+- **Reschedule:** reviewed appointment change preserving request/provider mapping.
+- **Review Queue:** actionable cross-request operational work.
+- **RON Sessions:** admin projection of Proof readiness and lifecycle.
+- **Send & Update Status:** communication tied to a legitimate maintained transition.
+- **Send Message:** communication without authoritative status change.
+- **Signer:** request-scoped participant who signs; not necessarily the customer.
+- **Supplemental Invoice:** later approved charge, separate from paid primary invoice.
+- **Timeline:** immutable operational event history.
+- **Witness:** conditional request participant, separate from signer/customer.
+
+## Appendix G — Back-of-Book Index Source
+
+Acknowledgment—§3, §7, App. F; Activation—§7, §20, App. E–F; Admin New Order—§4, App. F; Analytics—§13; Archive—§5, §14, §29; Cancellation—§19, §21–23, §28; Completed Scan—§9, §11, App. E–F; Completion Gate—§7–11, App. C/E/F; Customer Activity—§4, §19, App. F; Customer Upload—§4, §11, App. F; Document Readiness—§7–11, App. F; Document Release—§11, App. E; Invoice—§10, §21–22, App. B/F; KBA—§1–2, §7, §24, App. F; Manual Payment—§10, §22, App. F; Messages—§6, §12, §19–24, App. F; No-Show—§21, §23, App. F; Payment Received—§10, §12, §15; Proof—§1–3, §7, §20–24, §29; Refund—§21–23, §28, App. B/E/F; Release to Customer—§3, §6, §11, App. E/F; Reschedule—§19–20, §28, App. E/F; Review Queue—§3, §5, §19, §21, App. F; RON Sessions—§5, §7, App. F; Send & Update Status—§6, §12, §20, App. A/F; Signer—§3, §7, App. F; Supplemental Invoice—§10, App. F; Timeline—§3, §6, §12, §19–24, App. F; Witness—§3, §7, App. F.
+
+## Appendix H — Document Control and Change Log
+
+| Version | Date | Baseline | Change |
+|---|---|---|---|
+| 1.1 | 2026-08-15 | PR #46 | Canonical system manual, Proof certification, growth/review foundation |
+| 2.0 | 2026-08-15 | PR #50 / `07e4666` | Cancellation, rescheduling, Stripe/offline/partial refund SOPs; customer support; policy/FAQ operations; template/status/fulfillment/visibility catalogs; source pack; screenshot manifest; glossary/index/quick references |
+
+Documentation screenshots are governed by `docs/manual-source/SCREENSHOT_MANIFEST.md`. No automatic live screenshot is accepted if the viewport may include legitimate customer PII, real financial data, portal tokens, documents, or Proof identifiers.
