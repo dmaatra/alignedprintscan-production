@@ -5,7 +5,7 @@ Version: 2.0
 Updated: 2026-08-15
 Production baseline inspected: PR #50 merge `07e466622923f9c640e20887b0e5afbbe77661d2`
 Services: Remote Online Notary (RON), Mobile Notary, Print & Scan
-Integrations: Supabase, Stripe, Resend, Proof, Vercel; Google Business Profile/review configured; GA4/Search Console owner configuration pending
+Integrations: Supabase, Stripe, Resend, Proof, Vercel; Google Business Profile/review and GA4 active; Search Console owner verification pending
 
 > This is the canonical APS operating manual. **CONFIRMED IN CODE** statements are grounded in the current application, migrations, functions, or tests. Never place credentials, customer data, real request identifiers, or document names in this manual.
 
@@ -250,7 +250,11 @@ Examples: Google Business Profile `?utm_source=google&utm_medium=organic&utm_cam
 
 ### Analytics boundary
 
-GA4 loads only after a valid owner-supplied `G-…` Measurement ID and only on canonical public pages. Advertising signals/personalization are disabled. Events: `request_service_view`, `request_started`, `service_selected`, `request_submitted`; portal-specific quote/payment events remain excluded until an approved portal-safe measurement decision. APS database owns quote/paid/completed conversion and revenue-by-source.
+GA4 is **ACTIVE** using the exact owner-supplied Measurement ID `G-4KXRE49B0B`. APS initializes it once on the maintained analytics paths with a sanitized canonical page location; advertising signals and personalization are disabled. Approved public events are `request_service_view`, `request_started`, `service_selected`, and `request_submitted`. Each event is session-deduplicated, contains only an allowlisted service category, and `request_submitted` fires only after the server returns a persisted request identifier. Failed submissions do not emit it. Other allowlisted events remain dormant unless an approved privacy-safe call site exists.
+
+Never transmit customer/signer names, email, phone, address, APS request or invoice/payment references, document names, portal tokens, Proof IDs/access links, message bodies, internal notes, or sensitive query parameters. GA4 measures public traffic and approved funnel interactions. APS remains the authoritative business-conversion system for requests, quote approvals, payments, completions, revenue, service, and source relationships.
+
+**GA4 troubleshooting:** confirm the single `gtag/js?id=G-4KXRE49B0B` request, one `js` initialization and one `config` command, then inspect the sanitized event name/service category. If an event is absent, confirm the page is maintained, the event was not already sent in the session, and the business action actually succeeded. Never bypass deduplication or add raw form/request data to diagnose analytics.
 
 ### Review workflow
 
@@ -588,5 +592,6 @@ Acknowledgment—§3, §7, App. F; Activation—§7, §20, App. E–F; Admin New
 |---|---|---|---|
 | 1.1 | 2026-08-15 | PR #46 | Canonical system manual, Proof certification, growth/review foundation |
 | 2.0 | 2026-08-15 | PR #50 / `07e4666` | Cancellation, rescheduling, Stripe/offline/partial refund SOPs; customer support; policy/FAQ operations; template/status/fulfillment/visibility catalogs; source pack; screenshot manifest; glossary/index/quick references |
+| 2.1 | 2026-08-15 | GA4 activation release | Owner Measurement ID activated; single initialization, approved event taxonomy, privacy boundary, troubleshooting, and APS-versus-GA4 ownership documented |
 
 Documentation screenshots are governed by `docs/manual-source/SCREENSHOT_MANIFEST.md`. No automatic live screenshot is accepted if the viewport may include legitimate customer PII, real financial data, portal tokens, documents, or Proof identifiers.

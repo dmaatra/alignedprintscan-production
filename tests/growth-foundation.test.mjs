@@ -29,10 +29,10 @@ test("official Facebook and Google Business links are exact, accessible, and saf
     assert.match(html, /rel="noopener noreferrer"/);
   }
 });
-test("owner-supplied Google destinations are centralized exactly while GA4 remains unconfigured", () => {
+test("owner-supplied Google destinations and GA4 ID are centralized exactly", () => {
   assert.match(config, /google: "https:\/\/g\.page\/r\/CeY4X1XsHwJFEAI\/review"/);
   assert.match(config, /googleBusinessProfile: "https:\/\/share\.google\/rBUN6hRZiTF5UZPwz"/);
-  assert.match(config, /MEASUREMENT_ID = ""/);
+  assert.match(config, /MEASUREMENT_ID = "G-4KXRE49B0B"/);
 });
 test("optional customer-reported source supports maintained choices and Other", () => {
   assert.match(pricing, /customerReportedSource/); assert.doesNotMatch(pricing, /customerReportedSource" required/);
@@ -54,6 +54,13 @@ test("analytics taxonomy is allowlisted and deduplicated", () => {
   for (const name of ["request_service_view","request_started","service_selected","request_submitted","quote_viewed","quote_approved","payment_checkout_started","customer_portal_opened"]) assert.match(growth, new RegExp(name));
   assert.match(growth, /aps_analytics_events_v1/); assert.match(growth, /sent\.has/);
   assert.match(script, /request_submitted/); assert.ok(script.indexOf("request_submitted") > script.indexOf("!data?.request_id"));
+});
+test("GA4 uses the exact owner ID and initializes only once", () => {
+  assert.match(config, /G-4KXRE49B0B/);
+  assert.equal((config.match(/G-[A-Z0-9]+/g) || []).filter((value) => value === "G-4KXRE49B0B").length, 1);
+  assert.match(growth, /__APS_GA4_INITIALIZED_ID === id/);
+  assert.match(growth, /__APS_GA4_INITIALIZED_ID = id/);
+  assert.equal((growth.match(/googletagmanager\.com\/gtag\/js/g) || []).length, 1);
 });
 test("analytics disables advertising signals and sanitizes portal page URLs", () => {
   assert.match(growth, /allow_google_signals: false/); assert.match(growth, /allow_ad_personalization_signals: false/); assert.match(growth, /page_location: `\$\{location\.origin\}\$\{safeLanding\(\)\}`/);
@@ -99,7 +106,7 @@ test("manual is current, canonical, and complete", () => {
   for (const portal of ["Quote & Payment","Appointment/Fulfillment","Activity"]) assert.match(manual, new RegExp(portal.replace("&", "&")));
 });
 test("manual documents analytics, review, UTM, RON/local, ownership, and external boundaries", () => {
-  for (const phrase of ["UTM standard","No satisfaction question","Google Business Profile","GA4 loads only","Authoritative ownership matrix","EXTERNAL PROVIDER BOUNDARY","naturally unverified","Google Search Console"]) assert.match(manual, new RegExp(phrase, "i"));
+  for (const phrase of ["UTM standard","No satisfaction question","Google Business Profile","GA4 is **ACTIVE**","Authoritative ownership matrix","EXTERNAL PROVIDER BOUNDARY","naturally unverified","Google Search Console"]) assert.match(manual, new RegExp(phrase.replaceAll("*", "\\*"), "i"));
 });
 test("customer-facing content contains no obsolete business name", () => {
   for (const file of publicPages) assert.doesNotMatch(read(file), /Aligned Document Services/);
