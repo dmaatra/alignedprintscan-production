@@ -200,6 +200,14 @@ Deno.serve(async (req) => {
     const result = Array.isArray(resolution) ? resolution[0] : resolution;
     requestId = String(result?.request_id || "");
     if (!requestId) throw new Error("The request record could not be created.");
+    if (adminRequest) {
+      await rows(
+        await api(`service_requests?id=eq.${encodeURIComponent(requestId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ request_source: "admin" }),
+        }),
+      );
+    }
 
     const detailConfig: Record<string, { table: string; keys: string[] }> = {
       ron: {
