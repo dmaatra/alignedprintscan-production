@@ -211,7 +211,9 @@ export class ProofService {
             middle_name: signer.middleName || undefined,
             last_name: signer.lastName || undefined,
             external_id: signer.externalId,
-            order: signer.order,
+            // Proof's signer schema declares signing order as a string even
+            // though APS stores it as a numeric position.
+            order: String(signer.order),
             entity: signer.entity || undefined,
             capacity: signer.capacity || undefined,
           })),

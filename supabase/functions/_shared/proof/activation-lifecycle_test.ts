@@ -336,6 +336,30 @@ Deno.test("mutating signer call not retried", async () => {
   );
   assertEquals(x.s.configureCalls, 1);
 });
+Deno.test("definitively rejected signer configuration can be corrected safely", async () => {
+  const x = setup();
+  x.r.s = [{
+    ...signer(),
+    aps_signer_reference: "approved-signer-1",
+    signer_position: 1,
+    email: "signer@example.test",
+    configuration_state: "rejected",
+  }];
+  x.r.c.signers = x.r.s;
+  const result = await x.l.execute({
+    command: "configure_signers",
+    integrationId: id,
+    signers: [{
+      apsSignerReference: "approved-signer-1",
+      order: 1,
+      firstName: "A",
+      lastName: "Signer",
+      email: "signer@example.test",
+    }],
+  }, admin) as { signers: Array<{ configurationState: string }> };
+  assertEquals(x.s.configureCalls, 1);
+  assertEquals(result.signers[0].configurationState, "configured");
+});
 Deno.test("ambiguous signer result retained", async () => {
   const x = setup();
   x.r.s = [];

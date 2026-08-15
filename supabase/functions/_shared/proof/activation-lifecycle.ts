@@ -101,7 +101,12 @@ export class ProofActivationLifecycle {
     }
     const signers = validateSigners(input.signers, ctx.ron?.number_of_signers);
     const existing = await this.repo.listSigners(tx.id);
-    if (existing.length) {
+    if (
+      existing.length &&
+      !existing.every((signer) =>
+        ["rejected", "failed"].includes(signer.configuration_state)
+      )
+    ) {
       return {
         kind: "signers",
         duplicate: true,
@@ -131,13 +136,43 @@ export class ProofActivationLifecycle {
       created_by: admin,
       updated_by: admin,
     }));
-    const claimed = await this.repo.claimSigners(tx, rows);
-    if (!claimed) {
-      return {
-        kind: "signers",
-        duplicate: true,
-        signers: (await this.repo.listSigners(tx.id)).map(signerProjection),
-      };
+    let claimed: SignerRecord[];
+    if (existing.length) {
+      if (
+        existing.length !== rows.length ||
+        existing.some((row, index) =>
+          row.aps_signer_reference !== rows[index].aps_signer_reference ||
+          row.email !== rows[index].email ||
+          row.signer_position !== rows[index].signer_position
+        )
+      ) {
+        throw readyError(
+          "Rejected signer claims no longer match the approved APS signer set.",
+        );
+      }
+      claimed = [];
+      for (const row of existing) {
+        claimed.push(
+          await this.repo.updateSigner(row.id, {
+            configuration_state: "claimed",
+            ambiguous_at: null,
+            manual_review_reason: null,
+            last_error_code: null,
+            last_error_message: null,
+            updated_by: admin,
+          }),
+        );
+      }
+    } else {
+      const inserted = await this.repo.claimSigners(tx, rows);
+      if (!inserted) {
+        return {
+          kind: "signers",
+          duplicate: true,
+          signers: (await this.repo.listSigners(tx.id)).map(signerProjection),
+        };
+      }
+      claimed = inserted;
     }
     await this.repo.updateTransaction(tx.id, {
       signer_configuration_state: "dispatched",
