@@ -67,8 +67,8 @@ test("customer documents preserve provenance and secure request-scoped access", 
   const upload = await read("supabase/functions/customer-upload-document/index.ts");
   const status = await read("supabase/functions/get-request-status/index.ts");
   for (const source of [intake, upload]) {
-    assert.match(source, /document_classification: "customer_document"/);
-    assert.match(source, /customer_visible: true/);
+    assert.match(source, source === intake ? /document_classification:[\s\S]*adminRequest[\s\S]*\? "supporting_document"[\s\S]*: "customer_document"/ : /document_classification: "customer_document"/);
+    assert.match(source, source === intake ? /customer_visible: !adminRequest/ : /customer_visible: true/);
     assert.match(source, /eligible_for_delivery: false/);
   }
   assert.match(status, /const ownUpload/);
@@ -102,11 +102,19 @@ test("document release correction preserves guards without a nonexistent timesta
 
 test("admin RON intake persists structured signers witnesses and acts", async () => {
   const admin = await read("assets/js/admin-v3.js");
+  const intake = await read("supabase/functions/public-request-submit/index.ts");
   assert.match(admin, /ron_signer_count[^\n]*max="10"/);
   assert.match(admin, /ron_signer_name_/);
   assert.match(admin, /ron_witness_name_/);
   assert.match(admin, /participant_type:"witness"/);
-  assert.match(admin, /request_notarial_acts/);
+  assert.match(intake, /request_notarial_acts/);
+  assert.match(admin, /functions\.invoke\("public-request-submit"/);
+  assert.match(admin, /admin_request:true/);
+  assert.doesNotMatch(admin, /from\("ron_requests"\)\.insert/);
+  assert.match(intake, /if \(adminRequest\) await requireProofAdmin\(req\)/);
+  assert.match(intake, /requestPayload\.request_source = adminRequest \? "admin" : "website"/);
+  assert.match(intake, /uploaded_by: adminRequest \? "admin" : "customer"/);
+  assert.match(intake, /document_classification:[\s\S]*adminRequest[\s\S]*\? "supporting_document"[\s\S]*: "customer_document"/);
 });
 
 test("Proof draft blockers are actionable and completed legacy sessions do not lead on stale fields", async () => {
