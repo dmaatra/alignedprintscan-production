@@ -99,7 +99,7 @@ test("structured data uses verified identity without fake ratings or locations",
   const index = read("index.html"); assert.match(index, /Aligned Print & Scan LLC/); assert.match(index, /sameAs/); assert.doesNotMatch(index, /aggregateRating|streetAddress|reviewCount|openingHours/);
 });
 test("manual is current, canonical, and complete", () => {
-  assert.match(manual, /07e466622923f9c640e20887b0e5afbbe77661d2/);
+  assert.match(manual, /c15c0b967a8a946ee18bf147d5fb391e536e351c/);
   for (const heading of ["Terminology","Admin global modules","Eight-tab request workspace","RON operator playbook","Mobile Notary playbook","Print & Scan playbook","Financial operations","Document lifecycle","Troubleshooting","Quick checklists","Data\/security matrix","Maintenance standard"]) assert.match(manual, new RegExp(heading, "i"));
   for (const heading of ["Request Changes SOP", "Admin Cancellation Review SOP", "Refund SOP", "Customer Support SOP", "Alphabetical Glossary", "Back-of-Book Index Source"]) assert.match(manual, new RegExp(heading, "i"));
   for (const tab of ["Overview","Customer","Documents","Quote","Payments","Messages","Fulfillment","Timeline"]) assert.match(manual, new RegExp(`\\| ${tab} \\|`));

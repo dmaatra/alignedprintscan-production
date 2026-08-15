@@ -1,9 +1,9 @@
 # ALIGNED PRINT & SCAN
 # Operations, Policies & Standard Operating Procedures Manual
 
-Version: 2.0
+Version: 2.1
 Updated: 2026-08-15
-Production baseline inspected: PR #50 merge `07e466622923f9c640e20887b0e5afbbe77661d2`
+Production baseline inspected: PR #52 merge `c15c0b967a8a946ee18bf147d5fb391e536e351c`
 Services: Remote Online Notary (RON), Mobile Notary, Print & Scan
 Integrations: Supabase, Stripe, Resend, Proof, Vercel; Google Business Profile/review and GA4 active; Search Console owner verification pending
 
