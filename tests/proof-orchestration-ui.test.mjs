@@ -14,6 +14,7 @@ test("admin RON control panel reuses guarded server-side Proof commands", async 
   assert.match(admin, /Retry Approved Signer Mapping/);
   assert.match(admin, /Select APS Documents/);
   assert.match(admin, /Sync Proof Status/);
+  assert.match(admin, /proofCommand\("refresh_signers"/);
   assert.match(admin, /Activate &amp; Send to Signer/);
   assert.match(admin, /confirm\("Activate this prepared Proof transaction/);
   assert.match(admin, /selectedRequest\.service_type === "ron"/);
@@ -22,6 +23,12 @@ test("admin RON control panel reuses guarded server-side Proof commands", async 
   assert.match(admin, /Next step occurs in Proof/);
   assert.match(admin, /I Completed Document Preparation in Proof/);
   assert.match(admin, /confirm_proof_document_preparation/);
+});
+
+test("appointment saves preserve a valid activation timezone", async () => {
+  const admin = await read("assets/js/admin.js");
+  assert.match(admin, /appointment_timezone:\s*selectedRequest\.appointment_timezone/);
+  assert.match(admin, /Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/);
 });
 
 test("RON operator guidance names all thirteen business-facing stages", async () => {

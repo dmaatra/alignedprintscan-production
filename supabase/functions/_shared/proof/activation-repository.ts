@@ -25,6 +25,10 @@ export interface ActivationRepository {
     id: string,
     patch: Record<string, unknown>,
   ): Promise<ActivationTransaction>;
+  recordActivation(
+    tx: ActivationTransaction,
+    occurredAt: string,
+  ): Promise<void>;
   log(
     tx: ActivationTransaction,
     command: string,
@@ -134,6 +138,36 @@ export class SupabaseActivationRepository implements ActivationRepository {
       `proof_transactions?id=eq.${id}`,
       patch,
     ))[0];
+  }
+  async recordActivation(tx: ActivationTransaction, occurredAt: string) {
+    const eventType = "proof_transaction_activated";
+    const existing = await this.rows<{ id: string }>(
+      `request_timeline_events?select=id&service_request_id=eq.${tx.service_request_id}&event_type=eq.${eventType}&metadata-%3E%3Eproof_transaction_id=eq.${encodeURIComponent(tx.proof_transaction_id || "")}&limit=1`,
+    );
+    if (existing[0]) return;
+    const response = await this.request("request_timeline_events", {
+      method: "POST",
+      body: JSON.stringify({
+        service_request_id: tx.service_request_id,
+        event_type: eventType,
+        title: "Proof transaction activated",
+        detail: "Proof sent the secure invitation to the approved signer.",
+        actor_type: "system",
+        visibility: "internal",
+        created_at: occurredAt,
+        metadata: {
+          proof_transaction_id: tx.proof_transaction_id,
+          invitation_owner: "proof",
+        },
+      }),
+    });
+    if (!response.ok && response.status !== 409) {
+      throw new ProofError(
+        "PROOF_PROVIDER_ERROR",
+        "APS could not persist the Proof activation timeline event.",
+        500,
+      );
+    }
   }
   async log(
     tx: ActivationTransaction,

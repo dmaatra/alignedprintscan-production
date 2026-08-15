@@ -133,6 +133,7 @@ class Repo {
   c = context();
   s = this.c.signers;
   updates: Record<string, unknown>[] = [];
+  activationEvents = 0;
   claim = true;
   async getTransaction() {
     return this.t;
@@ -165,6 +166,9 @@ class Repo {
     this.updates.push(p);
     this.t = { ...this.t, ...p };
     return this.t;
+  }
+  async recordActivation() {
+    this.activationEvents++;
   }
   async log() {}
 }
@@ -519,6 +523,18 @@ Deno.test("activation success", async () => {
     confirmActivation: true,
   }, admin) as { state: string };
   assertEquals(r.state, "activated");
+  assertEquals(x.r.s[0].invitation_state, "invited");
+  assertEquals(x.r.activationEvents, 1);
+});
+Deno.test("activated refresh backfills invitation state and lifecycle once", async () => {
+  const x = setup();
+  x.r.t.activation_state = "activated";
+  x.r.t.activated_at = "2026-08-15T06:40:05.495Z";
+  x.s.providerStatus = "sent";
+  await x.l.execute({ command: "refresh_signers", integrationId: id }, admin);
+  assertEquals(x.r.s[0].invitation_state, "invited");
+  assertEquals(x.r.s[0].access_link_present, false);
+  assertEquals(x.r.activationEvents, 1);
 });
 Deno.test("duplicate click returns existing state", async () => {
   const x = setup();
