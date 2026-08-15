@@ -25,6 +25,7 @@ class Repo implements CompletedAssetRepository {
   stored: Array<{ path: string; bytes: Uint8Array }> = [];
   storageFail = false;
   staged: Array<{ assetId: string; serviceRequestId: string }> = [];
+  stagedEvents: Array<{ serviceRequestId: string; requestFileId: string; assetId: string }> = [];
   async integration() {
     return this.tx;
   }
@@ -63,6 +64,9 @@ class Repo implements CompletedAssetRepository {
   async stageForReview(asset: CompletedAssetRecord, serviceRequestId: string) {
     this.staged.push({ assetId: asset.id, serviceRequestId });
     return "44444444-4444-4444-8444-444444444444";
+  }
+  async recordStagedForReview(serviceRequestId: string, requestFileId: string, assetId: string) {
+    this.stagedEvents.push({ serviceRequestId, requestFileId, assetId });
   }
 }
 class Service implements CompletedAssetService {
@@ -120,6 +124,11 @@ Deno.test("retrieved document stages into its own APS request review queue", asy
   assertEquals(x.repo.staged, [{
     assetId: retrieved.asset.assetId,
     serviceRequestId: x.repo.tx.service_request_id,
+  }]);
+  assertEquals(x.repo.stagedEvents, [{
+    serviceRequestId: x.repo.tx.service_request_id,
+    requestFileId: result.requestFileId,
+    assetId: retrieved.asset.assetId,
   }]);
 });
 Deno.test("ODN asset staging is blocked without authorization", async () => {

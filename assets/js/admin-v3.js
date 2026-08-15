@@ -443,7 +443,8 @@
 
   function requestStatus(request) { return request.workflow_status || request.status || "under_review"; }
   function activeRequests() { return moduleState.requests.filter((request) => !request.archived_at); }
-  async function openRequestFromModule(id, tab = "overview") {
+  async function openRequestFromModule(id, tab = "overview", documentId = null) {
+    if (documentId) sessionStorage.setItem(`aps:focus-document:${id}`, documentId);
     await showAdminView("requests");
     const button = $(`#requestList .request-row[data-id="${CSS.escape(id)}"]`);
     button?.click();

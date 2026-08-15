@@ -19,8 +19,8 @@ test("admin RON control panel reuses guarded server-side Proof commands", async 
   assert.match(admin, /confirm\("Activate this prepared Proof transaction/);
   assert.match(admin, /selectedRequest\.service_type === "ron"/);
   assert.match(admin, /proofOperatorStepper/);
-  assert.match(admin, /Open Proof Dashboard/);
-  assert.match(admin, /Next step occurs in Proof/);
+  assert.match(admin, /Open Proof in New Tab/);
+  assert.match(admin, /Proof-native work stays in Proof/);
   assert.match(admin, /I Completed Document Preparation in Proof/);
   assert.match(admin, /confirm_proof_document_preparation/);
 });
@@ -42,7 +42,7 @@ test("Proof handoff uses the official dashboard without fabricating an admin tra
   assert.match(admin, /https:\/\/app\.proof\.com/);
   assert.match(v3, /https:\/\/app\.proof\.com/);
   assert.doesNotMatch(admin, /app\.proof\.com\/transactions\/\$\{/);
-  assert.match(admin, /does not document a stable transaction-specific admin URL/);
+  assert.match(admin, /target="_blank" rel="noopener noreferrer"/);
 });
 
 test("approved APS request participants are the sole signer mapping source", async () => {
