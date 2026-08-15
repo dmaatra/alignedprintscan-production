@@ -36,7 +36,7 @@ test("quote, payment, invoice, and document previews expose only appropriate cur
 
 test("review invitation renders the exact owner-controlled Google destination",()=>{
   const template=templates.find(item=>item.template_key==="review_request");
-  const rendered=renderFullTemplateEmail({template,context:{...SYNTHETIC_TEMPLATE_CONTEXT,actionUrl:"https://g.page/r/CeY4X1XsHwJFEAI/review"}});
+  const rendered=renderFullTemplateEmail({template,context:SYNTHETIC_TEMPLATE_CONTEXT});
   assert.equal(rendered.portal,"https://g.page/r/CeY4X1XsHwJFEAI/review");
   assert.match(rendered.html,/href="https:\/\/g\.page\/r\/CeY4X1XsHwJFEAI\/review"/);
   assert.doesNotMatch(rendered.html,/success\.html\?request_id=demo-request/);

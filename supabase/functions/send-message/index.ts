@@ -1,4 +1,4 @@
-import { renderFullTemplateEmail } from "../_shared/template-preview.mjs";
+import { REVIEW_DESTINATIONS, renderFullTemplateEmail } from "../_shared/template-preview.mjs";
 import { customerPortalUrl } from "../_shared/customer-email.mjs";
 import { safeDeliveryError } from "../_shared/communication-history.mjs";
 
@@ -13,7 +13,6 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL") ||
   "Aligned Print & Scan <hello@alignedprintscan.com>";
-const GOOGLE_REVIEW_URL = "https://g.page/r/CeY4X1XsHwJFEAI/review";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -406,7 +405,7 @@ Deno.serve(async (request) => {
       releasedDocumentNames: releasedFiles.map((file: any) => file.file_name),
       completionDate: values.completion_date,
       siteUrl: "https://alignedprintscan.com",
-      actionUrl: isReviewRequest ? GOOGLE_REVIEW_URL : undefined,
+      actionUrl: isReviewRequest ? REVIEW_DESTINATIONS.google : undefined,
     };
     const html = renderFullTemplateEmail({
       template,
