@@ -13,6 +13,7 @@ const migration = read("supabase/migrations/20260815093428_growth_attribution_re
 const activationMigration = read("supabase/migrations/20260815101226_activate_google_review_workflow.sql");
 const submit = read("supabase/functions/public-request-submit/index.ts");
 const sendMessage = read("supabase/functions/send-message/index.ts");
+const templatePreview = read("supabase/functions/_shared/template-preview.mjs");
 const manual = read("docs/APS_SYSTEM_OPERATIONS_WORKFLOW_MANUAL.md");
 const sitemap = read("sitemap.xml");
 const robots = read("robots.txt");
@@ -65,7 +66,8 @@ test("review state and template are neutral and idempotent", () => {
   assert.match(migration, /not_eligible','eligible','sent/); assert.match(migration, /if new\.review_request_state = 'sent'/i); assert.match(migration, /How was your experience/); assert.doesNotMatch(migration, /5-star|satisfied\?/i);
   assert.match(activationMigration, /active = true/); assert.match(activationMigration, /not conditioned on satisfaction or sentiment/); assert.doesNotMatch(activationMigration, /5-star|positive review|incentive/i);
   assert.match(sendMessage, /review-request:\$\{requestId\}:google/); assert.match(sendMessage, /review_request_state !== "eligible"/); assert.match(sendMessage, /review_request_state: "sent"/); assert.match(sendMessage, /event_type: "review_request_sent"/); assert.match(sendMessage, /review_received: false/);
-  assert.match(sendMessage, /https:\/\/g\.page\/r\/CeY4X1XsHwJFEAI\/review/);
+  assert.match(sendMessage, /REVIEW_DESTINATIONS\.google/);
+  assert.match(templatePreview, /https:\/\/g\.page\/r\/CeY4X1XsHwJFEAI\/review/);
 });
 test("completed portal review CTA uses only the configured direct destination", () => {
   assert.match(script, /APS_REVIEW_DESTINATIONS\?\.google/);
