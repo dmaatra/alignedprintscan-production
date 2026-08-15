@@ -5,7 +5,7 @@ Version: 2.1
 Updated: 2026-08-15
 Production baseline inspected: PR #52 merge `c15c0b967a8a946ee18bf147d5fb391e536e351c`
 Services: Remote Online Notary (RON), Mobile Notary, Print & Scan
-Integrations: Supabase, Stripe, Resend, Proof, Vercel; Google Business Profile/review and GA4 active; Search Console owner verification pending
+Integrations: Supabase, Stripe, Resend, Proof, Vercel; Google Business Profile/review and GA4 active; Search Console verified with sitemap submitted
 
 > This is the canonical APS operating manual. **CONFIRMED IN CODE** statements are grounded in the current application, migrations, functions, or tests. Never place credentials, customer data, real request identifiers, or document names in this manual.
 
@@ -75,8 +75,8 @@ flowchart LR
 | Completed asset before retrieval | Proof | Wait/retry through authorized retrieval |
 | Stored/reviewed/released document | APS | Private storage, review, explicit release, portal filtering |
 | Completion gate | APS | Require service, financial, participant, and delivery facts |
-| Public traffic | GA4 when configured | Anonymous public acquisition only |
-| Search performance | Google Search Console | External owner-controlled reporting |
+| Public traffic | Active GA4 `G-4KXRE49B0B` | Anonymous public acquisition only |
+| Search performance | Verified Google Search Console URL-prefix property | Owner-controlled reporting; public canonical pages only |
 
 ## 3. Terminology
 
@@ -266,7 +266,11 @@ No satisfaction question, rating request, gating, incentives, scraping, or Yelp 
 
 ### Search/indexing
 
-Public canonical pages appear in `sitemap.xml`. Admin, login, request-specific portal, and document/Proof routes are excluded by robots/noindex and never included in analytics page URLs. RON language accurately states that the Texas online notary must be in Texas; the signer may be elsewhere subject to law, recipient acceptance, and Proof eligibility. Mobile and Print & Scan remain local to the supported Waxahachie/Ellis County area without invented offices.
+The Google Search Console URL-prefix property `https://alignedprintscan.com/` is **VERIFIED**. Ownership uses Google’s HTML-file method through the permanent public-root file `google7bace5a38d37ffed.html`. The canonical sitemap `https://alignedprintscan.com/sitemap.xml` is **SUBMITTED**, and Search Console reported successful submission. Preserve the verification file unless later authoritative Google guidance establishes that removal is safe.
+
+Public canonical pages appear in `sitemap.xml`. Admin, login, request-specific portal, document/Proof routes, and other private operational surfaces remain excluded by robots/noindex and are not submitted for indexing. Do not create another property, change the canonical domain, or modify DNS/mail configuration for this verified setup. RON language accurately states that the Texas online notary must be in Texas; the signer may be elsewhere subject to law, recipient acceptance, and Proof eligibility. Mobile and Print & Scan remain local to the supported Waxahachie/Ellis County area without invented offices.
+
+**Google setup status:** GA4 ID supplied—YES; GA4 active—YES; GA4 production verified—YES; Search Console property verified—YES; sitemap submitted—YES; owner Google setup remaining—NONE.
 
 ## Part XIV — Troubleshooting
 
@@ -593,5 +597,6 @@ Acknowledgment—§3, §7, App. F; Activation—§7, §20, App. E–F; Admin New
 | 1.1 | 2026-08-15 | PR #46 | Canonical system manual, Proof certification, growth/review foundation |
 | 2.0 | 2026-08-15 | PR #50 / `07e4666` | Cancellation, rescheduling, Stripe/offline/partial refund SOPs; customer support; policy/FAQ operations; template/status/fulfillment/visibility catalogs; source pack; screenshot manifest; glossary/index/quick references |
 | 2.1 | 2026-08-15 | GA4 activation release | Owner Measurement ID activated; single initialization, approved event taxonomy, privacy boundary, troubleshooting, and APS-versus-GA4 ownership documented |
+| 2.1 | 2026-08-15 | PR #54 / Search Console owner confirmation | URL-prefix property verified by permanent HTML file; canonical sitemap submitted successfully; private indexing protections retained; owner Google setup complete |
 
 Documentation screenshots are governed by `docs/manual-source/SCREENSHOT_MANIFEST.md`. No automatic live screenshot is accepted if the viewport may include legitimate customer PII, real financial data, portal tokens, documents, or Proof identifiers.
