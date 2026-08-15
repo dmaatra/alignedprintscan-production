@@ -1,11 +1,11 @@
 # ALIGNED PRINT & SCAN
 # System Operations & Workflow Manual
 
-Version: 1.0
+Version: 1.1
 Updated: 2026-08-15
-Production baseline inspected: `ffa1fced0bca64cf30d558afffab0043e5624512`
+Production baseline inspected: PR #46 merge `9bc6149fc563ae68932e67110dcbd96d77c09005`
 Services: Remote Online Notary (RON), Mobile Notary, Print & Scan
-Integrations: Supabase, Stripe, Resend, Proof, Vercel; GA4/Search Console prepared but owner configuration pending
+Integrations: Supabase, Stripe, Resend, Proof, Vercel; Google Business Profile/review configured; GA4/Search Console owner configuration pending
 
 > This is the canonical APS operating manual. **CONFIRMED IN CODE** statements are grounded in the current application, migrations, functions, or tests. Never place credentials, customer data, real request identifiers, or document names in this manual.
 
@@ -238,7 +238,11 @@ GA4 loads only after a valid owner-supplied `G-…` Measurement ID and only on c
 
 ### Review workflow
 
-Eligibility = legitimate APS completion + zero outstanding required balance + no pending required customer release. State is Not Eligible, Eligible, or Sent; it never means Review Received. The centralized neutral template is intentionally inactive until the owner supplies an exact verified review URL. No satisfaction question, rating request, gating, incentives, scraping, or Yelp solicitation. Default destination will be Google after configuration; customer source does not rewrite review history.
+The owner-confirmed Google Business Profile is `https://share.google/rBUN6hRZiTF5UZPwz`; it appears in the public footer alongside the existing social links. The owner-confirmed direct review destination is `https://g.page/r/CeY4X1XsHwJFEAI/review` and is the centralized Google review CTA destination.
+
+Eligibility = legitimate APS completion + zero outstanding required balance + no pending required customer release. State is Not Eligible, Eligible, or Sent; it never means Review Received. The centralized neutral template is active. An administrator may send it from Request → Messages only while the request is Eligible. The canonical sender applies the maintained Google destination, uses a request/destination idempotency key, persists the rendered communication and provider result in Messages, records a dedicated Timeline event, and advances the request to Sent. A retry of an already-sent invitation repairs/returns the existing result without another provider delivery. Failed delivery remains recorded as failed and does not advance the state to Sent.
+
+No satisfaction question, rating request, gating, incentives, scraping, or Yelp solicitation is permitted. Customer source does not rewrite review history, and clicking the Google CTA never marks Review Received.
 
 ### Search/indexing
 

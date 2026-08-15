@@ -13,6 +13,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL") ||
   "Aligned Print & Scan <hello@alignedprintscan.com>";
+const GOOGLE_REVIEW_URL = "https://g.page/r/CeY4X1XsHwJFEAI/review";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -107,6 +108,41 @@ function customerDate(value: unknown) {
       timeZone: "America/Chicago",
     }).format(date);
 }
+async function finalizeReviewRequest(requestId: string, messageId: string) {
+  const completedAt = new Date().toISOString();
+  const stateResponse = await rest("service_requests?id=eq." + requestId, {
+    method: "PATCH",
+    body: JSON.stringify({
+      review_request_state: "sent",
+      review_request_sent_at: completedAt,
+      review_destination_key: "google",
+      review_message_id: messageId,
+    }),
+  });
+  if (!stateResponse.ok) throw new Error(await stateResponse.text());
+  const prior = await rows(
+    `request_timeline_events?select=id&service_request_id=eq.${requestId}&event_type=eq.review_request_sent&metadata-%3E%3Emessage_id=eq.${messageId}&limit=1`,
+  );
+  if (!prior.length) {
+    const timelineResponse = await rest("request_timeline_events", {
+      method: "POST",
+      body: JSON.stringify({
+        service_request_id: requestId,
+        event_type: "review_request_sent",
+        title: "Review request sent",
+        detail: "A neutral optional Google review invitation was delivered.",
+        actor_type: "admin",
+        visibility: "internal",
+        metadata: {
+          message_id: messageId,
+          destination: "google",
+          review_received: false,
+        },
+      }),
+    });
+    if (!timelineResponse.ok) throw new Error(await timelineResponse.text());
+  }
+}
 function templateAction(
   key: string,
   serviceRequest: any,
@@ -181,6 +217,50 @@ Deno.serve(async (request) => {
       )
       : [];
     const customer = customers[0] || {}, quote = quotes[0];
+    const isReviewRequest = template.template_key === "review_request";
+    const reviewIdempotencyKey = `review-request:${requestId}:google`;
+    if (isReviewRequest) {
+      if (serviceRequest.review_request_state === "sent") {
+        const existing = await rows(
+          `messages?select=*&idempotency_key=eq.${encodeURIComponent(reviewIdempotencyKey)}&delivery_state=eq.sent&limit=1`,
+        );
+        const existingMessage = existing[0];
+        if (existingMessage) {
+          await finalizeReviewRequest(requestId, existingMessage.id);
+          return json({
+            ok: true,
+            duplicate: true,
+            message_id: existingMessage.id,
+            provider_message_id: existingMessage.provider_message_id || null,
+            status: serviceRequest.status,
+          });
+        }
+        throw new Error("This request's review invitation has already been sent.");
+      }
+      if (serviceRequest.review_request_state !== "eligible") {
+        throw new Error(
+          "This request is not eligible for a review invitation. Completion, customer deliverable release, and financial resolution are required.",
+        );
+      }
+      const existing = await rows(
+        `messages?select=*&idempotency_key=eq.${encodeURIComponent(reviewIdempotencyKey)}&limit=1`,
+      );
+      if (existing[0]?.delivery_state === "sent") {
+        await finalizeReviewRequest(requestId, existing[0].id);
+        return json({
+          ok: true,
+          duplicate: true,
+          message_id: existing[0].id,
+          provider_message_id: existing[0].provider_message_id || null,
+          status: serviceRequest.status,
+        });
+      }
+      if (existing[0]) {
+        throw new Error(
+          "A prior review invitation attempt is already recorded. Inspect its delivery state before retrying.",
+        );
+      }
+    }
     const invoice = invoices.find((item: any) =>
       !["void", "cancelled"].includes(String(item.status || "").toLowerCase())
     );
@@ -326,6 +406,7 @@ Deno.serve(async (request) => {
       releasedDocumentNames: releasedFiles.map((file: any) => file.file_name),
       completionDate: values.completion_date,
       siteUrl: "https://alignedprintscan.com",
+      actionUrl: isReviewRequest ? GOOGLE_REVIEW_URL : undefined,
     };
     const html = renderFullTemplateEmail({
       template,
@@ -360,6 +441,7 @@ Deno.serve(async (request) => {
         associated_status: targetStatus || template.associated_status || null,
         source_type: "admin",
         source_event: "admin_composed",
+        idempotency_key: isReviewRequest ? reviewIdempotencyKey : null,
         attempted_at: new Date().toISOString(),
         created_by: adminId,
       }),
@@ -462,7 +544,7 @@ Deno.serve(async (request) => {
       );
     }
     providerAccepted = true;
-    await rest(`messages?id=eq.${messageId}`, {
+    const messageUpdate = await rest(`messages?id=eq.${messageId}`, {
       method: "PATCH",
       body: JSON.stringify({
         delivery_state: "sent",
@@ -470,6 +552,7 @@ Deno.serve(async (request) => {
         sent_at: new Date().toISOString(),
       }),
     });
+    if (!messageUpdate.ok) throw new Error(await messageUpdate.text());
     await rest("request_timeline_events", {
       method: "POST",
       body: JSON.stringify({
@@ -482,6 +565,9 @@ Deno.serve(async (request) => {
         metadata: { message_id: messageId, source_type: "admin" },
       }),
     }).catch(() => null);
+    if (isReviewRequest) {
+      await finalizeReviewRequest(requestId, messageId);
+    }
     if (targetStatus) {
       if (targetStatus === "completed") {
         const completion = await fetch(
