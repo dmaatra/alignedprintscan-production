@@ -41,6 +41,27 @@ test("print intake clears notary-only native signer requirements", async () => {
   assert.match(script, /signerHost\.dataset\.service = activeService/);
 });
 
+test("public intake native validation includes only active wizard controls", async () => {
+  const script = await read("assets/js/script.js");
+  assert.match(script, /function controlIsActive\(control\)/);
+  assert.match(script, /node\.getAttribute\?\.\("aria-hidden"\) === "true"/);
+  assert.match(script, /node\.style\?\.display === "none"/);
+  assert.match(script, /node\.classList\?\.contains\("wizard-step"\)/);
+  assert.match(script, /control\.dataset\.activeRequired = String\(control\.required\)/);
+  assert.match(script, /control\.required =[\s\S]*active && control\.dataset\.activeRequired === "true"/);
+  assert.match(script, /control\.disabled =[\s\S]*!active \|\| control\.dataset\.activeDisabled === "true"/);
+  assert.match(script, /renderWitnessIdentityFields\(\);\s*syncActiveValidationControls\(\);/);
+  assert.match(script, /qs\("#nextStep"\)\.style\.display[\s\S]*syncActiveValidationControls\(\);/);
+});
+
+test("dynamic signer witness and file controls remain wired after rerendering", async () => {
+  const script = await read("assets/js/script.js");
+  assert.match(script, /wizard\.addEventListener\("input", \(event\) =>/);
+  assert.match(script, /wizard\.addEventListener\("change", \(event\) =>/);
+  assert.match(script, /if \(el\.type === "file"\) accumulateRequestFiles\(el\)/);
+  assert.match(script, /documentUploadException" && el\.checked\) clearSelectedRequestFiles\(\)/);
+});
+
 test("customer documents preserve provenance and secure request-scoped access", async () => {
   const intake = await read("supabase/functions/public-request-submit/index.ts");
   const upload = await read("supabase/functions/customer-upload-document/index.ts");
