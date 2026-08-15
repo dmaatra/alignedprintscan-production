@@ -32,7 +32,8 @@ function proofFor(transaction) {
 function returnFor(transaction,assets,files) {
   const completedFiles=files.filter(file=>text(file.document_classification)==="completed_notarized_document" && file.is_active !== false);
   if (completedFiles.some(file=>file.customer_visible===true && file.eligible_for_delivery===true)) return badge("released","Released to Customer");
-  if (completedFiles.some(file=>file.customer_visible!==true)) return badge("pending_review","Pending Admin Release");
+  if (completedFiles.some(file=>file.customer_visible!==true && ["approved","reviewed","ready"].includes(text(file.review_state)))) return badge("ready_release","Ready for Customer Release");
+  if (completedFiles.some(file=>file.customer_visible!==true)) return badge("pending_review","Pending APS Review");
   const completedAssets=assets.filter(asset=>text(asset.asset_type)==="completed_document");
   if (completedAssets.some(asset=>text(asset.retrieval_state)==="retrieved")) return badge("retrieved","Retrieved");
   if (transaction?.completed_assets_available || completedAssets.some(asset=>["available","retrieved"].includes(text(asset.availability_state)))) return badge("retrieval_pending","Retrieval Pending");
@@ -64,10 +65,11 @@ function nextAction(row) {
   if (row.proof.key==="not_created") return {label:"Create Proof Draft",tab:"fulfillment"};
   if (row.proof.key==="draft") return {label:"Review Proof Draft",tab:"fulfillment"};
   if (row.proof.key==="ready_for_activation") return {label:"Activate Proof Transaction",tab:"fulfillment"};
-  if (["activated","in_progress"].includes(row.proof.key)) return {label:"Open Session Controls",tab:"fulfillment"};
+  if (["activated","in_progress"].includes(row.proof.key)) return {label:"Continue in Proof",tab:"fulfillment"};
   if (["needs_attention","completed_with_rejections"].includes(row.proof.key)) return {label:"Review Proof Status",tab:"fulfillment"};
   if (row.proof.key==="completed" && row.documentReturn.key==="retrieval_pending") return {label:"Retrieve Completed Document",tab:"fulfillment"};
   if (["retrieved","pending_review"].includes(row.documentReturn.key)) return {label:"Review Completed Document",tab:"documents"};
+  if (row.documentReturn.key==="ready_release") return {label:"Release to Customer",tab:"documents"};
   return {label:"No action required",tab:"fulfillment"};
 }
 
@@ -83,7 +85,7 @@ export function buildRonSessionRows(payload={}) {
     const customer=Array.isArray(request.customers)?request.customers[0]:request.customers||{};
     const row={request,customer,transaction,reference:requestRef(request.id),payment:paymentFor(invoices),appointment:appointmentFor(request),signers:signerFor(request,transaction,participants),documents:documentsFor(request,assets,files),proof:proofFor(transaction),documentReturn:returnFor(transaction,assets,files)};
     const completedWorkflow=["completed","archived","cancelled"].includes(text(request.workflow_status||request.status));
-    const postCompletionException=["needs_attention","completed_with_rejections"].includes(row.proof.key)||["retrieved","pending_review"].includes(row.documentReturn.key);
+    const postCompletionException=["needs_attention","completed_with_rejections"].includes(row.proof.key)||["retrieved","pending_review","ready_release"].includes(row.documentReturn.key);
     row.attention=completedWorkflow?postCompletionException:[row.payment.key!=="paid",row.appointment.key!=="confirmed",row.signers.key!=="ready",row.documents.key!=="ready",postCompletionException].some(Boolean);
     row.sessionStatus=row.documentReturn.key==="released"?badge("released","Released"):row.attention?badge("needs_attention","Needs Attention"):completedWorkflow||row.proof.key==="completed"?badge("completed","Completed"):["activated","in_progress"].includes(row.proof.key)?badge("active","Active / In Progress"):row.proof.key==="ready_for_activation"?badge("ready","Ready"):badge("preparing","Preparing");
     row.appointmentAt=request.appointment_date?`${request.appointment_date}T${request.appointment_time||"12:00:00"}${request.appointment_timezone?"":""}`:request.preferred_date?`${request.preferred_date}T12:00:00`:null;

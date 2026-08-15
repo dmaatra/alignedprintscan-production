@@ -1191,6 +1191,28 @@ function proofOperatorStepper(data,tx,signers,sourceAssets,completedAssets,appoi
   let currentFound=false;return `<ol class="proof-operator-stepper">${stages.map(([label,done,note])=>{let state=done?"complete":currentFound?"waiting":"current";if(!done&&!currentFound)currentFound=true;if(label==="Business Readiness"&&!done)state="blocked";return `<li class="is-${state}"><span>${state.replaceAll('_',' ')}</span><strong>${label}</strong>${note?`<small>${note}</small>`:""}</li>`;}).join("")}</ol>`;
 }
 
+function proofReturnGuidance(data, tx, assets, files) {
+  const state = window.APSProofReturnState?.derive({ request: data.request || selectedRequest, transaction: tx, assets, files }) || null;
+  if (!state) return "";
+  const opened = tx && sessionStorage.getItem(`aps:proof-opened:${selectedRequest.id}`) === "true";
+  const proofAction = ["before_handoff", "in_progress"].includes(state.key)
+    ? `<a class="btn dark proof-open-dashboard" href="https://app.proof.com" target="_blank" rel="noopener noreferrer">${state.key === "before_handoff" ? "Open Proof in New Tab ↗" : "Continue in Proof ↗"}</a>` : "";
+  const workspaceAction = state.tab && state.tab !== "proof"
+    ? `<button class="btn ${state.attention ? "dark" : "primary"} proof-return-action" data-tab="${escapeHtml(state.tab)}" data-document-id="${escapeHtml(state.documentId || "")}" type="button">${escapeHtml(state.action)}</button>` : "";
+  return `<section class="proof-return-guidance is-${escapeHtml(state.key)}" data-proof-return-state="${escapeHtml(state.key)}" aria-live="polite"><div><span class="small-label">${opened ? "Proof opened in a new tab" : "Proof operator handoff"}</span><h4>${escapeHtml(state.title)}</h4><p>${escapeHtml(state.body)}</p>${tx ? '<small>Sync Proof Status retrieves the latest state for this existing transaction. It never creates or activates a transaction or resends an invitation.</small>' : ""}</div><div class="proof-return-actions">${proofAction}${workspaceAction}</div></section>`;
+}
+
+function focusProofDocument(requestId) {
+  const documentId = sessionStorage.getItem(`aps:focus-document:${requestId}`);
+  if (!documentId) return;
+  const row = document.querySelector(`[data-proof-return-document="${CSS.escape(documentId)}"]`);
+  if (!row) return;
+  sessionStorage.removeItem(`aps:focus-document:${requestId}`);
+  row.classList.add("is-proof-target");
+  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  row.querySelector("a,button")?.focus({ preventScroll: true });
+}
+
 async function loadProofControlPanel() {
   const host = $("#proofControlPanel");
   if (!host || selectedRequest?.service_type !== "ron") return;
@@ -1207,7 +1229,8 @@ async function loadProofControlPanel() {
     host.innerHTML = `
       <div class="admin-v3-section-heading"><span class="small-label">RON Session / Proof</span><h3>Secure Online Notary Orchestration</h3></div>
       <p class="admin-muted">APS owns business readiness and customer delivery. Proof executes the secure notarization.</p>
-      <div class="proof-handoff"><a class="btn dark" href="https://app.proof.com" target="_blank" rel="noopener noreferrer">Open Proof Dashboard ↗</a><p><strong>Next step occurs in Proof</strong> for document tagging, identity verification, the live meeting, signatures, certificates, and seal placement. Proof does not document a stable transaction-specific admin URL, so use the displayed transaction reference in Proof.</p></div>
+      ${proofReturnGuidance(data, tx, assets, data.files || [])}
+      <div class="proof-handoff"><p><strong>Proof-native work stays in Proof.</strong> Identity verification, the live meeting, signatures, certificates, and seal placement are completed in Proof. APS remains open for synchronized status, document review, release, and final completion.</p></div>
       ${tx&&!tx.document_preparation_confirmed_at?'<div class="proof-control-section"><h4>Proof Document Preparation</h4><p class="admin-muted">Complete field placement, certificate-space review, and other Proof-native preparation in Proof. This confirmation is an APS administrator attestation, not Proof verification.</p><button class="btn dark" id="proofConfirmPreparation" type="button">I Completed Document Preparation in Proof</button></div>':tx?.document_preparation_confirmed_at?`<div class="email-notice"><strong>Admin Confirmed</strong><p>Proof document preparation was confirmed ${new Date(tx.document_preparation_confirmed_at).toLocaleString()}.</p></div>`:""}
       ${proofOperatorStepper(data,tx,signers,sourceAssets,completedAssets,appointmentReady)}
       ${!data.configured ? '<div class="email-notice"><strong>Proof is not configured.</strong><p>Configure the required server-side Proof secrets before using transaction actions.</p></div>' : ""}
@@ -1229,7 +1252,7 @@ async function loadProofControlPanel() {
       <div class="status-actions proof-actions">
         ${!tx ? '<button class="btn primary" id="proofCreateDraft" type="button">Create Proof Draft</button>' : ""}
         ${tx && (!signers.length || signerMappingRetryable) ? `<button class="btn dark" id="proofConfigureSigners" type="button">${signerMappingRetryable ? "Retry Approved Signer Mapping" : "Map Approved Signers"}</button>` : ""}
-        ${tx ? '<button class="btn dark" id="proofLoadDocuments" type="button">Select APS Documents</button><button class="btn dark" id="proofSyncStatus" type="button">Sync Proof Status</button>' : ""}
+        ${tx ? '<button class="btn dark" id="proofLoadDocuments" type="button">Select APS Documents</button><button class="btn dark" id="proofSyncStatus" type="button" title="Retrieves the latest state for this existing Proof transaction.">Sync Proof Status</button>' : ""}
         ${tx && tx.activation_state !== "activated" ? '<button class="btn primary" id="proofActivate" type="button">Activate &amp; Send to Signer</button>' : ""}
       </div>
       <div id="proofActionStatus" role="status" aria-live="polite"></div>`;
@@ -1237,6 +1260,15 @@ async function loadProofControlPanel() {
       const primary = participants.find(person => person.participant_type === "signer");
       if (!primary?.email) throw new Error("An approved signer email is required.");
       await proofCommand("create_draft", { signerEmail: primary.email });
+    }));
+    $$(".proof-open-dashboard").forEach(link => link.addEventListener("click", () => {
+      sessionStorage.setItem(`aps:proof-opened:${selectedRequest.id}`, "true");
+      window.setTimeout(() => loadProofControlPanel(), 0);
+    }));
+    $$(".proof-return-action").forEach(button => button.addEventListener("click", () => {
+      if (button.dataset.documentId) sessionStorage.setItem(`aps:focus-document:${selectedRequest.id}`, button.dataset.documentId);
+      window.AdminV3?.activateTab(button.dataset.tab || "fulfillment");
+      if (button.dataset.tab === "documents") window.setTimeout(() => focusProofDocument(selectedRequest.id), 120);
     }));
     $("#proofOpenCustomer")?.addEventListener("click", () => window.AdminV3?.activateTab("customer"));
     $("#proofConfigureSigners")?.addEventListener("click", () => runProofUiAction(() => proofCommand("configure_approved_signers", { integrationId: tx.id })));
@@ -1258,6 +1290,7 @@ async function loadProofControlPanel() {
       await proofCommand("stage_completed_asset", { integrationId: tx.id, assetId: button.dataset.assetId }, true);
       await selectRequest(selectedRequest.id);
       window.AdminV3?.activateTab("documents");
+      window.setTimeout(() => focusProofDocument(selectedRequest.id), 120);
     })));
   } catch (error) {
     host.innerHTML = `<div class="admin-v3-section-heading"><span class="small-label">RON Session / Proof</span><h3>Secure Online Notary Orchestration</h3></div><div class="email-notice"><strong>Proof state could not be loaded.</strong><p>${escapeHtml(error.message || String(error))}</p></div>`;
@@ -1370,8 +1403,12 @@ async function selectRequest(id) {
       const customerUpload = f.uploaded_by === "customer" && f.document_classification === "customer_document";
       const provenance = customerUpload ? "Customer Upload" : f.document_classification === "completed_notarized_document" ? "Proof Completed Document" : f.document_classification === "customer_deliverable" ? "APS Deliverable" : f.document_classification === "internal_document" ? "Admin / Internal" : "Admin Upload";
       const access = customerUpload ? "Customer already has access" : released ? "Released to customer" : "Customer-hidden";
-      const releaseControl = customerUpload ? "" : `<button class="btn dark release-document-btn" data-file-id="${escapeHtml(f.id)}" data-released="${released}" type="button">${released ? "Withdraw Release" : "Release to Customer"}</button>`;
-      return `<li>${url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(f.file_name)}</a>` : escapeHtml(f.file_name)}<small>${escapeHtml(provenance)} · ${f.file_type || "file"} · ${f.file_size ? Math.round(f.file_size / 1024) + " KB" : ""} · ${escapeHtml(access)}</small>${releaseControl}</li>`;
+      const proofCompleted = f.document_classification === "completed_notarized_document";
+      const reviewed = ["approved", "reviewed", "ready"].includes(String(f.review_state || "").toLowerCase());
+      const reviewControl = proofCompleted && !reviewed ? `<button class="btn dark review-proof-document-btn" data-file-id="${escapeHtml(f.id)}" type="button">Mark APS Review Complete</button>` : "";
+      const releaseControl = customerUpload || (proofCompleted && !reviewed) ? "" : `<button class="btn dark release-document-btn" data-file-id="${escapeHtml(f.id)}" data-released="${released}" type="button">${released ? "Withdraw Release" : "Release to Customer"}</button>`;
+      const received = f.created_at ? ` · Received ${new Date(f.created_at).toLocaleString()}` : "";
+      return `<li class="${proofCompleted ? "proof-completed-document" : ""}" ${proofCompleted ? `data-proof-return-document="${escapeHtml(f.id)}"` : ""}>${proofCompleted ? '<span class="small-label">Proof Completed Document</span>' : ""}${url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(f.file_name)}</a>` : escapeHtml(f.file_name)}<small>${escapeHtml(provenance)} · ${f.file_type || "file"} · ${f.file_size ? Math.round(f.file_size / 1024) + " KB" : ""}${received} · ${reviewed ? "APS Review Complete" : proofCompleted ? "Pending APS Review" : escapeHtml(access)} · ${escapeHtml(access)}</small>${reviewControl}${releaseControl}</li>`;
     }),
   );
   const quoteLocked = [
@@ -1629,6 +1666,8 @@ async function selectRequest(id) {
   $("#sendMessageBtn", detail)?.addEventListener("click", () => sendComposedMessage(false));
   $("#sendAndUpdateStatusBtn", detail)?.addEventListener("click", () => sendComposedMessage(true));
   $$(".release-document-btn", detail).forEach(button => button.addEventListener("click", () => setDocumentRelease(button.dataset.fileId, button.dataset.released !== "true")));
+  $$(".review-proof-document-btn", detail).forEach(button => button.addEventListener("click", () => reviewProofDocument(button.dataset.fileId)));
+  window.setTimeout(() => focusProofDocument(selectedRequest.id), 0);
   $("#saveCompletionFactsBtn", detail)?.addEventListener("click", saveCompletionFacts);
   $("#completeWithExceptionBtn", detail)?.addEventListener("click", completeWithException);
   populateInvoicePresetSelect();
@@ -2099,6 +2138,18 @@ async function setDocumentRelease(fileId, released) {
   showToast(released ? "Document released to the customer portal." : "Customer release withdrawn.");
   await selectRequest(selectedRequest.id);
   window.AdminV3?.activateTab("documents");
+}
+
+async function reviewProofDocument(fileId) {
+  if (!selectedRequest || !fileId) return;
+  if (!confirm("Confirm APS review of this completed Proof document? This does not release it to the customer.")) return;
+  const { error } = await adminClient.rpc("admin_review_proof_completed_document", { p_request: selectedRequest.id, p_file: fileId });
+  if (error) { alert(error.message || "Completed document review could not be recorded."); return; }
+  showToast("APS review completed. Customer release remains explicit.");
+  sessionStorage.setItem(`aps:focus-document:${selectedRequest.id}`, fileId);
+  await selectRequest(selectedRequest.id);
+  window.AdminV3?.activateTab("documents");
+  window.setTimeout(() => focusProofDocument(selectedRequest.id), 120);
 }
 
 async function sendComposedMessage(updateStatus) {
@@ -2729,6 +2780,20 @@ async function initDashboard() {
   await loadSupportTickets();
   subscribeRealtime();
 }
+
+let proofReturnRefreshAt = 0;
+async function refreshProofReturnState() {
+  if (document.hidden || selectedRequest?.service_type !== "ron" || !$("#proofControlPanel")) return;
+  const now = Date.now();
+  if (now - proofReturnRefreshAt < 15000) return;
+  proofReturnRefreshAt = now;
+  await loadProofControlPanel();
+}
+window.addEventListener("focus", () => refreshProofReturnState().catch(() => {}));
+document.addEventListener("visibilitychange", () => refreshProofReturnState().catch(() => {}));
+window.addEventListener("aps:admin-notification", event => {
+  if (event.detail?.service_request_id === selectedRequest?.id && selectedRequest?.service_type === "ron") refreshProofReturnState().catch(() => {});
+});
 handleLogin();
 initDashboard();
 window.loadRequests = loadRequests;

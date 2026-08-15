@@ -19,6 +19,11 @@ export interface CompletedAssetRepository {
     asset: CompletedAssetRecord,
     serviceRequestId: string,
   ): Promise<string>;
+  recordStagedForReview(
+    serviceRequestId: string,
+    requestFileId: string,
+    assetId: string,
+  ): Promise<void>;
 }
 export class SupabaseCompletedAssetRepository
   implements CompletedAssetRepository {
@@ -198,6 +203,25 @@ export class SupabaseCompletedAssetRepository
       );
     }
     return rows[0].id;
+  }
+  async recordStagedForReview(serviceRequestId: string, requestFileId: string, assetId: string) {
+    const existing = await this.rows<{ id: string }>(
+      `request_timeline_events?select=id&service_request_id=eq.${encodeURIComponent(serviceRequestId)}&event_type=eq.proof_completed_document_staged&metadata-%3E%3Erequest_file_id=eq.${encodeURIComponent(requestFileId)}&limit=1`,
+    );
+    if (existing[0]) return;
+    await this.read(await this.request("request_timeline_events", {
+      method: "POST",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({
+        service_request_id: serviceRequestId,
+        event_type: "proof_completed_document_staged",
+        title: "Proof completed document ready for review",
+        detail: "APS securely staged the retrieved Proof completed document for administrator review.",
+        actor_type: "system",
+        visibility: "internal",
+        metadata: { request_file_id: requestFileId, proof_asset_record_id: assetId },
+      }),
+    }));
   }
   private request(path: string, init: RequestInit = {}) {
     return fetch(`${this.url}/rest/v1/${path}`, {

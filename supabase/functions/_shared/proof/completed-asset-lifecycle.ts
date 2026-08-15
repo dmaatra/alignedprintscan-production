@@ -57,6 +57,7 @@ export class ProofCompletedAssetLifecycle {
         asset,
         tx.service_request_id,
       );
+      await this.repository.recordStagedForReview(tx.service_request_id, requestFileId, asset.id);
       return {
         kind: "staged_completed_asset",
         asset: completedProjection(asset),
