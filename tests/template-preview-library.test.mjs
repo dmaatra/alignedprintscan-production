@@ -6,8 +6,8 @@ import { SYNTHETIC_TEMPLATE_CONTEXT, TEMPLATE_SPECIFICATIONS, renderFullTemplate
 const read = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const templates = Object.keys(TEMPLATE_SPECIFICATIONS).map((template_key,index)=>({id:`template-${index}`,template_key,name:template_key.replaceAll("_"," "),subject_template:`Update: {{request_reference}}`,html_template:"<p>Hello {{customer_first_name}},</p><p>Maintained body wording.</p>"}));
 
-test("all sixteen maintained template specifications define expected data and full synthetic previews",()=>{
-  assert.equal(templates.length,16);
+test("all maintained template specifications define expected data and full synthetic previews",()=>{
+  assert.equal(templates.length,23);
   for(const template of templates){const spec=TEMPLATE_SPECIFICATIONS[template.template_key];assert.ok(spec.fields.length>=4,template.template_key);const rendered=renderFullTemplateEmail({template});assert.match(rendered.html,/Aligned Print &amp; Scan|Aligned Print & Scan/);assert.match(rendered.html,/Need assistance\?/);assert.match(rendered.html,/Aligned Print & Scan LLC/);assert.match(rendered.html,/APS-DEMO1234/);assert.match(rendered.html,/<img /);assert.match(rendered.html,/<a href=/);assert.doesNotMatch(rendered.html,/86d1e803|Brandi|bnturnbo/i);}
 });
 
@@ -45,7 +45,23 @@ test("review invitation renders the exact owner-controlled Google destination",(
 test("global cards are buttons and detail view exposes specification, expected data, and sandboxed full preview",async()=>{
   const source=await read("assets/js/admin-v3.js");
   assert.match(source,/button class="admin-v3-module-card template-library-card"/);
-  assert.match(source,/Data this template expects/);assert.match(source,/Back to Templates/);assert.match(source,/Synthetic data only/);assert.match(source,/sandbox srcdoc/);
+  assert.match(source,/Data this template expects/);assert.match(source,/Back to Templates/);assert.match(source,/Previous Template/);assert.match(source,/Next Template/);assert.match(source,/Synthetic data only/);assert.match(source,/sandbox srcdoc/);
+});
+
+test("cancellation and refund templates use the same complete detail specification contract",()=>{
+  for(const key of ["cancellation_request_received","cancellation_confirmed_no_payment","cancellation_confirmed_refund_due","refund_due","refund_processed","late_retained_amount_explanation","aps_unable_to_fulfill"]){
+    const spec=TEMPLATE_SPECIFICATIONS[key];assert.ok(spec,key);assert.ok(spec.purpose);assert.ok(spec.trigger);assert.ok(spec.classification);assert.ok(spec.eyebrow);assert.ok(spec.title);assert.ok(spec.cta);assert.ok(spec.tab);assert.ok(spec.fields.length>=5);
+  }
+});
+
+test("admin Scripts is reference-only, categorized, navigable, and absent from customer pages",async()=>{
+  const [adminHtml,adminJs,customerJs,catalog]=await Promise.all([read("admin-dashboard.html"),read("assets/js/admin-v3.js"),read("assets/js/script.js"),import("../assets/js/operator-reference-catalog.mjs")]);
+  assert.match(adminHtml,/data-admin-view="scripts"/);assert.match(adminJs,/Back to Scripts/);assert.match(adminJs,/Previous Script/);assert.match(adminJs,/Next Script/);
+  assert.deepEqual(catalog.SCRIPT_CATEGORY_ORDER,["RON Session","Notarial Acts","Mobile Notary","Print & Scan","Problem / Stop / Refusal","Quick-Flip","Checklists"]);
+  assert.ok(catalog.OPERATOR_REFERENCE_SCRIPTS.length>=20);assert.equal(new Set(catalog.OPERATOR_REFERENCE_SCRIPTS.map(item=>item.key)).size,catalog.OPERATOR_REFERENCE_SCRIPTS.length);
+  for(const script of catalog.OPERATOR_REFERENCE_SCRIPTS){for(const field of ["purpose","when","say","stop","next","related"])assert.ok(script[field],`${script.key}:${field}`);assert.ok(script.mustDo.length);assert.ok(script.doNot.length);}
+  assert.doesNotMatch(customerJs,/operator-reference-catalog|data-admin-view="scripts"/);
+  assert.doesNotMatch(adminJs,/openScriptDetail[\s\S]{0,800}(functions\.invoke|\.from\(|fetch\()/);
 });
 
 test("request body editor stays compact while preview and delivery share the final renderer",async()=>{
