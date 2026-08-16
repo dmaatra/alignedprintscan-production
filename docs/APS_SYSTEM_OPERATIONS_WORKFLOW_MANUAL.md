@@ -1,9 +1,9 @@
 # ALIGNED PRINT & SCAN
 # Operations, Policies & Standard Operating Procedures Manual
 
-Version: 2.1
+Version: 2.2
 Updated: 2026-08-15
-Production baseline inspected: PR #52 merge `c15c0b967a8a946ee18bf147d5fb391e536e351c`
+Production baseline inspected: PR #55 merge `723898096259aaa2a92bfe2008c4cb610424478d`
 Services: Remote Online Notary (RON), Mobile Notary, Print & Scan
 Integrations: Supabase, Stripe, Resend, Proof, Vercel; Google Business Profile/review and GA4 active; Search Console verified with sitemap submitted
 
@@ -157,6 +157,10 @@ Never expose internal notes, raw event keys, provider secrets, admin blockers, a
 
 ## 6. Eight-tab request workspace
 
+![Synthetic RON request Overview and eight-tab workspace](assets/manual/ss-020-request-overview.jpg)
+
+**Figure SS-020 — Request Overview.** Use the service, current status, and eight tabs to orient the work before taking an action. The image is a controlled synthetic production record; it contains no customer contact data or Proof identifier.
+
 | Tab | Use / customer effect / cautions |
 |---|---|
 | Overview | Read status, financial position, schedule, acquisition, review eligibility, and next action. Avoid changing status merely to change presentation. |
@@ -167,6 +171,8 @@ Never expose internal notes, raw event keys, provider secrets, admin blockers, a
 | Messages | Preview centralized template, edit permitted body/subject, send, and optionally update status. Sending changes external state and logs Messages/Timeline. |
 | Fulfillment | Appointment, service facts, RON orchestration, completion gate. Save facts before completion. |
 | Timeline | Immutable operational/customer-visible events; not a substitute for Communication Log. |
+
+The live screenshot shows the stable workspace structure, not an instruction to change status. Always open the exact request and verify its service before continuing.
 
 ## Part V — Service playbooks
 
@@ -198,6 +204,10 @@ Request → review signer/acts/documents/location → quote → approval → pri
 
 Request → retain source documents → review print/scan/copy/paper/fulfillment specifications → quote → approval → invoice/payment → production → upload Completed Scan or other APS deliverable when applicable → pickup/courier/delivery facts → explicit customer release when portal delivery applies → complete. Source, Completed Scan, and internal supporting documents remain separate.
 
+![Synthetic Print & Scan fulfillment workspace](assets/manual/ss-090-print-scan-fulfillment.jpg)
+
+**Figure SS-090 — Print & Scan fulfillment.** Confirm the service, appointment method, and instructions before recording authoritative production and delivery facts. A Completed status in the synthetic example is evidence of the saved workflow state, not permission to complete another order.
+
 ## Part VI — Financial operations
 
 ## 10. Financial operations
@@ -215,6 +225,10 @@ Invoice #1 is never rewritten after payment. Invoice #2 is used only for later a
 ## Part VIII — Documents
 
 ## 11. Document lifecycle
+
+![Synthetic customer-hidden source document and classification controls](assets/manual/ss-030-document-lifecycle.jpg)
+
+**Figure SS-030 — Source-document provenance.** The synthetic source file remains customer-hidden in the admin lifecycle view while its classification is reviewed. Upload, classification, review, and release are separate controls; never infer customer release from file presence.
 
 | Class | Created by | Customer-visible | Attachment | Completion relationship |
 |---|---|---|---|---|
@@ -598,5 +612,6 @@ Acknowledgment—§3, §7, App. F; Activation—§7, §20, App. E–F; Admin New
 | 2.0 | 2026-08-15 | PR #50 / `07e4666` | Cancellation, rescheduling, Stripe/offline/partial refund SOPs; customer support; policy/FAQ operations; template/status/fulfillment/visibility catalogs; source pack; screenshot manifest; glossary/index/quick references |
 | 2.1 | 2026-08-15 | GA4 activation release | Owner Measurement ID activated; single initialization, approved event taxonomy, privacy boundary, troubleshooting, and APS-versus-GA4 ownership documented |
 | 2.1 | 2026-08-15 | PR #54 / Search Console owner confirmation | URL-prefix property verified by permanent HTML file; canonical sitemap submitted successfully; private indexing protections retained; owner Google setup complete |
+| 2.2 | 2026-08-15 | System baseline `7238980`; documentation revision | Added three synthetic-only production figures, reconciled the visual manifest to 19 unique instructional states, retained explicit manual/future capture dispositions, and excluded documentation sources/assets from production deployment uploads. No application behavior or production record changed. |
 
-Documentation screenshots are governed by `docs/manual-source/SCREENSHOT_MANIFEST.md`. No automatic live screenshot is accepted if the viewport may include legitimate customer PII, real financial data, portal tokens, documents, or Proof identifiers.
+Documentation screenshots are governed by `docs/manual-source/SCREENSHOT_MANIFEST.md`. Original captures remain unannotated under `docs/assets/manual/`; instructional meaning is supplied by manual captions and callouts. No live screenshot is accepted if the viewport may include legitimate customer PII, legitimate financial data, portal tokens, document contents, credentials, or Proof identifiers.

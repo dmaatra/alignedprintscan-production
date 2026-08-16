@@ -1,28 +1,38 @@
 # Screenshot Manifest
 
-Safety rule: capture only controlled synthetic records with no portal tokens, provider links/IDs, real customer PII, real payments, or document contents. A manifest entry marked **MANUAL SCREENSHOT REQUIRED** is intentional and must not be replaced by a fabricated image.
+This manifest is the controlled visual-evidence plan for Manual v2.2. Capture only synthetic records and keep originals unannotated. Never include portal tokens, provider links or identifiers, credentials, legitimate customer PII, legitimate payment/refund details, or document contents.
 
-| ID | Chapter | Screen/state | Synthetic requirement | Teaching purpose | Status | Suggested caption |
-|---|---|---|---|---|---|---|
-| SS-001 | Requests | queue with synthetic service mix | TEST labels only | find/filter/open | MANUAL SCREENSHOT REQUIRED | Requests queue and service/status filters |
-| SS-010 | Review Queue | cancellation/refund action | synthetic pending action | open exact blocker | MANUAL SCREENSHOT REQUIRED | Review Queue cancellation work |
-| SS-020 | Overview | safe synthetic selected | no real contact visible | next action and totals | MANUAL SCREENSHOT REQUIRED | Request Overview |
-| SS-030 | Documents | customer upload group | generic test PDF | provenance | MANUAL SCREENSHOT REQUIRED | Customer-provided source document |
-| SS-031 | Documents | pending review output | generic output | review before release | MANUAL SCREENSHOT REQUIRED | Private deliverable awaiting review |
-| SS-032 | Documents | eligible release control | generic output | release boundary | MANUAL SCREENSHOT REQUIRED | Release to Customer control |
-| SS-040 | Quote | synthetic draft | generic items | save vs send | MANUAL SCREENSHOT REQUIRED | Quote builder |
-| SS-050 | Payments | paid synthetic invoice | TEST payment only | ledger totals | MANUAL SCREENSHOT REQUIRED | Paid, refunded, net, outstanding |
-| SS-052 | Payments | cancellation preview/refund workflow | safe synthetic only | decision/financial preview | MANUAL SCREENSHOT REQUIRED | Guided refund review |
-| SS-060 | Messages | synthetic communication log | generic recipient | provider/log truth | MANUAL SCREENSHOT REQUIRED | Communication Log |
-| SS-061 | Messages | preview/edit | generic template | Send Message | MANUAL SCREENSHOT REQUIRED | Informational send |
-| SS-062 | Messages | maintained transition template | generic template | Send & Update Status | MANUAL SCREENSHOT REQUIRED | Message-driven transition |
-| SS-070 | Fulfillment | RON before provider action | no access URL visible | 13-stage readiness | MANUAL SCREENSHOT REQUIRED | RON readiness and Proof boundary |
-| SS-080 | Fulfillment | Mobile synthetic | generic address hidden | service facts/N/A | MANUAL SCREENSHOT REQUIRED | Mobile completion facts |
-| SS-090 | Fulfillment | Print synthetic | generic specs | production/delivery | MANUAL SCREENSHOT REQUIRED | Print & Scan fulfillment |
-| SS-100 | Portal | synthetic overview | redacted/scoped | customer-safe state | MANUAL SCREENSHOT REQUIRED | Customer Overview |
-| SS-101 | Portal | synthetic released document | generic file only | secure document grouping | MANUAL SCREENSHOT REQUIRED | Released customer document |
-| SS-110 | Portal | cancellation request form | synthetic unpaid | review-based request | MANUAL SCREENSHOT REQUIRED | Request Cancellation |
-| SS-111 | Admin | cancellation review modal | synthetic | policy band/decision | MANUAL SCREENSHOT REQUIRED | Admin cancellation review |
-| SS-112 | Portal | refund processed display | synthetic ledger | financial outcome | MANUAL SCREENSHOT REQUIRED | Customer refund status |
+Status vocabulary is fixed: **CAPTURED**, **CAPTURED — CROPPED/REDACTED SAFELY**, **MANUAL CAPTURE REQUIRED**, **FUTURE LEGITIMATE TRANSACTION CAPTURE REQUIRED**, or **NOT APPLICABLE AFTER CURRENT IMPLEMENTATION**.
 
-No screenshot was committed automatically in this release because the available live queue includes legitimate production records and provider identifiers. Capturing a full viewport would violate the safety rule. The exact safe states above are ready for a controlled redacted documentation session.
+| ID | Chapter | Module | Screen | Required state | Synthetic record | Purpose | Teaching objective | Sensitive-data rule | Status | Filename | Caption | SOP | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| SS-001 | Part III §5 | Requests | Request queue and filters | Synthetic service mix selected | APS test records only | Navigation | Find, filter, and open work | No legitimate queue rows or operator identity | MANUAL CAPTURE REQUIRED | — | Requests queue and service/status filters | New Request / Daily Triage | Current production queue contains legitimate records below the synthetic block. |
+| SS-010 | Part III §5 | Review Queue | Cancellation/refund action | Synthetic pending review item | Synthetic cancellation only | Triage | Open the exact blocker | No legitimate request or ledger detail | MANUAL CAPTURE REQUIRED | — | Review Queue cancellation work | Cancellation / Refund Review | Requires a safe pending synthetic action. |
+| SS-020 | Part IV §6 | Request workspace | Overview | Synthetic request selected | APS-D9C172CD | Orientation | Identify service, status, eight tabs, and next work area | Visible viewport contains synthetic labels only | CAPTURED | `../assets/manual/ss-020-request-overview.jpg` | Synthetic RON request Overview and eight-tab workspace | Request Workspace | Unannotated production capture. Editorial callouts: service, status, request reference, eight-tab navigation. |
+| SS-030 | Part VIII §11 | Documents | Source-document lifecycle | Customer-hidden synthetic source file | APS-D9C172CD | Provenance | Distinguish source upload, classification, and default privacy | Generic test filename only; no contents or provider ID | CAPTURED | `../assets/manual/ss-030-document-lifecycle.jpg` | Synthetic customer-hidden source document and classification controls | Document Intake | Unannotated production capture. Editorial callouts: uploaded file, provenance, customer-hidden state, classification selector. |
+| SS-031 | Part VIII §11 | Documents | Pending output review | Generic private output awaiting review | Synthetic output only | Release safety | Review before release | No real document content/name | MANUAL CAPTURE REQUIRED | — | Private deliverable awaiting review | Document Review | No current safe synthetic state isolated from other sensitive details. |
+| SS-032 | Part VIII §11 | Documents | Eligible release control | Reviewed eligible synthetic output | Synthetic output only | Release safety | Locate the explicit release boundary | No real document or customer data | MANUAL CAPTURE REQUIRED | — | Release to Customer control | Document Release | Must not release or create a document solely for photography. |
+| SS-040 | Part IV §6 | Quote | Quote builder | Saved synthetic quote | Synthetic line items | Financial setup | Distinguish save from send | No real notes, contact data, or payment references | MANUAL CAPTURE REQUIRED | — | Quote builder and action boundary | Quote / Approval | Current responsive view does not show a stable complete teaching frame. |
+| SS-050 | Part VI §10 | Payments | Paid invoice totals | Paid synthetic invoice | TEST payment only | Ledger review | Read paid, net, and outstanding totals | No legitimate financial record or external reference | MANUAL CAPTURE REQUIRED | — | Paid, refunded, net, and outstanding totals | Payment Reconciliation | Requires an isolated safe ledger frame. |
+| SS-052 | Part VII §21–23 | Review Queue / Payments | Cancellation preview and admin decision | Safe synthetic pending cancellation | Synthetic cancellation only | Policy review | Compare decision, policy band, and financial preview | No legitimate payment/refund data | MANUAL CAPTURE REQUIRED | — | Guided cancellation and refund review | Cancellation / Refund Review | Consolidates the former duplicate SS-111 admin-modal entry; manifest remains 19 items. |
+| SS-060 | Part IX §12 | Messages | Communication Log | Successful synthetic communication | Synthetic recipient | Delivery truth | Verify sent state and maintained metadata | No email address, provider ID, or body with PII | MANUAL CAPTURE REQUIRED | — | Communication Log | Communication Verification | Recipient/provider metadata cannot be safely shown in the current viewport. |
+| SS-061 | Part IX §12 | Messages | Preview/edit | Generic informational template | Synthetic request | Safe sending | Distinguish preview/edit from send | No recipient address or rendered PII | MANUAL CAPTURE REQUIRED | — | Informational message preview | Send Message | Do not send a message for screenshot creation. |
+| SS-062 | Part IX §12 | Messages | Maintained transition template | Generic transition preview | Synthetic request | State changes | Distinguish Send & Update Status | No recipient address or live send | MANUAL CAPTURE REQUIRED | — | Message-driven transition | Send & Update Status | Do not mutate status for screenshot creation. |
+| SS-070 | Part V §7 | Fulfillment | RON readiness | Activated controlled transaction before identity completion | APS-D9C172CD | Provider boundary | Read the 13-stage projection and next safe action | No Proof transaction ID, access link, or signer identity | MANUAL CAPTURE REQUIRED | — | RON readiness and Proof boundary | RON Readiness | Current panel contains prohibited provider identifiers. |
+| SS-080 | Part V §8 | Fulfillment | Mobile completion facts | Completed synthetic Mobile request | APS-035B3880 | Service completion | Read service facts and N/A rules | Address and contact fields hidden | MANUAL CAPTURE REQUIRED | — | Mobile completion facts | Mobile Completion | Current responsive panel could not be isolated reliably without unstable cropping. |
+| SS-090 | Part V §9 | Fulfillment | Print & Scan appointment/fulfillment | Completed synthetic Print & Scan request | APS-54397551 | Service completion | Recognize Print & Scan method, schedule, and fulfillment workspace | Synthetic pickup instructions only | CAPTURED | `../assets/manual/ss-090-print-scan-fulfillment.jpg` | Synthetic Print & Scan fulfillment workspace | Print & Scan Completion | Unannotated production capture. Editorial callouts: service, appointment date/time, platform/method, appointment instructions. |
+| SS-100 | Part II §4 | Customer portal | Overview | Synthetic scoped portal | Synthetic request | Customer boundary | Recognize customer-safe state | No portal token, email, or provider link | MANUAL CAPTURE REQUIRED | — | Customer Overview | Portal Review | A safe token-free browser frame was not available. |
+| SS-101 | Part II §4 / Part VIII §11 | Customer portal | Released documents | Generic released synthetic file | Synthetic request | Customer delivery | Verify grouping and download visibility | No token, real filename, or contents | FUTURE LEGITIMATE TRANSACTION CAPTURE REQUIRED | — | Released customer document | Customer Document Delivery | Capture naturally when an eligible controlled deliverable exists; do not release solely for documentation. |
+| SS-110 | Part VII §19 | Customer portal | Cancellation request form | Eligible synthetic unpaid request | Synthetic request | Customer self-service | Explain review-based cancellation request | No portal token or contact data | MANUAL CAPTURE REQUIRED | — | Request Cancellation | Customer Cancellation | Opening is safe, but a stable token-free frame is required. |
+| SS-112 | Part VII §21–23 | Customer portal | Refund outcome | Processed synthetic refund | Synthetic ledger | Financial outcome | Read customer-safe refund status | No external payment IDs or legitimate ledger values | FUTURE LEGITIMATE TRANSACTION CAPTURE REQUIRED | — | Customer refund status | Refund Confirmation | Do not create a refund solely for documentation. |
+
+## Capture accounting
+
+- Planned entries: **19**.
+- Captured: **3**.
+- Captured — cropped/redacted safely: **0**.
+- Manual capture required: **14**.
+- Future legitimate transaction capture required: **2**.
+- Not applicable after current implementation: **0**.
+
+The original planning table accidentally counted the admin cancellation modal twice (SS-052 and SS-111). SS-111 is retired and consolidated into SS-052; no instructional state was removed.
