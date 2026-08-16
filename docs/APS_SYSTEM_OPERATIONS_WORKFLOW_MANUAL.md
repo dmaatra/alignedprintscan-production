@@ -1,9 +1,10 @@
 # ALIGNED PRINT & SCAN
 # Operations, Policies & Standard Operating Procedures Manual
 
-Version: 2.2
+Version: 2.3
 Updated: 2026-08-15
-Production baseline inspected: PR #55 merge `723898096259aaa2a92bfe2008c4cb610424478d`
+System production baseline inspected: PR #55 merge `723898096259aaa2a92bfe2008c4cb610424478d`
+Documentation repository baseline: PR #56 merge `02c417de59e15950459bac9320ecc72c449c5866`
 Services: Remote Online Notary (RON), Mobile Notary, Print & Scan
 Integrations: Supabase, Stripe, Resend, Proof, Vercel; Google Business Profile/review and GA4 active; Search Console verified with sitemap submitted
 
@@ -153,6 +154,8 @@ Never expose internal notes, raw event keys, provider secrets, admin blockers, a
 | Settings | Maintained operational preferences/configuration. |
 | New Order | Service-aware administrator request wizard. |
 
+See [Appendix I](#appendix-i--instructional-visual-atlas) for the controlled Requests and Review Queue visuals SS-001 and SS-010.
+
 ## Part IV — Request workspace
 
 ## 6. Eight-tab request workspace
@@ -173,6 +176,8 @@ Never expose internal notes, raw event keys, provider secrets, admin blockers, a
 | Timeline | Immutable operational/customer-visible events; not a substitute for Communication Log. |
 
 The live screenshot shows the stable workspace structure, not an instruction to change status. Always open the exact request and verify its service before continuing.
+
+The remaining request-tab visuals—Quote, Payments, Messages, and service-specific Fulfillment—are indexed in [Appendix I](#appendix-i--instructional-visual-atlas).
 
 ## Part V — Service playbooks
 
@@ -240,6 +245,8 @@ Invoice #1 is never rewritten after payment. Invoice #2 is used only for later a
 
 Portal groups: Documents You Provided; Documents from Aligned Print & Scan; Completed Notarized Documents.
 
+Visual procedure sequence: SS-030 source provenance → SS-031 private pending review → SS-032 reviewed/release eligible → SS-101 released APS deliverable in the customer portal. See [Appendix I](#appendix-i--instructional-visual-atlas). A synthetic APS deliverable is never labeled as a completed notarized document.
+
 ## Part IX — Communications
 
 ## 12. Communications and notifications
@@ -247,6 +254,8 @@ Portal groups: Documents You Provided; Documents from Aligned Print & Scan; Comp
 Central templates cover request received, quote ready, payment reminders/receipts, appointment messages, RON ready, scan/document delivery, final invoice, completion, cancellation, general message, and the disabled-until-configured neutral review request.
 
 Every successful customer-facing email must persist recipient, subject, template/type, direction, delivery state, timestamp, provider identifier when available, and rendered content/metadata in Messages. Timeline records the event; Customer Activity receives only customer-safe events; Notifications alert administrators. Failed sends must never display Sent.
+
+The visual distinction between Communication Log, Send Message, and Send & Update Status is shown in SS-060 through SS-062 in [Appendix I](#appendix-i--instructional-visual-atlas).
 
 ## Part XII — Growth and analytics
 
@@ -613,5 +622,86 @@ Acknowledgment—§3, §7, App. F; Activation—§7, §20, App. E–F; Admin New
 | 2.1 | 2026-08-15 | GA4 activation release | Owner Measurement ID activated; single initialization, approved event taxonomy, privacy boundary, troubleshooting, and APS-versus-GA4 ownership documented |
 | 2.1 | 2026-08-15 | PR #54 / Search Console owner confirmation | URL-prefix property verified by permanent HTML file; canonical sitemap submitted successfully; private indexing protections retained; owner Google setup complete |
 | 2.2 | 2026-08-15 | System baseline `7238980`; documentation revision | Added three synthetic-only production figures, reconciled the visual manifest to 19 unique instructional states, retained explicit manual/future capture dispositions, and excluded documentation sources/assets from production deployment uploads. No application behavior or production record changed. |
+| 2.3 | 2026-08-15 | System baseline `02c417d`; documentation revision | Completed the 19/19 instructional visual atlas using three controlled production captures and sixteen explicitly labeled local fixtures; added captions, SOP mappings, privacy controls, and handbook-production cross-references. No application behavior, production record, real money, communication, document release, or Proof state changed. |
 
 Documentation screenshots are governed by `docs/manual-source/SCREENSHOT_MANIFEST.md`. Original captures remain unannotated under `docs/assets/manual/`; instructional meaning is supplied by manual captions and callouts. No live screenshot is accepted if the viewport may include legitimate customer PII, legitimate financial data, portal tokens, document contents, credentials, or Proof identifiers.
+
+## Appendix I — Instructional Visual Atlas
+
+Visuals labeled **APS MANUAL TEST · SYNTHETIC DOCUMENTATION FIXTURE** are controlled training representations grounded in the current APS workflow. They do not assert that a payment, refund, message, release, customer submission, or Proof action occurred. SS-020, SS-030, and SS-090 are controlled synthetic production captures and appear at their primary SOP locations above.
+
+### Global operations and review
+
+![Requests queue with synthetic service and status mix](assets/manual/ss-001-requests.jpg)
+
+**Figure SS-001 — Requests queue.** Part III §5 / Daily Triage. Callouts: active Requests module, APS Manual Test search, service/status filters, and synthetic RON/Mobile/Print cards.
+
+![Actionable synthetic cancellation item in Review Queue](assets/manual/ss-010-review-queue.jpg)
+
+**Figure SS-010 — Review Queue action.** Part III §5 / Cancellation Review. Callouts: priority, cancellation/refund reason, waiting age, and Review Request.
+
+### Document review and customer release
+
+![Private APS deliverable awaiting review](assets/manual/ss-031-private-output-review.jpg)
+
+**Figure SS-031 — Private output awaiting review.** Part VIII §11. The file remains customer-hidden until APS review; Review Document is not customer release.
+
+![Reviewed synthetic deliverable ready for explicit release](assets/manual/ss-032-release-to-customer.jpg)
+
+**Figure SS-032 — Release boundary.** Part VIII §11. Callouts: reviewed, customer-hidden, release eligible, and the separate Release to Customer control.
+
+### Quote and financial operations
+
+![Saved synthetic quote and customer-preview boundary](assets/manual/ss-040-quote-builder.jpg)
+
+**Figure SS-040 — Quote builder.** Part IV §6. Saving line items and previewing the customer quote do not send a message or record payment.
+
+![Synthetic invoice TEST payment and financial totals](assets/manual/ss-050-payments-ledger.jpg)
+
+**Figure SS-050 — Payment ledger.** Part VI §10. Callouts: invoice, TEST payment, paid, refunded, net retained, and outstanding. All amounts are training data.
+
+![Guided synthetic cancellation and refund review](assets/manual/ss-052-cancellation-refund-review.jpg)
+
+**Figure SS-052 — Guided cancellation/refund decision.** Part VII §§21–23. Review service progress, policy band, reason, retained/earned amount, refundable amount, waiver, and refund method before acting.
+
+### Communications
+
+![Synthetic Communication Log](assets/manual/ss-060-communication-log.jpg)
+
+**Figure SS-060 — Communication Log.** Part IX §12. Direction, template/subject, delivery state, and timestamp form the maintained communication record; Timeline alone is not sufficient.
+
+![Informational Send Message composer and preview](assets/manual/ss-061-send-message.jpg)
+
+**Figure SS-061 — Send Message.** Part IX §12. Callouts: generic template, controlled recipient context, subject/body, attachments, preview, and informational send control.
+
+![Maintained Send and Update Status transition](assets/manual/ss-062-send-update-status.jpg)
+
+**Figure SS-062 — Send & Update Status.** Part IX §12. Delivery succeeds first; APS then applies the maintained resulting status and records Messages plus Timeline.
+
+### Service-specific fulfillment
+
+![RON fulfillment stages and safe Proof handoff](assets/manual/ss-070-ron-fulfillment.jpg)
+
+**Figure SS-070 — RON orchestration.** Part V §7. Callouts: 13-stage projection, current/next state, Continue in Proof, and Sync Proof Status. Proof identifiers, access links, KBA, identity, signing, certificate, and seal data are deliberately absent.
+
+![Synthetic Mobile fulfillment facts and completion gate](assets/manual/ss-080-mobile-fulfillment.jpg)
+
+**Figure SS-080 — Mobile fulfillment.** Part V §8. Callouts: appointment, Mobile service performed, participant/document readiness, physical-only delivery, and the applicable completion gate.
+
+### Customer portal
+
+![Synthetic customer portal Overview and Next Action](assets/manual/ss-100-portal-overview.jpg)
+
+**Figure SS-100 — Customer Overview.** Part II §4. Callouts: six-section navigation, Next Action, service, customer-safe status, and balance. No portal URL or token is shown.
+
+![Customer portal document provenance groups](assets/manual/ss-101-portal-documents.jpg)
+
+**Figure SS-101 — Portal Documents.** Part II §4 / Part VIII §11. The training visual distinguishes customer source files, released APS deliverables, and the completed-notarized-document group without fabricating a Proof completion.
+
+![Synthetic customer cancellation request form](assets/manual/ss-110-portal-cancellation.jpg)
+
+**Figure SS-110 — Request Cancellation.** Part VII §19. Submitting creates an APS review request; it does not automatically cancel service or promise a refund.
+
+![Customer-safe synthetic refund status](assets/manual/ss-112-portal-refund.jpg)
+
+**Figure SS-112 — Refund outcome.** Part VII §§21–23. The original TEST payment remains preserved, the refund is separate, and the portal explains refunded, net retained, and outstanding amounts without real money.

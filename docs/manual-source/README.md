@@ -1,6 +1,6 @@
 # APS Manual Expansion Source Pack
 
-Baseline: production `723898096259aaa2a92bfe2008c4cb610424478d`
+Baseline: production `02c417de59e15950459bac9320ecc72c449c5866`
 
 This directory is the evidence pack for `docs/APS_SYSTEM_OPERATIONS_WORKFLOW_MANUAL.md`. It is not a second operating manual. The canonical manual remains the operator-facing source.
 
@@ -27,5 +27,6 @@ Files:
 - `IMPLEMENTATION_INVENTORY.md` — modules, workspace, states, controls, security, and integrations.
 - `WORKFLOW_CATALOGS.md` — decision tables, templates, documents, fulfillment, visibility, and support.
 - `SCREENSHOT_MANIFEST.md` — instructional image plan and safe-capture status.
+- `SCREENSHOT_FIXTURES.html` — local-only source for visibly labeled synthetic training visuals; excluded from Vercel deployment with the rest of `docs/`.
 
-The manifest contains exactly 19 instructional states. Three controlled production screenshots are currently captured under `docs/assets/manual/`; the remaining states retain explicit safe-capture dispositions. No credentials, portal tokens, customer PII, legitimate payment references, legitimate document names, or Proof access links belong in this pack.
+The manifest contains exactly 19 instructional states and 19 completed visuals under `docs/assets/manual/`: three controlled synthetic production captures and sixteen visibly labeled local documentation fixtures. Fixtures demonstrate maintained workflow states without asserting that a production payment, refund, communication, release, customer submission, or Proof action occurred. No credentials, portal tokens, legitimate customer PII, legitimate payment references, legitimate document names, or Proof access links belong in this pack.
