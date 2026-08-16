@@ -79,8 +79,25 @@ def field(run,instr):
 def add_heading(doc,text,level,anchor):
     p=doc.add_heading(text,level=level);bookmark(p,anchor);keep(p,True);return p
 def add_bullets(doc,items,style="List Bullet"):
+    num_id=None
+    if style=="List Number":
+        numbering=doc.part.numbering_part.element
+        abstract_ids=[int(el.get(qn("w:abstractNumId"))) for el in numbering.findall(qn("w:abstractNum"))]
+        num_ids=[int(el.get(qn("w:numId"))) for el in numbering.findall(qn("w:num"))]
+        abstract_id=max(abstract_ids,default=0)+1;num_id=max(num_ids,default=0)+1
+        abstract=OxmlElement("w:abstractNum");abstract.set(qn("w:abstractNumId"),str(abstract_id))
+        multi=OxmlElement("w:multiLevelType");multi.set(qn("w:val"),"singleLevel");abstract.append(multi)
+        lvl=OxmlElement("w:lvl");lvl.set(qn("w:ilvl"),"0")
+        for tag,val in (("start","1"),("numFmt","decimal"),("lvlText","%1."),("lvlJc","right")):
+            el=OxmlElement(f"w:{tag}");el.set(qn("w:val"),val);lvl.append(el)
+        pPr=OxmlElement("w:pPr");tabs=OxmlElement("w:tabs");tab=OxmlElement("w:tab");tab.set(qn("w:val"),"num");tab.set(qn("w:pos"),"720");tabs.append(tab);pPr.append(tabs)
+        ind=OxmlElement("w:ind");ind.set(qn("w:left"),"720");ind.set(qn("w:hanging"),"360");pPr.append(ind);lvl.append(pPr);abstract.append(lvl);numbering.append(abstract)
+        num=OxmlElement("w:num");num.set(qn("w:numId"),str(num_id));abstract_ref=OxmlElement("w:abstractNumId");abstract_ref.set(qn("w:val"),str(abstract_id));num.append(abstract_ref);numbering.append(num)
     for item in items:
-        p=doc.add_paragraph(item,style=style);keep(p)
+        p=doc.add_paragraph(item,style=None if num_id else style)
+        if num_id:
+            numPr=OxmlElement("w:numPr");ilvl=OxmlElement("w:ilvl");ilvl.set(qn("w:val"),"0");numId=OxmlElement("w:numId");numId.set(qn("w:val"),str(num_id));numPr.extend((ilvl,numId));p._p.get_or_add_pPr().insert(0,numPr)
+        keep(p)
 def add_callout(doc,label,text,kind="note"):
     p=doc.add_paragraph();p.paragraph_format.space_before=Pt(5);p.paragraph_format.space_after=Pt(7);p.paragraph_format.left_indent=Inches(.10);p.paragraph_format.right_indent=Inches(.10);keep(p)
     pPr=p._p.get_or_add_pPr();shd=OxmlElement("w:shd");shd.set(qn("w:fill"),{"must":IVORY,"do_not":"FCE8E6","customer":BLUE,"records":"EDF4EA","blocker":"FCE8E6"}.get(kind,IVORY));pPr.append(shd)
@@ -124,12 +141,18 @@ def source_notes():
 SOURCE=source_notes()
 def relevant(topic,n=2):
     words={w.lower() for w in re.findall(r"[A-Za-z]{5,}",topic)};rank=sorted(SOURCE,key=lambda p:sum(w in p.lower() for w in words),reverse=True);return [p for p in rank if sum(w in p.lower() for w in words)>0][:n]
+def add_source_context(doc,text):
+    items=re.findall(r"(?:^|\s)(\d+)\.\s+(.*?)(?=\s+\d+\.\s+|$)",text)
+    if len(items)>1:
+        add_bullets(doc,[item for _,item in items],"List Number")
+    else:
+        doc.add_paragraph(text)
 def add_chapter(doc,part_roman,chapter_no,title,anchor):
     add_heading(doc,f"Chapter {chapter_no} - {title}",1,anchor)
     add_back(doc)
     context=(relevant(title)+[f"This chapter explains the maintained APS {title.lower()} workflow as an operator procedure. Use the current request, document, financial, provider, and communication records as authority; never infer completion from a button click or customer expectation."])[0]
     add_heading(doc,f"{chapter_no}.1 Purpose and When You Use It",2,anchor+"_purpose")
-    doc.add_paragraph(context);doc.add_paragraph(f"Use this chapter whenever the operator must review, perform, explain, or troubleshoot {title.lower()}. The goal is a correct customer outcome supported by the authoritative APS record and appropriate service evidence.")
+    add_source_context(doc,context);doc.add_paragraph(f"Use this chapter whenever the operator must review, perform, explain, or troubleshoot {title.lower()}. The goal is a correct customer outcome supported by the authoritative APS record and appropriate service evidence.")
     add_heading(doc,f"{chapter_no}.2 What You See and What It Means",2,anchor+"_controls")
     add_table(doc,["Operator surface","Meaning"],[("Status and summary cards","Current projected business state; verify the underlying evidence."),("Primary controls","Actions available for the current role and service state."),("Messages / Timeline","Customer delivery history and authoritative workflow events."),("Blockers / review items","Conditions that require correction or an administrator decision.")],[2.0,4.5])
     if title in SCREENSHOTS:add_figure(doc,SCREENSHOTS[title],title)
