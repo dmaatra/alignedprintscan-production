@@ -17,6 +17,7 @@ test("handbook 3.0 deliverables and reproducible source are present",async()=>{
   assert.match(builder,/w:startOverride/);
   assert.match(builder,/start_override\.set\(qn\("w:val"\),"1"\)/);
   assert.match(builder,/line\.startswith\("- \[Part "/);
+  assert.match(builder,/len\(faq_items\)==len\(bullets\)/);
 });
 
 test("handbook source includes all approved visuals and complete public policies",async()=>{
