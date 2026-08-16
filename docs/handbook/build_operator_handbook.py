@@ -139,6 +139,12 @@ def clean_html(path):
 def source_notes():
     text=(ROOT/"docs"/"APS_SYSTEM_OPERATIONS_WORKFLOW_MANUAL.md").read_text();paras=[]
     for p in re.split(r"\n\s*\n",text):
+        source_lines=[line.strip() for line in p.splitlines() if line.strip()]
+        # The source manual's navigation inventory is orientation furniture,
+        # not reusable chapter guidance. Excluding it prevents the complete
+        # Part I–XV list from appearing in unrelated chapter introductions.
+        if sum(line.startswith("- [Part ") for line in source_lines)>=5:
+            continue
         p=re.sub(r"^#+\s*","",p.strip());p=re.sub(r"\*\*([^*]+)\*\*",r"\1",p);p=re.sub(r"\[([^]]+)\]\([^)]+\)",r"\1",p)
         if len(p)>90 and not p.startswith("|") and "CONFIRMED IN CODE" not in p:paras.append(p.replace("\n"," "))
     return paras
