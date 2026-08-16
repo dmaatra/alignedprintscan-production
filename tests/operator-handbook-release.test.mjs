@@ -22,6 +22,8 @@ test("handbook 3.0 deliverables and reproducible source are present",async()=>{
   assert.match(builder,/key=p\.add_run\(label\+": "\)/);
   assert.match(builder,/topic=="System Production Baseline and Document Control"/);
   assert.match(builder,/"System production baseline inspected:" not in p/);
+  assert.match(builder,/len\(definition_rows\)>=12/);
+  assert.match(builder,/add_table\(doc,\["Term","Meaning"\],definition_rows/);
 });
 
 test("handbook source includes all approved visuals and complete public policies",async()=>{

@@ -173,6 +173,13 @@ def add_source_context(doc,text):
         return
     bullets=re.findall(r"(?:^|\s)-\s+(.*?)(?=\s+-\s+|$)",text)
     if len(bullets)>1:
+        definition_rows=[]
+        for item in bullets:
+            term,sep,meaning=item.partition(":")
+            if sep and term.strip() and meaning.strip():definition_rows.append((term.strip(),meaning.strip()))
+        if len(definition_rows)>=12 and len(definition_rows)==len(bullets):
+            add_table(doc,["Term","Meaning"],definition_rows,[1.75,4.75])
+            return
         faq_items=[]
         for item in bullets:
             question,sep,answer=item.partition("?")
