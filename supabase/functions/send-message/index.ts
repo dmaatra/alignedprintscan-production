@@ -187,7 +187,7 @@ Deno.serve(async (request) => {
     if (!requestId || !templateId) {
       throw new Error("A request and message template are required.");
     }
-    const [requestRows, templateRows, quotes, invoices, files, invoiceItems] =
+    const [requestRows, templateRows, quotes, invoices, files, invoiceItems, payments] =
       await Promise.all([
         rows(`service_requests?select=*&id=eq.${requestId}&limit=1`),
         rows(
@@ -204,6 +204,9 @@ Deno.serve(async (request) => {
         ),
         rows(
           `invoice_items?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
+        ),
+        rows(
+          `request_payments?select=*&service_request_id=eq.${requestId}&order=created_at.desc`,
         ),
       ]);
     const serviceRequest = requestRows[0], template = templateRows[0];
@@ -260,7 +263,8 @@ Deno.serve(async (request) => {
         );
       }
     }
-    const invoice = invoices.find((item: any) =>
+    const payment = payments.find((item: any) => !body.payment_id || item.id === cleanUuid(body.payment_id)) || payments[0] || null;
+    const invoice = (payment?.invoice_id ? invoices.find((item:any)=>item.id===payment.invoice_id) : null) || invoices.find((item: any) =>
       !["void", "cancelled"].includes(String(item.status || "").toLowerCase())
     );
     const selectedIds =
@@ -398,8 +402,8 @@ Deno.serve(async (request) => {
         total: `$${Number(item.line_total || 0).toFixed(2)}`,
       })),
       invoiceNumber: values.invoice_number,
-      paymentAmount: values.amount_paid,
-      paymentDate: customerDate(serviceRequest.paid_at),
+      paymentAmount: `$${Number(payment?.amount || 0).toFixed(2)}`,
+      paymentDate: customerDate(payment?.received_at || payment?.created_at || serviceRequest.paid_at),
       paidAmount: values.amount_paid,
       balanceDue: values.balance_due,
       releasedDocumentNames: releasedFiles.map((file: any) => file.file_name),
@@ -614,8 +618,8 @@ Deno.serve(async (request) => {
         method: "POST",
         body: JSON.stringify({
           service_request_id: requestId,
-          event_type: "status_changed",
-          title: "Request status updated",
+          event_type: targetStatus,
+          title: targetStatus === "appointment_confirmed" ? "Appointment confirmed" : "Request status updated",
           detail: targetStatus,
           actor_type: "admin",
           visibility: "customer",

@@ -29,7 +29,7 @@ test("customer Activity is mapped at the server boundary and never falls back to
   const status = await read("supabase/functions/get-request-status/index.ts");
   const portal = await read("assets/js/script.js");
   assert.match(status, /CUSTOMER_ACTIVITY_COPY/);
-  assert.match(status, /\.map\(customerActivityEvent\)/);
+  assert.match(status, /\.map\(\(event: any\) => customerActivityEvent\(event, request\)\)/);
   assert.match(status, /\.filter\(Boolean\)/);
   assert.doesNotMatch(portal, /event\.title \|\| event\.event_type/);
   assert.doesNotMatch(portal, /event\.detail \|\| event\.description/);
@@ -37,6 +37,7 @@ test("customer Activity is mapped at the server boundary and never falls back to
 
 test("unknown timeline types are omitted instead of exposing internal wording", async () => {
   const status = await read("supabase/functions/get-request-status/index.ts");
-  assert.match(status, /return copy \? \{ \.\.\.copy, created_at: event\.created_at \} : null/);
+  assert.match(status, /if \(!copy\) return null/);
+  assert.match(status, /return \{ \.\.\.copy, detail, created_at: event\.created_at \}/);
   assert.doesNotMatch(status, /pick\(event, \["event_type", "title", "detail"/);
 });

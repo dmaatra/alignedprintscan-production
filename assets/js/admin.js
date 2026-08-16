@@ -541,6 +541,9 @@ function detailEntries(rows) {
     witness_provider: "Witness Provider",
     witness_need: "Witnesses Required",
     witnesses_needed: "Witnesses Required",
+    witness_review_required: "Witness Review Required",
+    scan_back_needed: "Completed-document scan back",
+    scan_to_pdf_needed: "Document scanning / PDF conversion",
   };
 
   const labels = (key) =>
@@ -550,6 +553,7 @@ function detailEntries(rows) {
       .replace(/\b\w/g, (c) => c.toUpperCase());
   const entries = [];
   list.forEach((row) => {
+    const witnessesRequired = [row.witness_need, row.witnesses_needed].some(value => value === true || ["yes","required"].includes(String(value || "").toLowerCase()));
     Object.entries(row || {}).forEach(([key, value]) => {
       if (
         hidden.has(key) ||
@@ -558,6 +562,12 @@ function detailEntries(rows) {
         value === ""
       )
         return;
+      if (key === "witnesses_needed" && row.witness_need !== undefined) return;
+      if (["witness_provider","client_witness_count","provided_witness_count"].includes(key) && !witnessesRequired) value = "N/A";
+      if (key === "witness_count" && !witnessesRequired) value = 0;
+      if (key === "witness_review_required" && !witnessesRequired) value = false;
+      if (typeof value === "boolean") value = value ? "Yes" : "No";
+      if (key === "witness_need") value = witnessesRequired ? "Yes" : "No";
       entries.push({ key, label: labels(key), value });
     });
   });
@@ -618,6 +628,24 @@ function groupedServiceDetails(rows, serviceType) {
     showWitness,
     showPrinting,
   };
+}
+
+function participantLegalName(person = {}) {
+  return [person.first_name, person.middle_name, person.last_name].map(value => String(value || "").trim()).filter(Boolean).join(" ") || String(person.full_legal_name || "").trim();
+}
+
+function participantReadiness(person = {}) {
+  if (person.participant_type !== "signer") return [];
+  const missing=[];
+  if (!String(person.first_name || "").trim()) missing.push("First name");
+  if (!String(person.last_name || "").trim()) missing.push("Last name");
+  return missing;
+}
+
+function assembledMobileAddress(detail = {}, fallback = "") {
+  const street=[detail.street_address,detail.unit].filter(Boolean).join(" ").trim();
+  const locality=[detail.city,detail.state].filter(Boolean).join(", ") + (detail.zip ? ` ${detail.zip}` : "");
+  return [street,locality.trim()].filter(Boolean).join("\n") || fallback || "Not provided";
 }
 
 async function getInvoices(requestId) {
@@ -1144,7 +1172,7 @@ function patch32AdminPanels(records = {}) {
   const approvedRefunds = actions.filter(a => Number(a.approved_refund_amount || 0) > 0).map(a => ({ action: a, recorded: refunds.filter(r => r.customer_action_request_id === a.id && r.status === "succeeded").reduce((sum, r) => sum + Number(r.amount || 0), 0) })).filter(row => Number(row.action.approved_refund_amount || 0) > row.recorded + .009);
   const refundWork = approvedRefunds.map(row => `<div class="admin-action-request" data-action-id="${escapeHtml(row.action.id)}"><strong>REFUND PROCESSING REQUIRED</strong><p>Approved: ${money(row.action.approved_refund_amount)} · Recorded: ${money(row.recorded)}</p><button class="btn primary open-refund-workflow" type="button">Process / Record Refund</button></div>`).join("");
   const refundRows = refunds.length ? `<ul class="admin-file-list">${refunds.map(r => `<li><strong>${money(r.amount)} refunded via ${escapeHtml(statusLabel(r.refund_method))}</strong><small>${escapeHtml(statusLabel(r.status))} · ${r.issued_at ? new Date(r.issued_at).toLocaleString() : "Pending"}${r.provider_refund_id ? ` · Provider ${escapeHtml(r.provider_refund_id)}` : r.external_reference ? ` · Reference ${escapeHtml(r.external_reference)}` : ""}</small></li>`).join("")}</ul>` : '<p class="admin-muted">No refunds recorded. Original payment history remains unchanged.</p>';
-  const commRows = (records.communications || []).slice(0, 25).map((c) => `<li><strong>${escapeHtml(c.subject || c.channel || "Communication")}</strong><small>${escapeHtml(c.direction || "")} · ${escapeHtml(c.delivery_state || c.delivery_status || "")} · ${c.created_at ? new Date(c.created_at).toLocaleString() : ""}</small></li>`).join("") || '<li class="admin-muted">No communications logged.</li>';
+  const commRows = (records.communications || []).slice(0, 25).map((c) => `<li><strong>${escapeHtml(c.subject || c.channel || "Communication")}</strong><small>${escapeHtml(c.direction === "inbound" ? "Inbound · Customer" : "Outbound · APS")} · ${escapeHtml(c.delivery_state || c.delivery_status || "")} · ${c.created_at ? new Date(c.created_at).toLocaleString() : ""}</small>${c.rendered_text || c.body ? `<p>${escapeHtml(c.rendered_text || c.body)}</p>` : ""}${c.metadata?.attachment_names?.length ? `<small>Attachments: ${escapeHtml(c.metadata.attachment_names.join(", "))}</small>` : ""}</li>`).join("") || '<li class="admin-muted">No communications logged.</li>';
   const timelineRows = (records.timeline || []).slice(0, 30).map((e) => `<li><strong>${escapeHtml(e.title || e.event_type || "Event")}</strong><p>${escapeHtml(e.detail || "")}</p><small>${escapeHtml(e.actor_type || "system")} · ${e.created_at ? new Date(e.created_at).toLocaleString() : ""}</small></li>`).join("") || '<li class="admin-muted">No timeline events logged.</li>';
   return `<div class="admin-detail-section"><h3>Cancellation & Reschedule Review</h3>${actionRows}${refundWork}</div><div class="admin-detail-section"><h3>Refund History</h3>${refundRows}</div>
   <div class="admin-detail-section"><h3>Communication Log</h3><ul class="admin-file-list">${commRows}</ul></div>
@@ -1177,6 +1205,16 @@ async function openRescheduleWorkflow(actionId) {
 
 async function openRefundWorkflow(actionId) {
   const preview=await invokeServiceAdjustment({command:"preview_cancellation"});const payments=preview.payments||[];const dialog=document.createElement("dialog");dialog.className="admin-v3-danger-dialog service-adjustment-dialog";dialog.innerHTML=`<form method="dialog"><button class="dialog-close" value="cancel" aria-label="Close">×</button><span class="small-label">History-preserving refund</span><h2>Process / Record Refund</h2><label>Original payment<select name="payment" required><option value="">Select payment</option>${payments.map(p=>`<option value="${escapeHtml(p.id)}">${money(p.amount)} · ${escapeHtml(statusLabel(p.payment_method))} · ${escapeHtml(p.external_reference||"No reference")}</option>`).join("")}</select></label><label>Refund amount<input name="amount" type="number" min=".01" step=".01" required></label><label>Refund method<select name="method"><option value="stripe">Stripe — APS issues refund</option><option value="zelle">Zelle — record after external return</option><option value="cash_app">Cash App — record after external return</option><option value="cash">Cash — record after return</option><option value="check">Check — record after issue</option><option value="other">Other offline — record after return</option></select></label><label>External reference (required for offline refunds)<input name="reference"></label><label>Reason<textarea name="reason" required></textarea></label><label>Internal note<textarea name="note"></textarea></label><p class="admin-muted">Offline methods record funds already returned outside APS. Stripe uses the exact original PaymentIntent and an idempotency key.</p><div class="status-actions"><button value="cancel" class="btn secondary">Close</button><button type="button" class="btn primary confirm-refund">Confirm Refund</button></div><div class="workflow-result" role="status" aria-live="polite"></div></form>`;document.body.append(dialog);dialog.addEventListener("close",()=>dialog.remove());dialog.showModal();const form=dialog.querySelector("form");dialog.querySelector(".confirm-refund").addEventListener("click",async e=>{if(!form.reportValidity())return;if(!confirm("Confirm this refund against the selected original payment?"))return;const button=e.currentTarget;button.disabled=true;try{await invokeServiceAdjustment({command:"refund",action_id:actionId,payment_id:form.elements.payment.value,amount:Number(form.elements.amount.value),refund_method:form.elements.method.value,external_reference:form.elements.reference.value,reason:form.elements.reason.value,admin_note:form.elements.note.value,idempotency_key:`refund:${form.elements.payment.value}:${Number(form.elements.amount.value).toFixed(2)}:${form.elements.reference.value||actionId}`});dialog.close();await loadRequests();await selectRequest(selectedRequest.id)}catch(error){dialog.querySelector(".workflow-result").textContent=error.message;button.disabled=false}});
+}
+
+async function openServiceConversionWorkflow(){
+  if(!["ron","mobile"].includes(selectedRequest.service_type))return;
+  const next=selectedRequest.service_type==="ron"?"mobile":"ron";
+  const dialog=document.createElement("dialog");dialog.className="admin-v3-danger-dialog service-adjustment-dialog";
+  dialog.innerHTML=`<form method="dialog"><button class="dialog-close" value="cancel" aria-label="Close">×</button><span class="small-label">History-preserving service conversion</span><h2>Change Service / Convert Service</h2><p><strong>${escapeHtml(refFromId(selectedRequest.id))}</strong> remains the transaction of record. Quotes, invoices, payments, refunds, documents, messages, Timeline, appointments, and Proof history are preserved.</p><div class="admin-detail-grid"><div><span class="small-label">Current service</span><strong>${escapeHtml(serviceLabel(selectedRequest.service_type))}</strong></div><div><span class="small-label">New service</span><strong>${escapeHtml(serviceLabel(next))}</strong></div><div><span class="small-label">Paid to date</span><strong>${money(selectedRequest.paid_amount||0)}</strong></div><label>Recalculated new-service total<input name="total" type="number" min="0" step=".01" required value="${Number(selectedRequest.quote_amount||selectedRequest.estimated_total||0).toFixed(2)}"></label></div>${next==="mobile"?`<fieldset><legend>Mobile destination requirements</legend><div class="admin-detail-grid"><label>Street address<input name="street" required></label><label>Unit<input name="unit"></label><label>City<input name="city" required></label><label>State<input name="state" required></label><label>ZIP<input name="zip" required></label></div></fieldset>`:`<fieldset><legend>RON destination requirements</legend><div class="admin-detail-grid"><label>Number of signers<input name="signers" type="number" min="1" value="1" required></label><label>Number of notarial acts<input name="acts" type="number" min="1" value="1" required></label></div><p>Each signer must have a first name, last name, and individual email before Proof orchestration.</p></fieldset>`}<label>Conversion reason / operator note<textarea name="reason" required></textarea></label><button type="button" class="btn dark preview-conversion">Preview Financial &amp; Workflow Impact</button><div class="workflow-result" role="status" aria-live="polite"></div><div class="status-actions"><button value="cancel" class="btn secondary">Close</button><button type="button" class="btn primary confirm-conversion" disabled>Confirm Service Conversion</button></div></form>`;
+  document.body.append(dialog);dialog.addEventListener("close",()=>dialog.remove());dialog.showModal();const form=dialog.querySelector("form"),result=dialog.querySelector(".workflow-result"),confirmButton=dialog.querySelector(".confirm-conversion");
+  dialog.querySelector(".preview-conversion").addEventListener("click",async()=>{if(!form.reportValidity())return;try{const preview=await invokeServiceAdjustment({command:"preview_service_conversion",new_service_type:next,new_service_total:Number(form.elements.total.value)});result.innerHTML=`<strong>Conversion preview</strong><p>Current paid/net applied: ${money(preview.financials.net_retained)} · New total: ${money(preview.new_service_total)} · Additional due: ${money(preview.additional_amount_due)} · Credit/refund review: ${money(preview.credit_or_refund_due)}</p><p>Same APS request: Yes · Proof history preserved: ${preview.proof_history_preserved?"Yes":"N/A"}</p>`;confirmButton.disabled=false;}catch(error){result.textContent=error.message;}});
+  confirmButton.addEventListener("click",async()=>{if(!form.reportValidity()||!confirm("Convert this APS request while preserving all historical records?"))return;confirmButton.disabled=true;try{await invokeServiceAdjustment({command:"convert_service",new_service_type:next,new_service_total:Number(form.elements.total.value),reason:form.elements.reason.value,street_address:form.elements.street?.value,unit:form.elements.unit?.value,city:form.elements.city?.value,state:form.elements.state?.value,zip:form.elements.zip?.value,number_of_signers:Number(form.elements.signers?.value||1),number_of_notarizations:Number(form.elements.acts?.value||1)});dialog.close();await loadRequests();await selectRequest(selectedRequest.id);showToast("Service converted; financial and fulfillment history preserved.");}catch(error){result.textContent=error.message;confirmButton.disabled=false;}});
 }
 
 async function uploadAdminDocuments(requestId) {
@@ -1392,6 +1430,12 @@ async function selectRequest(id) {
   const identityCandidates = identityReview ? [...new Map(requests.map(request => Array.isArray(request.customers) ? request.customers[0] : request.customers).filter(candidate => candidate?.id && candidate.id !== customer?.id && ((customer?.normalized_email && candidate.normalized_email === customer.normalized_email) || (customer?.normalized_phone && candidate.normalized_phone === customer.normalized_phone))).map(candidate => [candidate.id, candidate])).values()] : [];
   const invoiceItems = await getInvoiceItems(id, invoices);
   const currentInvoice = invoices.find(invoice => !["void", "cancelled"].includes(String(invoice.status || "").toLowerCase())) || invoices[0] || {};
+  const activeInvoices=invoices.filter(invoice=>!["void","cancelled","draft"].includes(String(invoice.status||"").toLowerCase()));
+  const totalInvoiced=activeInvoices.reduce((sum,invoice)=>sum+Number(invoice.amount_due||0),0);
+  const totalPaid=activeInvoices.reduce((sum,invoice)=>sum+Number(invoice.amount_paid??invoice.paid_amount??0),0);
+  const totalBalance=Math.max(0,activeInvoices.reduce((sum,invoice)=>sum+Number(invoice.balance_due??Math.max(0,Number(invoice.amount_due||0)-Number(invoice.amount_paid??invoice.paid_amount??0))),0));
+  const paidInvoiceCount=activeInvoices.filter(invoice=>Number(invoice.balance_due??Math.max(0,Number(invoice.amount_due||0)-Number(invoice.amount_paid??invoice.paid_amount??0)))<=0).length;
+  const mobileAddress=selectedRequest.service_type==="mobile"?assembledMobileAddress(serviceDetails,selectedRequest.appointment_location):selectedRequest.appointment_location||"Not provided";
   currentMessagePreviewContext = {
     templates: messageTemplates,
     context: {
@@ -1433,8 +1477,10 @@ async function selectRequest(id) {
       const reviewed = ["approved", "reviewed", "ready"].includes(String(f.review_state || "").toLowerCase());
       const reviewControl = proofCompleted && !reviewed ? `<button class="btn dark review-proof-document-btn" data-file-id="${escapeHtml(f.id)}" type="button">Mark APS Review Complete</button>` : "";
       const releaseControl = customerUpload || (proofCompleted && !reviewed) ? "" : `<button class="btn dark release-document-btn" data-file-id="${escapeHtml(f.id)}" data-released="${released}" type="button">${released ? "Withdraw Release" : "Release to Customer"}</button>`;
+      const removable=!customerUpload&&!proofCompleted&&!released&&f.uploaded_by==="admin";
+      const removalControl=removable?`<button class="btn danger-ghost remove-admin-document-btn" data-file-id="${escapeHtml(f.id)}" type="button">Remove Admin Upload</button>`:"";
       const received = f.created_at ? ` · Received ${new Date(f.created_at).toLocaleString()}` : "";
-      return `<li class="${proofCompleted ? "proof-completed-document" : ""}" ${proofCompleted ? `data-proof-return-document="${escapeHtml(f.id)}"` : ""}>${proofCompleted ? '<span class="small-label">Proof Completed Document</span>' : ""}${url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(f.file_name)}</a>` : escapeHtml(f.file_name)}<small>${escapeHtml(provenance)} · ${f.file_type || "file"} · ${f.file_size ? Math.round(f.file_size / 1024) + " KB" : ""}${received} · ${reviewed ? "APS Review Complete" : proofCompleted ? "Pending APS Review" : escapeHtml(access)} · ${escapeHtml(access)}</small>${reviewControl}${releaseControl}</li>`;
+      return `<li class="${proofCompleted ? "proof-completed-document" : ""}" ${proofCompleted ? `data-proof-return-document="${escapeHtml(f.id)}"` : ""}>${proofCompleted ? '<span class="small-label">Proof Completed Document</span>' : ""}${url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(f.file_name)}</a>` : escapeHtml(f.file_name)}<small>${escapeHtml(provenance)} · ${f.file_type || "file"} · ${f.file_size ? Math.round(f.file_size / 1024) + " KB" : ""}${received} · ${reviewed ? "APS Review Complete" : proofCompleted ? "Pending APS Review" : escapeHtml(access)} · ${escapeHtml(access)}</small>${reviewControl}${releaseControl}${removalControl}</li>`;
     }),
   );
   const quoteLocked = [
@@ -1458,11 +1504,6 @@ async function selectRequest(id) {
     "Customer not provided";
   const activeClientNote =
     selectedRequest.quote_notes || selectedRequest.customer_message || "";
-  const paidInvoiceCount = invoices.filter((invoice) =>
-    ["paid", "payment_received", "final_payment_received"].includes(
-      String(invoice.status || "").toLowerCase(),
-    ),
-  ).length;
   const requestSchedule =
     selectedRequest.appointment_date ||
     selectedRequest.preferred_date ||
@@ -1475,7 +1516,7 @@ async function selectRequest(id) {
         <div class="admin-v3-overview-status"><span class="small-label">Current workflow</span><strong>${statusLabel(selectedRequest.workflow_status || selectedRequest.status)}</strong><span>${isArchived(selectedRequest) ? "Archived order" : "Active order"}</span></div>
       </div>
       <div class="admin-v3-overview-grid">
-        <div class="admin-v3-overview-card is-financial"><span class="small-label">Financial position</span><strong>${money(selectedRequest.quote_amount || selectedRequest.estimated_total || 0)}</strong><p>${paidInvoiceCount} of ${invoices.length} invoice${invoices.length === 1 ? "" : "s"} paid</p></div>
+        <div class="admin-v3-overview-card is-financial"><span class="small-label">Financial position</span><strong>${money(totalInvoiced)}</strong><p>${paidInvoiceCount} of ${activeInvoices.length} invoice${activeInvoices.length === 1 ? "" : "s"} paid · ${money(totalPaid)} paid · ${money(totalBalance)} due</p></div>
         <div class="admin-v3-overview-card"><span class="small-label">Schedule</span><strong>${escapeHtml(requestSchedule)}</strong><p>${escapeHtml(selectedRequest.appointment_time || selectedRequest.preferred_time_window || "Time not confirmed")}</p></div>
         <div class="admin-v3-overview-card is-supporting"><span class="small-label">Operational detail</span><strong>${selectedRequest.detected_pdf_page_count || "—"} pages</strong><p>Detected PDF pages when available</p></div>
       </div>
@@ -1569,13 +1610,14 @@ async function selectRequest(id) {
         <div><span class="small-label">APS Reference</span><strong>${escapeHtml(ref)}</strong></div>
         <div><span class="small-label">Order Relationship</span><strong>Primary customer</strong></div>
       </div>
+      ${["ron","mobile"].includes(selectedRequest.service_type)?'<button id="convertServiceBtn" class="btn dark" type="button">Change Service / Convert Service</button>':""}
     </section>
 
     ${identityReview ? `<section class="admin-detail-section identity-review-card" data-v3-tab-target="customer"><div class="admin-v3-section-heading"><span class="small-label">Possible Existing Customer</span><h3>Administrator identity review required</h3></div><p>${escapeHtml(identityReview.detail || "Contact information matches another profile but identity data conflicts.")}</p>${identityCandidates.length ? `<label>Existing customer<select id="identityCandidateCustomer">${identityCandidates.map(candidate=>`<option value="${escapeHtml(candidate.id)}">${escapeHtml(`${candidate.first_name||""} ${candidate.last_name||""}`.trim())} · ${escapeHtml(candidate.email||candidate.phone||"")}</option>`).join("")}</select></label><div class="status-actions"><button id="linkExistingCustomerBtn" class="btn primary" type="button">Link to Existing Customer</button><button id="keepNewCustomerBtn" class="btn secondary" type="button">Keep as New Customer</button></div>`:`<p class="admin-muted">No active candidate is available in the loaded directory. Keep this profile separate or review Customers.</p><button id="keepNewCustomerBtn" class="btn secondary" type="button">Keep as New Customer</button>`}</section>` : ""}
 
     <section class="admin-detail-section" data-v3-tab-target="customer">
       <div class="admin-v3-section-heading"><span class="small-label">Transaction Participants</span><h3>Signers &amp; Witnesses</h3></div>
-      ${participants.length ? `<ul class="admin-file-list">${participants.map(person=>`<li><strong>${escapeHtml(person.full_legal_name || (person.witness_source === "aps" ? `APS-provided witness × ${person.quantity || 1}` : "Identity pending"))}</strong><small>${escapeHtml(statusLabel(person.participant_type))}${person.email ? ` · ${escapeHtml(person.email)}` : ""}</small></li>`).join("")}</ul>` : '<p class="admin-muted">No structured participants are stored for this legacy request.</p>'}
+      ${participants.length ? `<ul class="admin-file-list">${participants.map(person=>{const name=participantLegalName(person)||(person.witness_source==="aps"?`APS-provided witness × ${person.quantity||1}`:"Identity pending"),missing=participantReadiness(person);return `<li><strong>${escapeHtml(name)}</strong><small>${escapeHtml(statusLabel(person.participant_type))}${person.email?` · ${escapeHtml(person.email)}`:""}</small>${missing.length?`<p class="communication-error">Missing: ${escapeHtml(missing.join(", "))}</p>`:""}</li>`}).join("")}</ul>` : selectedRequest.service_type==="print" ? '<p class="admin-muted">Notarial signer information is not required for Print &amp; Scan.</p>' : '<p class="admin-muted">No structured participants are stored for this request.</p>'}
       ${notarialActs.length ? `<h4>Requested acts</h4><ul class="admin-file-list">${notarialActs.map(act=>`<li><strong>Act ${act.act_number}: ${escapeHtml(statusLabel(act.act_type))}</strong><small>${act.requires_admin_review ? "Admin review required; APS must not choose certificate language." : "Customer selection recorded"}</small></li>`).join("")}</ul>` : ""}
     </section>
 
@@ -1600,7 +1642,7 @@ async function selectRequest(id) {
         <div><span class="small-label">Requested Time</span><strong>${escapeHtml(selectedRequest.preferred_time_window || "Not provided")}</strong></div>
         <div><span class="small-label">Confirmed Date</span><strong>${escapeHtml(selectedRequest.appointment_date || "Not confirmed")}</strong></div>
         <div><span class="small-label">Confirmed Time</span><strong>${escapeHtml(selectedRequest.appointment_time || "Not confirmed")}</strong></div>
-        <div><span class="small-label">Location</span><strong>${escapeHtml(selectedRequest.appointment_location || "Not provided")}</strong></div>
+        <div><span class="small-label">Location</span><strong class="multiline-value">${escapeHtml(mobileAddress)}</strong></div>
         <div><span class="small-label">Platform / Fulfillment</span><strong>${escapeHtml(selectedRequest.appointment_platform || "Not provided")}</strong></div>
       </div>
       ${groupedDetails.appointment.length ? detailMap(groupedDetails.appointment) : ""}
@@ -1611,7 +1653,7 @@ async function selectRequest(id) {
     ${groupedDetails.showPrinting ? `<section class="admin-detail-section" data-v3-tab-target="customer"><div class="admin-v3-section-heading"><span class="small-label">Printing / Scanning</span><h3>Document Production</h3></div>${detailMap(groupedDetails.printing)}</section>` : ""}
 
     <section class="admin-detail-section customer-financial-card" data-v3-tab-target="customer">
-      <div><span class="small-label">Financial Summary</span><h3>${money(selectedRequest.quote_amount || selectedRequest.estimated_total || 0)}</h3><p class="admin-muted">${invoices.length} invoice${invoices.length === 1 ? "" : "s"} · ${paidInvoiceCount} paid</p></div>
+      <div><span class="small-label">Financial Summary</span><h3>${money(totalInvoiced)}</h3><p class="admin-muted">${activeInvoices.length} invoice${activeInvoices.length === 1 ? "" : "s"} · ${paidInvoiceCount} paid · ${money(totalPaid)} paid to date · ${money(totalBalance)} balance due</p></div>
       <button class="btn dark" type="button" data-open-workspace-tab="payments">Open Payments</button>
     </section>
 
@@ -1698,6 +1740,7 @@ async function selectRequest(id) {
   $("#sendAndUpdateStatusBtn", detail)?.addEventListener("click", () => sendComposedMessage(true));
   $$(".release-document-btn", detail).forEach(button => button.addEventListener("click", () => setDocumentRelease(button.dataset.fileId, button.dataset.released !== "true")));
   $$(".review-proof-document-btn", detail).forEach(button => button.addEventListener("click", () => reviewProofDocument(button.dataset.fileId)));
+  $$(".remove-admin-document-btn", detail).forEach(button => button.addEventListener("click", async()=>{if(!confirm("Remove this unreleased administrator upload? The file history will be preserved as inactive."))return;try{await invokeServiceAdjustment({command:"remove_admin_document",file_id:button.dataset.fileId});await selectRequest(id);showToast("Administrator upload removed; audit history preserved.");}catch(error){alert(error.message||"Document could not be removed.")}}));
   window.setTimeout(() => focusProofDocument(selectedRequest.id), 0);
   $("#saveCompletionFactsBtn", detail)?.addEventListener("click", saveCompletionFacts);
   $("#completeWithExceptionBtn", detail)?.addEventListener("click", completeWithException);
@@ -1727,6 +1770,7 @@ async function selectRequest(id) {
     "click",
     createAdditionalInvoice,
   );
+  $("#convertServiceBtn")?.addEventListener("click",openServiceConversionWorkflow);
   $("#saveAppointmentBtn")?.addEventListener("click", saveAppointmentDetails);
   $("#archiveRequestBtn")?.addEventListener("click", toggleArchiveRequest);
   $("#permanentDeleteRequestBtn")?.addEventListener("click", openPermanentDeleteDialog);
@@ -2596,7 +2640,7 @@ async function loadRequests() {
   const { data, error } = await adminClient
     .from("service_requests")
     .select(
-      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customer_reported_source,customer_reported_source_detail,acquisition_landing_page,acquisition_referrer_host,acquisition_utm_source,acquisition_utm_medium,acquisition_utm_campaign,first_touch_source,review_request_state,review_request_eligible_at,review_request_sent_at,customers(id,first_name,last_name,email,phone,preferred_contact,created_at,normalized_email,normalized_phone,normalized_name,merged_at,first_acquisition_source,first_acquisition_at),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
+      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customer_reported_source,customer_reported_source_detail,acquisition_landing_page,acquisition_referrer_host,acquisition_utm_source,acquisition_utm_medium,acquisition_utm_campaign,first_touch_source,review_request_state,review_request_eligible_at,review_request_sent_at,customers(id,first_name,last_name,email,phone,preferred_contact,created_at,normalized_email,normalized_phone,normalized_name,merged_at,first_acquisition_source,first_acquisition_at),request_participants(participant_type,first_name,middle_name,last_name,full_legal_name,email),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
     )
     .order("created_at", {
       ascending: false,

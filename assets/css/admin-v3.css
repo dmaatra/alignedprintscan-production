@@ -622,6 +622,10 @@ button {
 }
 
 .admin-v3-workspace-content .admin-detail-grid > div,
+.admin-v3-workspace-content .multiline-value {
+  white-space: pre-line;
+}
+
 .admin-v3-workspace-content .financial-summary-grid > div {
   padding: 14px;
   background: #fffdf8;

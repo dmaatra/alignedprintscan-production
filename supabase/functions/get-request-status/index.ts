@@ -75,6 +75,10 @@ const CUSTOMER_ACTIVITY_COPY: Record<
     detail:
       "Your confirmed appointment details are available in Appointment/Fulfillment.",
   },
+  service_changed: {
+    title: "Service changed",
+    detail: "Your request service was changed. Current details are available in your request.",
+  },
   document_uploaded: {
     title: "Document received",
     detail: "A document you provided was received securely.",
@@ -97,10 +101,22 @@ const CUSTOMER_ACTIVITY_COPY: Record<
   },
 };
 
-export function customerActivityEvent(event: any) {
+export function customerActivityEvent(event: any, request: any = {}) {
   const copy =
     CUSTOMER_ACTIVITY_COPY[String(event?.event_type || "").toLowerCase()];
-  return copy ? { ...copy, created_at: event.created_at } : null;
+  if (!copy) return null;
+  let detail=copy.detail;
+  if (event.event_type === "appointment_confirmed" && request.appointment_date) {
+    const service=request.service_type === "mobile" ? "Mobile Notary" : request.service_type === "ron" ? "Remote Online Notary" : "service";
+    const parsed=new Date(`${request.appointment_date}T12:00:00-05:00`);
+    const dateLabel=Number.isNaN(parsed.getTime()) ? request.appointment_date : new Intl.DateTimeFormat("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric",timeZone:"America/Chicago"}).format(parsed);
+    detail=`Your ${service} appointment has been confirmed for ${dateLabel}${request.appointment_time ? `, ${request.appointment_time}` : ""}.`;
+  }
+  if (event.event_type === "service_changed" && event.metadata?.previous_service && event.metadata?.new_service) {
+    const label=(value:string)=>value === "ron" ? "Remote Online Notary" : "Mobile Notary";
+    detail=`Your request was changed from ${label(event.metadata.previous_service)} to ${label(event.metadata.new_service)}.`;
+  }
+  return { ...copy, detail, created_at: event.created_at };
 }
 
 async function supabaseFetch(path: string, init: RequestInit = {}) {
@@ -482,7 +498,7 @@ Deno.serve(async (req) => {
       messages,
       customer_activity: timelineEvents
         .filter((event: any) => event.visibility === "customer")
-        .map(customerActivityEvent)
+        .map((event: any) => customerActivityEvent(event, request))
         .filter(Boolean),
       ron_session: ronSession,
       reference_number: refFromId(requestId),

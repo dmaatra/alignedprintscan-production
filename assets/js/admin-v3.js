@@ -466,8 +466,20 @@
   }
   function requestBlockers(request) {
     const blockers=[];
+    const terminal=["completed","cancelled","declined","refunded"].includes(requestStatus(request));
     if(["pending","re_review_required"].includes(request.document_state)) blockers.push({title:request.document_state==="re_review_required"?"Document re-review required":"Document pending",tab:"documents",priority:request.document_state==="re_review_required"?"action":"waiting"});
-    if(request.participant_state && request.participant_state!=="complete") blockers.push({title:"Participant information incomplete",tab:"customer",priority:"action"});
+    if(!terminal&&["ron","mobile"].includes(request.service_type)){
+      const signers=(request.request_participants||[]).filter(item=>item.participant_type==="signer");
+      const missing=[];
+      if(!signers.length)missing.push("signer");
+      signers.forEach((signer,index)=>{
+        const label=`Signer ${index+1}`;
+        if(!String(signer.first_name||"").trim())missing.push(`${label} first name`);
+        if(!String(signer.last_name||"").trim())missing.push(`${label} last name`);
+        if(request.service_type==="ron"&&!String(signer.email||"").trim())missing.push(`${label} email`);
+      });
+      if(missing.length)blockers.push({title:"Signer information incomplete",detail:`Missing: ${missing.join(", ")}.`,tab:"customer",priority:"action"});
+    }
     if(Number(request.balance_due||0)>0) blockers.push({title:"Payment pending",tab:"payments",priority:"waiting"});
     if(request.workflow_status==="quote_ready") blockers.push({title:"Quote review required",tab:"quote",priority:"action"});
     if(request.appointment_state==="rescheduling_requested") blockers.push({title:"Appointment needs confirmation",tab:"fulfillment",priority:"urgent"});
@@ -950,7 +962,7 @@
   function setWizardRonStructuredFields(form) {
     const signerHost=$("#adminRonSignerFields",form),actHost=$("#adminRonActFields",form),witnessHost=$("#adminRonWitnessFields",form);if(!signerHost||!actHost||!witnessHost)return;
     const signerCount=Math.min(10,Math.max(1,wizardNumber(form,"ron_signer_count",1))),actCount=Math.max(1,wizardNumber(form,"ron_notarization_count",1));
-    if(Number(signerHost.dataset.count)!==signerCount){signerHost.dataset.count=String(signerCount);signerHost.innerHTML=`<h3>Structured signers</h3>${Array.from({length:signerCount},(_,index)=>`<div class="admin-v3-form-grid"><label>Signer ${index+1} legal ID name<input name="ron_signer_name_${index}" required></label><label>Signer ${index+1} individual email<input name="ron_signer_email_${index}" type="email" required></label><label>Signer ${index+1} phone<input name="ron_signer_phone_${index}" type="tel"></label></div>`).join("")}`;}
+    if(Number(signerHost.dataset.count)!==signerCount){signerHost.dataset.count=String(signerCount);signerHost.innerHTML=`<h3>Structured signers</h3>${Array.from({length:signerCount},(_,index)=>`<fieldset><legend>Signer ${index+1} legal ID name</legend><div class="admin-v3-form-grid"><label>First name<input name="ron_signer_first_${index}" required></label><label>Middle name (optional)<input name="ron_signer_middle_${index}"></label><label>Last name<input name="ron_signer_last_${index}" required></label><label>Individual email<input name="ron_signer_email_${index}" type="email" required></label><label>Phone<input name="ron_signer_phone_${index}" type="tel"></label></div></fieldset>`).join("")}`;}
     if(Number(actHost.dataset.count)!==actCount){actHost.dataset.count=String(actCount);actHost.innerHTML=`<h3>Requested notarial acts</h3>${Array.from({length:actCount},(_,index)=>`<label>Act ${index+1}<select name="ron_act_type_${index}" required><option value="acknowledgment">Acknowledgment</option><option value="jurat">Jurat / verification on oath</option><option value="signature_witnessing">Signature witnessing</option><option value="certified_copy">Certified copy (when permitted)</option><option value="unsure">I’m not sure</option></select></label>`).join("")}`;}
     const allocation=wizardWitnessAllocation(form,"ron"),witnessCount=wizardValue(form,"ron_witness_need")==="yes"?allocation.customer:0;
     if(Number(witnessHost.dataset.count)!==witnessCount){witnessHost.dataset.count=String(witnessCount);witnessHost.innerHTML=witnessCount?`<h3>Customer-provided witnesses</h3>${Array.from({length:witnessCount},(_,index)=>`<div class="admin-v3-form-grid"><label>Witness ${index+1} legal name<input name="ron_witness_name_${index}" required></label><label>Witness ${index+1} email<input name="ron_witness_email_${index}" type="email"></label><label>Witness ${index+1} phone<input name="ron_witness_phone_${index}" type="tel"></label></div>`).join("")}`:"";}
@@ -1055,7 +1067,7 @@
         const rawWitnessCount = wizardValue(form, "ron_witness_count");
         serviceDetail={document_type:wizardValue(form,"document_type")||null,number_of_signers:wizardNumber(form,"ron_signer_count",1),number_of_notarizations:wizardNumber(form,"ron_notarization_count",1),ron_platform:wizardValue(form,"ron_platform")||null,tech_ready:wizardChecked(form,"ron_tech_ready"),valid_id_confirmed:wizardChecked(form,"ron_valid_id"),consent_to_recording:wizardChecked(form,"ron_recording_consent"),witness_need:wizardValue(form,"ron_witness_need")||"no",witness_count:rawWitnessCount==="not_sure"?null:witnesses.total,witness_provider:wizardValue(form,"ron_witness_provider")||null,client_witness_count:witnesses.customer,provided_witness_count:witnesses.aps,witness_review_required:wizardValue(form,"ron_witness_need")==="not_sure"||wizardValue(form,"ron_witness_provider")==="not_sure"||rawWitnessCount==="not_sure"};
         const signerCount=Math.min(10,Math.max(1,wizardNumber(form,"ron_signer_count",1)));
-        participants=Array.from({length:signerCount},(_,index)=>({participant_type:"signer",full_legal_name:wizardValue(form,`ron_signer_name_${index}`),email:wizardValue(form,`ron_signer_email_${index}`).toLowerCase(),mobile_phone:wizardValue(form,`ron_signer_phone_${index}`)||null,identity_name_confirmed:true,sort_order:index}));
+        participants=Array.from({length:signerCount},(_,index)=>{const first=wizardValue(form,`ron_signer_first_${index}`),middle=wizardValue(form,`ron_signer_middle_${index}`),last=wizardValue(form,`ron_signer_last_${index}`);return {participant_type:"signer",first_name:first,middle_name:middle||null,last_name:last,full_legal_name:[first,middle,last].filter(Boolean).join(" "),email:wizardValue(form,`ron_signer_email_${index}`).toLowerCase(),mobile_phone:wizardValue(form,`ron_signer_phone_${index}`)||null,identity_name_confirmed:true,sort_order:index};});
         for(let index=0;index<witnesses.customer;index++)participants.push({participant_type:"witness",full_legal_name:wizardValue(form,`ron_witness_name_${index}`),email:wizardValue(form,`ron_witness_email_${index}`).toLowerCase()||null,mobile_phone:wizardValue(form,`ron_witness_phone_${index}`)||null,identity_name_confirmed:Boolean(wizardValue(form,`ron_witness_name_${index}`)),sort_order:signerCount+index});
         const actCount=Math.max(1,wizardNumber(form,"ron_notarization_count",1));
         notarialActs=Array.from({length:actCount},(_,index)=>({act_type:wizardValue(form,`ron_act_type_${index}`)||"unsure"}));

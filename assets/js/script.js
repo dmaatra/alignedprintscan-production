@@ -534,7 +534,7 @@ function renderSignerAndActFields() {
     signerHost.dataset.count = String(signerCount);
     signerHost.dataset.service = activeService;
     const signerRequired = ["ron", "mobile"].includes(activeService);
-    signerHost.innerHTML = Array.from({ length: signerCount }, (_, index) => `<div class="form-grid"><div><label>Signer ${index + 1} full legal ID name${signerRequired ? " *" : ""}</label><input name="signerLegalName${index}" ${signerRequired ? "required" : ""}></div><div><label>Signer ${index + 1} individual email${activeService === "ron" ? " *" : " (optional)"}</label><input name="signerEmail${index}" type="email" ${activeService === "ron" ? "required" : ""}></div></div>`).join("");
+    signerHost.innerHTML = Array.from({ length: signerCount }, (_, index) => `<fieldset class="signer-identity"><legend>Signer ${index + 1} legal ID name</legend><div class="form-grid"><div><label>First name *</label><input name="signerFirstName${index}" required autocomplete="given-name"></div><div><label>Middle name (optional)</label><input name="signerMiddleName${index}" autocomplete="additional-name"></div><div><label>Last name *</label><input name="signerLastName${index}" required autocomplete="family-name"></div><div><label>Individual email${activeService === "ron" ? " *" : " (optional)"}</label><input name="signerEmail${index}" type="email" ${activeService === "ron" ? "required" : ""}></div></div></fieldset>`).join("");
   }
   if (actHost && Number(actHost.dataset.count || 0) !== actCount) {
     actHost.dataset.count = String(actCount);
@@ -976,7 +976,10 @@ async function submitRequestToSupabase(e) {
       const participants = Array.from({ length: signerCount }, (_, index) => ({
         service_request_id: requestId,
         participant_type: "signer",
-        full_legal_name: f[`signerLegalName${index}`]?.value?.trim() || null,
+        first_name: f[`signerFirstName${index}`]?.value?.trim() || null,
+        middle_name: f[`signerMiddleName${index}`]?.value?.trim() || null,
+        last_name: f[`signerLastName${index}`]?.value?.trim() || null,
+        full_legal_name: [f[`signerFirstName${index}`]?.value, f[`signerMiddleName${index}`]?.value, f[`signerLastName${index}`]?.value].map(value=>value?.trim()).filter(Boolean).join(" ") || null,
         email: normalizeEmail(f[`signerEmail${index}`]?.value) || null,
         identity_name_confirmed: true,
         sort_order: index,
@@ -1243,7 +1246,7 @@ async function submitPublicRequestSecurely(event) {
     const notarialActs = [];
     if (["ron", "mobile"].includes(activeService)) {
       const signerCount = Math.max(1, numericValue("signerCount"));
-      for (let index = 0; index < signerCount; index += 1) participants.push({ participant_type: "signer", role: "signer", full_legal_name: f[`signerLegalName${index}`]?.value?.trim() || null, email: normalizeEmail(f[`signerEmail${index}`]?.value) || null, identity_name_confirmed: true, sort_order: index });
+      for (let index = 0; index < signerCount; index += 1) participants.push({ participant_type: "signer", role: "signer", first_name: f[`signerFirstName${index}`]?.value?.trim() || null, middle_name: f[`signerMiddleName${index}`]?.value?.trim() || null, last_name: f[`signerLastName${index}`]?.value?.trim() || null, full_legal_name: [f[`signerFirstName${index}`]?.value, f[`signerMiddleName${index}`]?.value, f[`signerLastName${index}`]?.value].map(value=>value?.trim()).filter(Boolean).join(" ") || null, email: normalizeEmail(f[`signerEmail${index}`]?.value) || null, identity_name_confirmed: true, sort_order: index });
       const actCount = Math.max(1, numericValue("notarizationCount"));
       for (let index = 0; index < actCount; index += 1) notarialActs.push({ act_number: index + 1, act_type: f[`notarialActType${index}`]?.value || "unsure" });
       const allocation = witnessAllocation(activeService);
@@ -2403,6 +2406,7 @@ function customerActionPanel(request, reference, customerActions = []) {
     <div class="cta-row"><button id="requestCancellationBtn" class="btn secondary visible-secondary" type="button">Request Cancellation</button><button id="requestRescheduleBtn" class="btn secondary visible-secondary" type="button">Request Reschedule</button></div>
     <hr>
     <label>Additional documents<input id="additionalCustomerFiles" type="file" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"></label>
+    <label>Message with these documents (optional)<textarea id="additionalCustomerMessage" placeholder="Tell APS what you uploaded or what needs review."></textarea></label>
     <button id="uploadAdditionalFilesBtn" class="btn dark" type="button">Upload Additional Documents</button>
     <div id="customerActionStatus" class="form-submit-status" role="status" aria-live="polite"></div>
   </div>`;
@@ -2431,7 +2435,8 @@ async function uploadAdditionalCustomerFiles(requestId) {
   if (files.some((f) => f.size > 10 * 1024 * 1024)) throw new Error("Each file must be 10 MB or smaller.");
   if (statusBox) statusBox.textContent = `Preparing ${files.length} document(s)…`;
   const payloadFiles = await Promise.all(files.map(async (file) => ({ name: file.name, type: file.type, base64: await fileToBase64(file) })));
-  const { data, error } = await supabaseClient.functions.invoke("customer-upload-document", { body: { request_id: requestId, email, category: "additional", files: payloadFiles } });
+  const message=String(qs("#additionalCustomerMessage")?.value||"").trim();
+  const { data, error } = await supabaseClient.functions.invoke("customer-upload-document", { body: { request_id: requestId, email, category: "additional", message, files: payloadFiles } });
   if (error || data?.ok === false) throw new Error(data?.error || error?.message || "Documents could not be uploaded.");
   if (statusBox) statusBox.textContent = `${files.length} document(s) uploaded successfully.`;
   input.value = "";
@@ -2537,7 +2542,7 @@ async function initSuccessPage() {
   const completedNotarizedDocuments = documents.filter(file => file.document_classification === "completed_notarized_document");
   const customerProvidedDocuments = documents.filter(file => file.uploaded_by === "customer" && file.document_classification === "customer_document");
   const apsDocuments = documents.filter(file => file.document_classification !== "completed_notarized_document" && !customerProvidedDocuments.includes(file));
-  const portalDocumentList = (files, empty = "None available yet.") => files.length ? `<ul class="portal-document-list">${files.map(file => `<li><strong>${escapePublic(file.file_name)}</strong><span>${escapePublic(file.uploaded_by === "customer" ? "Customer Upload" : file.document_classification || "APS document")}</span>${file.download_url ? `<a class="btn dark" href="${escapePublic(file.download_url)}" target="_blank" rel="noopener">View / Download</a>` : ""}</li>`).join("")}</ul>` : `<p>${escapePublic(empty)}</p>`;
+  const portalDocumentList = (files, empty = "None available yet.") => files.length ? `<ul class="portal-document-list">${files.map(file => `<li><strong>${escapePublic(file.file_name)}</strong>${file.uploaded_by === "customer" ? `<span>Customer Upload</span>` : file.document_classification === "completed_notarized_document" ? `<span>Completed Notarized Document</span>` : `<span>Document from Aligned Print &amp; Scan</span>`}${file.download_url ? `<a class="btn dark" href="${escapePublic(file.download_url)}" target="_blank" rel="noopener noreferrer">View / Download</a>` : ""}</li>`).join("")}</ul>` : `<p>${escapePublic(empty)}</p>`;
   const messages = result.messages || [];
   const activity = result.customer_activity || [];
   const portalTab = params.get("tab") || "overview";

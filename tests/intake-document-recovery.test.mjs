@@ -166,7 +166,9 @@ test("admin RON intake persists structured signers witnesses and acts", async ()
     "supabase/functions/public-request-submit/index.ts",
   );
   assert.match(admin, /ron_signer_count[^\n]*max="10"/);
-  assert.match(admin, /ron_signer_name_/);
+  assert.match(admin, /ron_signer_first_/);
+  assert.match(admin, /ron_signer_middle_/);
+  assert.match(admin, /ron_signer_last_/);
   assert.match(admin, /ron_witness_name_/);
   assert.match(admin, /participant_type:"witness"/);
   assert.match(intake, /request_notarial_acts/);

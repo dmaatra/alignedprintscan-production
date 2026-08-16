@@ -46,6 +46,7 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const id = String(body.request_id || "");
     const email = String(body.email || "").trim().toLowerCase();
+    const message = String(body.message || "").trim().slice(0, 5000);
     const files = Array.isArray(body.files) ? body.files : [];
     if (!id || !email || !files.length) {
       throw new Error("Request, email, and at least one file are required.");
@@ -128,7 +129,33 @@ Deno.serve(async (req) => {
         metadata: { file_count: created.length },
       }),
     });
-    return json({ ok: true, files: created });
+    let messageRecord = null;
+    if (message) {
+      const insertedMessage = await rows(await db("messages", {
+        method: "POST",
+        body: JSON.stringify({
+          service_request_id: id,
+          direction: "inbound",
+          visibility: "internal",
+          recipient: "Aligned Print & Scan",
+          subject: "Customer message with document upload",
+          rendered_text: message,
+          delivery_state: "sent",
+          source_type: "customer",
+          source_event: "customer_document_upload",
+          sent_at: new Date().toISOString(),
+          metadata: { attachment_names: created.map((file: any) => file.file_name) },
+        }),
+      }));
+      messageRecord = insertedMessage?.[0] || null;
+      if (messageRecord) {
+        await db("message_attachments", {
+          method: "POST",
+          body: JSON.stringify(created.map((file: any) => ({ message_id: messageRecord.id, attachment_type: "document", request_file_id: file.id }))),
+        });
+      }
+    }
+    return json({ ok: true, files: created, message: messageRecord });
   } catch (error) {
     if (stored.length) {
       await fetch(`${U}/storage/v1/object/service-request-files`, {
