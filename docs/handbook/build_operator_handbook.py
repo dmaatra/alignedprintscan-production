@@ -152,6 +152,19 @@ SOURCE=source_notes()
 def relevant(topic,n=2):
     words={w.lower() for w in re.findall(r"[A-Za-z]{5,}",topic)};rank=sorted(SOURCE,key=lambda p:sum(w in p.lower() for w in words),reverse=True);return [p for p in rank if sum(w in p.lower() for w in words)>0][:n]
 def add_source_context(doc,text):
+    metadata_labels=("Version","Updated","System production baseline inspected","Documentation repository baseline","Services","Integrations")
+    metadata_pattern=r"("+"|".join(re.escape(label) for label in metadata_labels)+r"):\s*(.*?)(?=\s+(?:"+"|".join(re.escape(label) for label in metadata_labels)+r"):\s*|$)"
+    metadata=[(label,value.replace("`","").strip()) for label,value in re.findall(metadata_pattern,text)]
+    if len(metadata)==len(metadata_labels):
+        p=doc.add_paragraph();p.paragraph_format.space_before=Pt(4);p.paragraph_format.space_after=Pt(6);p.paragraph_format.left_indent=Inches(.10);p.paragraph_format.right_indent=Inches(.10);p.paragraph_format.line_spacing=1.05;keep(p)
+        pPr=p._p.get_or_add_pPr();shd=OxmlElement("w:shd");shd.set(qn("w:fill"),IVORY);pPr.append(shd)
+        borders=OxmlElement("w:pBdr");left=OxmlElement("w:left");left.set(qn("w:val"),"single");left.set(qn("w:sz"),"18");left.set(qn("w:space"),"8");left.set(qn("w:color"),GOLD);borders.append(left);pPr.append(borders)
+        for i,(label,value) in enumerate(metadata):
+            if i>=2:p.add_run().add_break()
+            elif i==1:p.add_run("    ")
+            key=p.add_run(label+": ");key.bold=True;key.font.color.rgb=RGBColor.from_string(NAVY);key.font.size=Pt(9)
+            val=p.add_run(value);val.font.size=Pt(9)
+        return
     items=re.findall(r"(?:^|\s)(\d+)\.\s+(.*?)(?=\s+\d+\.\s+|$)",text)
     if len(items)>1:
         add_bullets(doc,[item for _,item in items],"List Number")
