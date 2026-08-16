@@ -466,7 +466,7 @@
   }
   function requestBlockers(request) {
     const blockers=[];
-    const terminal=["completed","cancelled","declined","refunded"].includes(requestStatus(request));
+    const terminal=[request.status,request.workflow_status].some(value=>["completed","cancelled","declined","refunded"].includes(String(value||"").toLowerCase()));
     if(terminal)return blockers;
     if(["pending","re_review_required"].includes(request.document_state)) blockers.push({title:request.document_state==="re_review_required"?"Document re-review required":"Document pending",tab:"documents",priority:request.document_state==="re_review_required"?"action":"waiting"});
     if(["ron","mobile"].includes(request.service_type)){
