@@ -145,6 +145,16 @@ def add_source_context(doc,text):
     items=re.findall(r"(?:^|\s)(\d+)\.\s+(.*?)(?=\s+\d+\.\s+|$)",text)
     if len(items)>1:
         add_bullets(doc,[item for _,item in items],"List Number")
+        return
+    bullets=re.findall(r"(?:^|\s)-\s+(.*?)(?=\s+-\s+|$)",text)
+    if len(bullets)>1:
+        for item in bullets:
+            p=doc.add_paragraph(style="List Bullet");label,sep,detail=item.partition(":")
+            if sep:
+                run=p.add_run(label+":");run.bold=True;p.add_run(detail)
+            else:
+                p.add_run(item)
+            keep(p)
     else:
         doc.add_paragraph(text)
 def add_chapter(doc,part_roman,chapter_no,title,anchor):
