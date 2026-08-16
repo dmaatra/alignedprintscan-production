@@ -158,6 +158,16 @@ def add_source_context(doc,text):
         return
     bullets=re.findall(r"(?:^|\s)-\s+(.*?)(?=\s+-\s+|$)",text)
     if len(bullets)>1:
+        faq_items=[]
+        for item in bullets:
+            question,sep,answer=item.partition("?")
+            if sep and answer.strip():faq_items.append((question.strip()+"?",answer.strip()))
+        if len(faq_items)==len(bullets):
+            for question,answer in faq_items:
+                q=doc.add_paragraph();q.paragraph_format.space_before=Pt(5);q.paragraph_format.space_after=Pt(1)
+                run=q.add_run(question);run.bold=True;run.font.color.rgb=RGBColor.from_string(NAVY);keep(q,True)
+                a=doc.add_paragraph(answer);a.paragraph_format.left_indent=Inches(.18);a.paragraph_format.space_after=Pt(5);keep(a)
+            return
         for item in bullets:
             p=doc.add_paragraph(style="List Bullet");label,sep,detail=item.partition(":")
             if sep:
