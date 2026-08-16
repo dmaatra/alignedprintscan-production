@@ -1,6 +1,6 @@
 # APS Manual Expansion Source Pack
 
-Baseline: production `07e466622923f9c640e20887b0e5afbbe77661d2`
+Baseline: production `723898096259aaa2a92bfe2008c4cb610424478d`
 
 This directory is the evidence pack for `docs/APS_SYSTEM_OPERATIONS_WORKFLOW_MANUAL.md`. It is not a second operating manual. The canonical manual remains the operator-facing source.
 
@@ -18,7 +18,9 @@ This directory is the evidence pack for `docs/APS_SYSTEM_OPERATIONS_WORKFLOW_MAN
 - **Production-inspected:** observed read-only in the live application.
 - **Provider-native:** owned by Stripe, Proof, Resend, Google, or Vercel.
 - **Owner-controlled pending:** requires an external owner value/action.
-- **Manual screenshot required:** useful state cannot be captured without exposing real data or causing a consequential action.
+- **Captured:** synthetic-only production image passed visual privacy review.
+- **Manual screenshot required:** useful state cannot be safely isolated without exposing protected data or causing a consequential action.
+- **Future legitimate transaction capture required:** the state should be photographed only when it occurs naturally in a controlled legitimate workflow.
 
 Files:
 
@@ -26,4 +28,4 @@ Files:
 - `WORKFLOW_CATALOGS.md` — decision tables, templates, documents, fulfillment, visibility, and support.
 - `SCREENSHOT_MANIFEST.md` — instructional image plan and safe-capture status.
 
-No credentials, portal tokens, customer PII, real payment references, real document names, or Proof access links belong in this pack.
+The manifest contains exactly 19 instructional states. Three controlled production screenshots are currently captured under `docs/assets/manual/`; the remaining states retain explicit safe-capture dispositions. No credentials, portal tokens, customer PII, legitimate payment references, legitimate document names, or Proof access links belong in this pack.

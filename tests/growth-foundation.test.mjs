@@ -15,9 +15,11 @@ const submit = read("supabase/functions/public-request-submit/index.ts");
 const sendMessage = read("supabase/functions/send-message/index.ts");
 const templatePreview = read("supabase/functions/_shared/template-preview.mjs");
 const manual = read("docs/APS_SYSTEM_OPERATIONS_WORKFLOW_MANUAL.md");
+const screenshotManifest = read("docs/manual-source/SCREENSHOT_MANIFEST.md");
 const sitemap = read("sitemap.xml");
 const searchVerification = read("google7bace5a38d37ffed.html");
 const robots = read("robots.txt");
+const vercelIgnore = read(".vercelignore");
 const publicPages = ["index.html","pricing.html","remote-online-notary.html","mobile-notary.html","print-scan.html","faq.html","terms.html","privacy.html","accessibility.html","support.html"];
 
 test("official Facebook and Google Business links are exact, accessible, and safe on every public footer", () => {
@@ -105,11 +107,31 @@ test("structured data uses verified identity without fake ratings or locations",
   const index = read("index.html"); assert.match(index, /Aligned Print & Scan LLC/); assert.match(index, /sameAs/); assert.doesNotMatch(index, /aggregateRating|streetAddress|reviewCount|openingHours/);
 });
 test("manual is current, canonical, and complete", () => {
-  assert.match(manual, /c15c0b967a8a946ee18bf147d5fb391e536e351c/);
+  assert.match(manual, /723898096259aaa2a92bfe2008c4cb610424478d/);
   for (const heading of ["Terminology","Admin global modules","Eight-tab request workspace","RON operator playbook","Mobile Notary playbook","Print & Scan playbook","Financial operations","Document lifecycle","Troubleshooting","Quick checklists","Data\/security matrix","Maintenance standard"]) assert.match(manual, new RegExp(heading, "i"));
   for (const heading of ["Request Changes SOP", "Admin Cancellation Review SOP", "Refund SOP", "Customer Support SOP", "Alphabetical Glossary", "Back-of-Book Index Source"]) assert.match(manual, new RegExp(heading, "i"));
   for (const tab of ["Overview","Customer","Documents","Quote","Payments","Messages","Fulfillment","Timeline"]) assert.match(manual, new RegExp(`\\| ${tab} \\|`));
   for (const portal of ["Quote & Payment","Appointment/Fulfillment","Activity"]) assert.match(manual, new RegExp(portal.replace("&", "&")));
+});
+test("manual screenshot pack has 19 unique governed states and valid captured assets", () => {
+  const rows = screenshotManifest.split("\n").filter((line) => /^\| SS-\d{3} \|/.test(line));
+  assert.equal(rows.length, 19);
+  const ids = rows.map((row) => row.match(/^\| (SS-\d{3}) \|/)[1]);
+  assert.equal(new Set(ids).size, 19);
+  assert.ok(!ids.includes("SS-111"));
+  for (const status of ["CAPTURED", "MANUAL CAPTURE REQUIRED", "FUTURE LEGITIMATE TRANSACTION CAPTURE REQUIRED"]) {
+    assert.match(screenshotManifest, new RegExp(status));
+  }
+  const captured = [...screenshotManifest.matchAll(/`\.\.\/assets\/manual\/(ss-[^`]+\.jpg)`/g)].map((match) => match[1]);
+  assert.deepEqual(captured.sort(), ["ss-020-request-overview.jpg", "ss-030-document-lifecycle.jpg", "ss-090-print-scan-fulfillment.jpg"]);
+  for (const filename of captured) {
+    const path = new URL(`../docs/assets/manual/${filename}`, import.meta.url);
+    assert.ok(fs.statSync(path).size > 10_000, `${filename} should contain a real screenshot`);
+    assert.match(manual, new RegExp(`assets/manual/${filename.replaceAll(".", "\\.")}`));
+  }
+  assert.match(screenshotManifest, /SS-111 is retired and consolidated into SS-052/);
+  assert.match(manual, /Version: 2\.2/);
+  assert.equal(vercelIgnore.trim(), "docs/");
 });
 test("manual documents analytics, review, UTM, RON/local, ownership, and external boundaries", () => {
   for (const phrase of ["UTM standard","No satisfaction question","Google Business Profile","GA4 is **ACTIVE**","Authoritative ownership matrix","EXTERNAL PROVIDER BOUNDARY","naturally unverified","Google Search Console"]) assert.match(manual, new RegExp(phrase.replaceAll("*", "\\*"), "i"));
