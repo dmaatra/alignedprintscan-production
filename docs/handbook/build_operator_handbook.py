@@ -150,7 +150,9 @@ def source_notes():
     return paras
 SOURCE=source_notes()
 def relevant(topic,n=2):
-    words={w.lower() for w in re.findall(r"[A-Za-z]{5,}",topic)};rank=sorted(SOURCE,key=lambda p:sum(w in p.lower() for w in words),reverse=True);return [p for p in rank if sum(w in p.lower() for w in words)>0][:n]
+    words={w.lower() for w in re.findall(r"[A-Za-z]{5,}",topic)}
+    candidates=SOURCE if topic=="System Production Baseline and Document Control" else [p for p in SOURCE if "System production baseline inspected:" not in p]
+    rank=sorted(candidates,key=lambda p:sum(w in p.lower() for w in words),reverse=True);return [p for p in rank if sum(w in p.lower() for w in words)>0][:n]
 def add_source_context(doc,text):
     metadata_labels=("Version","Updated","System production baseline inspected","Documentation repository baseline","Services","Integrations")
     metadata_pattern=r"("+"|".join(re.escape(label) for label in metadata_labels)+r"):\s*(.*?)(?=\s+(?:"+"|".join(re.escape(label) for label in metadata_labels)+r"):\s*|$)"
