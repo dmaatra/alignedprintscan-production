@@ -16,6 +16,7 @@ const sendMessage = read("supabase/functions/send-message/index.ts");
 const templatePreview = read("supabase/functions/_shared/template-preview.mjs");
 const manual = read("docs/APS_SYSTEM_OPERATIONS_WORKFLOW_MANUAL.md");
 const screenshotManifest = read("docs/manual-source/SCREENSHOT_MANIFEST.md");
+const screenshotFixtures = read("docs/manual-source/SCREENSHOT_FIXTURES.html");
 const sitemap = read("sitemap.xml");
 const searchVerification = read("google7bace5a38d37ffed.html");
 const robots = read("robots.txt");
@@ -119,18 +120,22 @@ test("manual screenshot pack has 19 unique governed states and valid captured as
   const ids = rows.map((row) => row.match(/^\| (SS-\d{3}) \|/)[1]);
   assert.equal(new Set(ids).size, 19);
   assert.ok(!ids.includes("SS-111"));
-  for (const status of ["CAPTURED", "MANUAL CAPTURE REQUIRED", "FUTURE LEGITIMATE TRANSACTION CAPTURE REQUIRED"]) {
-    assert.match(screenshotManifest, new RegExp(status));
-  }
+  for (const row of rows) assert.match(row, /\| CAPTURED \|/);
+  assert.doesNotMatch(rows.join("\n"), /MANUAL CAPTURE REQUIRED|FUTURE LEGITIMATE TRANSACTION CAPTURE REQUIRED/);
   const captured = [...screenshotManifest.matchAll(/`\.\.\/assets\/manual\/(ss-[^`]+\.jpg)`/g)].map((match) => match[1]);
-  assert.deepEqual(captured.sort(), ["ss-020-request-overview.jpg", "ss-030-document-lifecycle.jpg", "ss-090-print-scan-fulfillment.jpg"]);
+  assert.equal(captured.length, 19);
+  assert.equal(new Set(captured).size, 19);
   for (const filename of captured) {
     const path = new URL(`../docs/assets/manual/${filename}`, import.meta.url);
     assert.ok(fs.statSync(path).size > 10_000, `${filename} should contain a real screenshot`);
     assert.match(manual, new RegExp(`assets/manual/${filename.replaceAll(".", "\\.")}`));
   }
-  assert.match(screenshotManifest, /SS-111 is retired and consolidated into SS-052/);
-  assert.match(manual, /Version: 2\.2/);
+  assert.equal(fs.readdirSync(new URL("../docs/assets/manual/", import.meta.url)).filter((name) => /^ss-\d{3}-.+\.jpg$/.test(name)).length, 19);
+  assert.match(screenshotManifest, /retired duplicate SS-111/);
+  assert.match(screenshotFixtures, /APS MANUAL TEST · SYNTHETIC DOCUMENTATION FIXTURE/);
+  assert.doesNotMatch(screenshotFixtures, /Brandi Turnbo/i);
+  assert.match(manual, /Version: 2\.3/);
+  assert.match(manual, /Appendix I — Instructional Visual Atlas/);
   assert.equal(vercelIgnore.trim(), "docs/");
 });
 test("manual documents analytics, review, UTM, RON/local, ownership, and external boundaries", () => {
