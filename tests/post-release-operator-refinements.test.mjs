@@ -56,3 +56,12 @@ test("conversion migration is backward-compatible and admin-authorized",async()=
   assert.match(migration,/add column if not exists first_name/);assert.match(migration,/enable row level security/);assert.match(migration,/public\.is_admin\(\)/);assert.match(migration,/previous_appointment jsonb/);assert.match(migration,/proof_transaction_preserved/);
   for(const key of ["document_needed_for_quote","document_received_under_review","service_changed_appointment_conversion"])assert.match(migration,new RegExp(key));
 });
+
+test("production pages load the post-release frontend asset version",async()=>{
+  const admin=await read("admin-dashboard.html");
+  assert.match(admin,/admin\.js\?v=20260816-post-release/);
+  assert.match(admin,/admin-v3\.js\?v=20260816-post-release/);
+  for(const page of ["index.html","mobile-notary.html","print-scan.html","remote-online-notary.html","pricing.html","success.html","support.html","accessibility.html","privacy.html","faq.html","terms.html"]){
+    assert.match(await read(page),/script\.js\?v=20260816-post-release/,page);
+  }
+});
