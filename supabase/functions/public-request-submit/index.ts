@@ -108,12 +108,13 @@ function validate(body: Record<string, unknown>, adminRequest = false) {
     }
     if (
       signers.some((person) =>
-        !String(person.full_legal_name || "").trim() ||
+        !String(person.first_name || "").trim() ||
+        !String(person.last_name || "").trim() ||
         (service === "ron" && !String(person.email || "").includes("@"))
       )
     ) {
       throw new Error(
-        "Every RON signer requires a legal name and individual email address.",
+        "Every signer requires a first name and last name; every RON signer also requires an individual email address.",
       );
     }
     if (
@@ -317,6 +318,9 @@ Deno.serve(async (req) => {
             service_request_id: requestId,
             ...allowed(person, [
               "participant_type",
+              "first_name",
+              "middle_name",
+              "last_name",
               "full_legal_name",
               "email",
               "identity_name_confirmed",
