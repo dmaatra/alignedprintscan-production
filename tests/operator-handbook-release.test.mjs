@@ -14,6 +14,8 @@ test("handbook 3.0 deliverables and reproducible source are present",async()=>{
   ]);
   assert.ok(docx.size>500_000);assert.ok(pdf.size>1_000_000);
   for(const required of ["PARTS=[","Contents","Back to Contents","landscape_start","Template Operator Catalog","Status Catalog","Visual SOP Atlas","Back-of-Book Index"])assert.match(builder,new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")));
+  assert.match(builder,/w:startOverride/);
+  assert.match(builder,/start_override\.set\(qn\("w:val"\),"1"\)/);
 });
 
 test("handbook source includes all approved visuals and complete public policies",async()=>{

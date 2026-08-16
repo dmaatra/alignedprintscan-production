@@ -92,7 +92,11 @@ def add_bullets(doc,items,style="List Bullet"):
             el=OxmlElement(f"w:{tag}");el.set(qn("w:val"),val);lvl.append(el)
         pPr=OxmlElement("w:pPr");tabs=OxmlElement("w:tabs");tab=OxmlElement("w:tab");tab.set(qn("w:val"),"num");tab.set(qn("w:pos"),"720");tabs.append(tab);pPr.append(tabs)
         ind=OxmlElement("w:ind");ind.set(qn("w:left"),"720");ind.set(qn("w:hanging"),"360");pPr.append(ind);lvl.append(pPr);abstract.append(lvl);numbering.append(abstract)
-        num=OxmlElement("w:num");num.set(qn("w:numId"),str(num_id));abstract_ref=OxmlElement("w:abstractNumId");abstract_ref.set(qn("w:val"),str(abstract_id));num.append(abstract_ref);numbering.append(num)
+        num=OxmlElement("w:num");num.set(qn("w:numId"),str(num_id));abstract_ref=OxmlElement("w:abstractNumId");abstract_ref.set(qn("w:val"),str(abstract_id));num.append(abstract_ref)
+        # A fresh numbering instance plus an explicit start override makes the
+        # subsection reset deterministic in Word, LibreOffice, and PDF output.
+        lvl_override=OxmlElement("w:lvlOverride");lvl_override.set(qn("w:ilvl"),"0")
+        start_override=OxmlElement("w:startOverride");start_override.set(qn("w:val"),"1");lvl_override.append(start_override);num.append(lvl_override);numbering.append(num)
     for item in items:
         p=doc.add_paragraph(item,style=None if num_id else style)
         if num_id:
