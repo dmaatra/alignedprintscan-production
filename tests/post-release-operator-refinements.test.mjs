@@ -19,6 +19,11 @@ test("operator presentation humanizes address, witness, and scan fields",async()
   assert.match(admin,/witness_provider/);assert.match(admin,/value = "N\/A"/);assert.match(admin,/assembledMobileAddress/);assert.match(admin,/multiline-value/);
 });
 
+test("Review Queue excludes terminal requests before evaluating persisted blockers",async()=>{
+  const adminV3=await read("assets/js/admin-v3.js");
+  assert.match(adminV3,/const terminal=\["completed","cancelled","declined","refunded"\]\.includes\(requestStatus\(request\)\);\s*if\(terminal\)return blockers;/);
+});
+
 test("new maintained templates render and preserve the conversion wording",()=>{
   for(const key of ["document_needed_for_quote","document_received_under_review","service_changed_appointment_conversion"]){
     const spec=TEMPLATE_SPECIFICATIONS[key];assert.ok(spec,key);assert.ok(spec.fields.length>=4);
@@ -60,7 +65,7 @@ test("conversion migration is backward-compatible and admin-authorized",async()=
 test("production pages load the post-release frontend asset version",async()=>{
   const admin=await read("admin-dashboard.html");
   assert.match(admin,/admin\.js\?v=20260816-post-release/);
-  assert.match(admin,/admin-v3\.js\?v=20260816-post-release/);
+  assert.match(admin,/admin-v3\.js\?v=20260816-review-terminal/);
   for(const page of ["index.html","mobile-notary.html","print-scan.html","remote-online-notary.html","pricing.html","success.html","support.html","accessibility.html","privacy.html","faq.html","terms.html"]){
     assert.match(await read(page),/script\.js\?v=20260816-post-release/,page);
   }

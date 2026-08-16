@@ -467,8 +467,9 @@
   function requestBlockers(request) {
     const blockers=[];
     const terminal=["completed","cancelled","declined","refunded"].includes(requestStatus(request));
+    if(terminal)return blockers;
     if(["pending","re_review_required"].includes(request.document_state)) blockers.push({title:request.document_state==="re_review_required"?"Document re-review required":"Document pending",tab:"documents",priority:request.document_state==="re_review_required"?"action":"waiting"});
-    if(!terminal&&["ron","mobile"].includes(request.service_type)){
+    if(["ron","mobile"].includes(request.service_type)){
       const signers=(request.request_participants||[]).filter(item=>item.participant_type==="signer");
       const missing=[];
       if(!signers.length)missing.push("signer");
