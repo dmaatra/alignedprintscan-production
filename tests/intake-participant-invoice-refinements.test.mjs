@@ -23,6 +23,22 @@ test("participant editing is server-authorized, audited, readiness-aware, and te
   assert.match(admin,/functions\.invoke\("admin-update-participant"/);
 });
 
+test("additional participant review never infers a signer and Add Participant updates the canonical roster",async()=>{
+  const [edge,admin,migration]=await Promise.all([read("supabase/functions/admin-update-participant/index.ts"),read("assets/js/admin.js"),read("supabase/migrations/20260817034552_additional_participant_information_workflow.sql")]);
+  assert.match(admin,/Add Participant/);
+  assert.match(admin,/Flag Additional Participant Review/);
+  assert.match(admin,/Do not infer a signer from document text/);
+  assert.match(edge,/command==="flag_additional_review"/);
+  assert.match(edge,/automatic_inference:false/);
+  assert.match(edge,/legal_conclusion:false/);
+  assert.match(edge,/command==="add"/);
+  assert.match(edge,/number_of_signers:signerCount/);
+  assert.match(edge,/participant_added/);
+  assert.match(edge,/original_submission_preserved:true/);
+  assert.match(migration,/Additional Participant Information Needed/);
+  assert.match(migration,/APS is not determining who is legally required to sign/);
+});
+
 test("participant information template is centralized, manual, neutral, and status-free",async()=>{
   const sql=await read("supabase/migrations/20260817033729_participant_edit_and_information_template.sql");
   assert.match(sql,/participant_information_needed/);
