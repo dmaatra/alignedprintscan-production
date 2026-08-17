@@ -682,6 +682,7 @@ function participantReadiness(person = {}) {
 }
 
 function assembledMobileAddress(detail = {}, fallback = "") {
+  detail ||= {};
   const street=[detail.street_address,detail.unit].filter(Boolean).join(" ").trim();
   const locality=[detail.city,detail.state].filter(Boolean).join(", ") + (detail.zip ? ` ${detail.zip}` : "");
   return [street,locality.trim()].filter(Boolean).join("\n") || fallback || "Not provided";
