@@ -99,7 +99,7 @@ function validate(body: Record<string, unknown>, adminRequest = false) {
   if (files.length && exceptionReason) {
     throw new Error("Remove the upload exception when documents are selected.");
   }
-  if (service === "ron" || (!adminRequest && service === "mobile")) {
+  if (service === "ron" || service === "mobile") {
     const signers = participants.filter((person) =>
       person.participant_type === "signer"
     );

@@ -1659,7 +1659,7 @@ async function selectRequest(id) {
 
     <section class="admin-detail-section" data-v3-tab-target="customer">
       <div class="admin-v3-section-heading"><span class="small-label">Transaction Participants</span><h3>Signers &amp; Witnesses</h3></div>
-      ${participants.length ? `<ul class="admin-file-list">${participants.map(person=>{const name=participantLegalName(person)||(person.witness_source==="aps"?`APS-provided witness × ${person.quantity||1}`:"Identity pending"),missing=participantReadiness(person);return `<li><strong>${escapeHtml(name)}</strong><small>${escapeHtml(statusLabel(person.participant_type))}${person.email?` · ${escapeHtml(person.email)}`:""}</small>${missing.length?`<p class="communication-error">Missing: ${escapeHtml(missing.join(", "))}</p>`:""}</li>`}).join("")}</ul>` : selectedRequest.service_type==="print" ? '<p class="admin-muted">Notarial signer information is not required for Print &amp; Scan.</p>' : '<p class="admin-muted">No structured participants are stored for this request.</p>'}
+      ${participants.length ? `<ul class="admin-file-list">${participants.map(person=>{const name=participantLegalName(person)||(person.witness_source==="aps"?`APS-provided witness × ${person.quantity||1}`:"Identity pending"),missing=participantReadiness(person),terminalStates=["completed","cancelled","declined"],locked=terminalStates.includes(String(selectedRequest.status||"").toLowerCase())||terminalStates.includes(String(selectedRequest.workflow_status||"").toLowerCase());return `<li><strong>${escapeHtml(name)}</strong><small>${escapeHtml(statusLabel(person.participant_type))}${person.email?` · ${escapeHtml(person.email)}`:""}${person.mobile_phone?` · ${escapeHtml(person.mobile_phone)}`:""}</small>${missing.length?`<p class="communication-error">Missing: ${escapeHtml(missing.join(", "))}</p>`:""}${locked?'<small>Participant editing is locked for this terminal request.</small>':`<button class="btn dark edit-participant-btn" data-participant-id="${escapeHtml(person.id)}" type="button">Edit Participant</button>`}</li>`}).join("")}</ul>` : selectedRequest.service_type==="print" ? '<p class="admin-muted">Notarial signer information is not required for Print &amp; Scan.</p>' : '<p class="admin-muted">No structured participants are stored for this request.</p>'}
       ${notarialActs.length ? `<h4>Requested acts</h4><ul class="admin-file-list">${notarialActs.map(act=>`<li><strong>Act ${act.act_number}: ${escapeHtml(statusLabel(act.act_type))}</strong><small>${act.requires_admin_review ? "Admin review required; APS must not choose certificate language." : "Customer selection recorded"}</small></li>`).join("")}</ul>` : ""}
     </section>
 
@@ -1779,6 +1779,7 @@ async function selectRequest(id) {
   $("#messageTemplateSelect", detail)?.addEventListener("change", () => applyMessageTemplate(messageTemplates, customer, ref));
   $("#previewMessageBtn", detail)?.addEventListener("click", previewMessage);
   $("#sendMessageBtn", detail)?.addEventListener("click", () => sendComposedMessage(false));
+  $$(".edit-participant-btn", detail).forEach(button => button.addEventListener("click", () => openParticipantEditor(participants.find(person => person.id === button.dataset.participantId))));
   $("#sendAndUpdateStatusBtn", detail)?.addEventListener("click", () => sendComposedMessage(true));
   $$(".release-document-btn", detail).forEach(button => button.addEventListener("click", () => setDocumentRelease(button.dataset.fileId, button.dataset.released !== "true")));
   $$(".review-proof-document-btn", detail).forEach(button => button.addEventListener("click", () => reviewProofDocument(button.dataset.fileId)));
@@ -2298,6 +2299,18 @@ async function sendComposedMessage(updateStatus) {
   }
 }
 
+function openParticipantEditor(person) {
+  if (!person || !selectedRequest) return;
+  const dialog = document.createElement("dialog");
+  dialog.className = "admin-v3-danger-dialog participant-editor-dialog";
+  dialog.innerHTML = `<form method="dialog"><button class="dialog-close" value="cancel" formnovalidate aria-label="Close">×</button><span class="small-label">Transaction Participant</span><h2>Edit Participant</h2><p>Correct the participant record for ${escapeHtml(refFromId(selectedRequest.id))}. This does not change the primary customer profile.</p><div class="admin-detail-grid"><label>First name<input name="first_name" value="${escapeHtml(person.first_name||"")}" required></label><label>Middle name<input name="middle_name" value="${escapeHtml(person.middle_name||"")}"></label><label>Last name<input name="last_name" value="${escapeHtml(person.last_name||"")}" required></label><label>Email<input name="email" type="email" value="${escapeHtml(person.email||"")}" ${selectedRequest.service_type==="ron"&&person.participant_type==="signer"?"required":""}></label><label>Phone<input name="mobile_phone" type="tel" value="${escapeHtml(person.mobile_phone||"")}"></label></div><p class="admin-muted">Saving recalculates participant readiness, resolves only participant-related Review Queue blockers when complete, and records an internal Timeline audit event.</p><div class="status-actions"><button value="cancel" formnovalidate class="btn secondary">Close</button><button type="button" class="btn primary save-participant">Save Participant</button></div><div class="workflow-result" role="status" aria-live="polite"></div></form>`;
+  document.body.append(dialog);
+  dialog.addEventListener("close",()=>dialog.remove());
+  const form=dialog.querySelector("form");
+  dialog.querySelector(".save-participant").addEventListener("click",async(event)=>{if(!form.reportValidity())return;const button=event.currentTarget;button.disabled=true;try{const values=Object.fromEntries(new FormData(form));const {data,error}=await adminClient.functions.invoke("admin-update-participant",{body:{participant_id:person.id,...values}});if(error||!data?.ok)throw new Error(data?.error||error?.message||"Participant update failed.");dialog.close();showToast("Participant updated and readiness recalculated.");await refreshSelectedRequest(selectedRequest.id)}catch(error){dialog.querySelector(".workflow-result").textContent=error.message;button.disabled=false;}});
+  dialog.showModal();
+}
+
 async function updateRequestStatus(status) {
   // STATUS UPDATE + EMAILS
   // Uses the deployed Edge Function so status, history, customer email,
@@ -2506,7 +2519,11 @@ async function createAdditionalInvoice() {
     if (data && data.ok === false)
       throw new Error(data.error || "Final balance invoice was not created.");
 
-    showToast("Final balance invoice issued and customer email sent.");
+    if (data?.notification?.ok === false) {
+      alert("The final balance invoice was created successfully, but the customer notification failed. The financial record was preserved; retry the notification from Messages after reviewing the failure.");
+    } else {
+      showToast(data?.notification?.duplicate ? "Final balance invoice already exists; customer notification was not duplicated." : "Final balance invoice issued and customer email sent.");
+    }
     await loadRequests();
     await selectRequest(selectedRequest.id);
   } catch (err) {
