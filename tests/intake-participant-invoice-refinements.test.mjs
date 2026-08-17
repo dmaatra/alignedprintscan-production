@@ -71,3 +71,11 @@ test("Print & Scan remains free of notarial participant requirements",async()=>{
   assert.match(admin,/participant_state:service==="print"\?"not_applicable"/);
   assert.match(intake,/if \(service === "ron" \|\| service === "mobile"\)/);
 });
+
+test("Admin New Order disables every inactive service control after dynamic fields render",async()=>{
+  const admin=await read("assets/js/admin-v3.js");
+  assert.match(admin,/setWizardRonStructuredFields\(form\);\s*setWizardMobileAddonFields\(form\);\s*setWizardService\(form\);/);
+  assert.match(admin,/form\.addEventListener\("input", \(\) => \{ setWizardRonStructuredFields\(form\); setWizardMobileAddonFields\(form\); setWizardService\(form\);/);
+  assert.match(admin,/form\.addEventListener\("change",[\s\S]*setWizardRonStructuredFields\(form\); setWizardMobileAddonFields\(form\); setWizardService\(form\);/);
+  assert.match(admin,/control\.disabled = !active/);
+});
