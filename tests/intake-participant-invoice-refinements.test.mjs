@@ -4,11 +4,17 @@ import test from "node:test";
 const read=(path)=>readFile(new URL(`../${path}`,import.meta.url),"utf8");
 
 test("supplemental invoice reports notification outcome without rolling back financial success",async()=>{
-  const source=await read("supabase/functions/create-additional-invoice/index.ts");
-  assert.match(source,/const notificationResponse = await fetch/);
+  const [source,admin]=await Promise.all([read("supabase/functions/create-additional-invoice/index.ts"),read("assets/js/admin.js")]);
+  assert.match(source,/async function notifyFinalInvoice/);
   assert.match(source,/retryable: true/);
   assert.match(source,/invoice:\$\{invoice\.id\}:final_balance_due/);
-  assert.ok(source.indexOf("const notificationResponse")>source.indexOf('await logTimeline'));
+  assert.ok(source.lastIndexOf("notifyFinalInvoice(requestId, invoice, note)")>source.indexOf('await logTimeline'));
+  assert.match(source,/notification_only/);
+  assert.match(source,/Only an unpaid active supplemental or final invoice notification can be retried/);
+  assert.match(admin,/paymentInvoiceBalance\(invoice\) > 0\.009/);
+  assert.match(admin,/Retry Invoice Notification/);
+  assert.match(admin,/notification_only: true/);
+  assert.match(admin,/The invoice remains unchanged/);
 });
 
 test("participant editing is server-authorized, audited, readiness-aware, and terminal-locked",async()=>{
