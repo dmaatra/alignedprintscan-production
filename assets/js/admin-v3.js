@@ -725,6 +725,15 @@
             ${field("Witness provider", "mobile_witness_provider", '<select name="mobile_witness_provider"><option value="client">Customer</option><option value="aligned">APS</option><option value="shared">Shared</option><option value="not_sure">Not sure</option></select>', "admin-v3-witness-field")}
             ${field("Customer-provided witnesses", "mobile_client_witness_count", '<input name="mobile_client_witness_count" type="number" min="0" value="0">', "admin-v3-witness-field")}
             <div id="adminMobileWitnessFields" class="wide admin-v3-witness-field"></div>
+            ${field("Add print preparation", "mobile_print_addon", '<input name="mobile_print_addon" type="checkbox" class="admin-v3-check">')}
+            ${field("Add scan-to-PDF support", "mobile_scan_addon", '<input name="mobile_scan_addon" type="checkbox" class="admin-v3-check">')}
+            ${field("Print pages", "mobile_pages", '<input name="mobile_pages" type="number" min="0" value="0">', "admin-v3-mobile-print-field")}
+            ${field("Copies", "mobile_copies", '<input name="mobile_copies" type="number" min="1" value="1">', "admin-v3-mobile-print-field")}
+            ${field("Print color", "mobile_color", '<select name="mobile_color"><option value="bw">Black &amp; white</option><option value="color">Color</option></select>', "admin-v3-mobile-print-field")}
+            ${field("Print sides", "mobile_sides", '<select name="mobile_sides"><option value="single">Single-sided</option><option value="double">Double-sided</option></select>', "admin-v3-mobile-print-field")}
+            ${field("Paper size", "mobile_paper_size", '<select name="mobile_paper_size"><option value="letter">Letter</option><option value="legal">Legal</option></select>', "admin-v3-mobile-print-field")}
+            ${field("Paper type", "mobile_paper_type", '<select name="mobile_paper_type"><option value="standard">Standard</option><option value="resume">Résumé</option><option value="cardstock">Cardstock</option><option value="color-paper">Color paper</option></select>', "admin-v3-mobile-print-field")}
+            ${field("Approximate scan pages", "mobile_scan_pages", '<input name="mobile_scan_pages" type="number" min="0" value="0">', "admin-v3-mobile-scan-field")}
           </div></div>
           <div class="admin-v3-service-fields" data-service-fields="print" hidden><div class="admin-v3-form-grid">
             ${field("Print / copy pages", "print_pages", '<input name="print_pages" type="number" min="0" value="0">')}
@@ -935,6 +944,8 @@
       add("Mobile appointment base (0–15 miles)", pricing.mobile?.appointmentBase || 50);
       add("Notarial act estimate", (pricing.mobile?.notarialAct || 10) * acts);
       add("APS-provided witness coordination", (pricing.mobile?.providedWitness || 50) * wizardWitnessAllocation(form, "mobile").aps);
+      if (wizardChecked(form, "mobile_print_addon")) add("Print preparation estimate", wizardPrintCost(form, "mobile"));
+      if (wizardChecked(form, "mobile_scan_addon")) add("Scan to PDF estimate", wizardNumber(form, "mobile_scan_pages") * (pricing.documentServices?.scanPerPage || 1));
     } else {
       add("Printing / copies estimate", wizardPrintCost(form));
       add("Scan to PDF estimate", wizardNumber(form, "print_scan_pages") * (pricing.documentServices?.scanPerPage || 1));
@@ -971,6 +982,11 @@
       $$(`.admin-v3-service-fields[data-service-fields="${service}"] .admin-v3-witness-field`, form).forEach((field) => { field.hidden = !show; });
     });
   }
+  function setWizardMobileAddonFields(form) {
+    const printActive=wizardChecked(form,"mobile_print_addon"),scanActive=wizardChecked(form,"mobile_scan_addon");
+    $$(".admin-v3-mobile-print-field",form).forEach(field=>{field.hidden=!printActive;$$('input, select, textarea',field).forEach(control=>{control.disabled=!printActive;});});
+    $$(".admin-v3-mobile-scan-field",form).forEach(field=>{field.hidden=!scanActive;$$('input, select, textarea',field).forEach(control=>{control.disabled=!scanActive;});});
+  }
   function setWizardRonStructuredFields(form) {
     const signerHost=$("#adminRonSignerFields",form),actHost=$("#adminRonActFields",form),witnessHost=$("#adminRonWitnessFields",form);if(!signerHost||!actHost||!witnessHost)return;
     const signerCount=Math.min(10,Math.max(1,wizardNumber(form,"ron_signer_count",1))),actCount=Math.max(1,wizardNumber(form,"ron_notarization_count",1));
@@ -998,10 +1014,17 @@
     if (service === "ron") details = `${wizardValue(form, "document_type") || "Document type not provided"}; ${wizardNumber(form, "ron_signer_count", 1)} signer(s); ${wizardNumber(form, "ron_notarization_count", 1)} notarial act(s)`;
     if (service === "mobile") details = `${wizardValue(form, "mobile_street")}, ${wizardValue(form, "mobile_city")}, ${wizardValue(form, "mobile_state")} ${wizardValue(form, "mobile_zip")}; ${wizardNumber(form, "mobile_notarization_count", 1)} notarial act(s)`;
     if (service === "print") details = `${wizardNumber(form, "print_pages")} page(s) × ${wizardNumber(form, "print_copies", 1)} copy/copies; ${wizardNumber(form, "print_scan_pages")} scan page(s)`;
+    const signerPrefix=service==="ron"?"ron":service==="mobile"?"mobile":null;
+    const signerCount=signerPrefix?Math.max(1,wizardNumber(form,`${signerPrefix}_signer_count`,1)):0;
+    const signerReview=signerPrefix?Array.from({length:signerCount},(_,index)=>[wizardValue(form,`${signerPrefix}_signer_first_${index}`),wizardValue(form,`${signerPrefix}_signer_middle_${index}`),wizardValue(form,`${signerPrefix}_signer_last_${index}`)].filter(Boolean).join(" ")).join("; "):"Not applicable";
+    const actCount=signerPrefix?Math.max(1,wizardNumber(form,`${signerPrefix}_notarization_count`,1)):0;
+    const actReview=signerPrefix?Array.from({length:actCount},(_,index)=>labelFromStatus(wizardValue(form,`${signerPrefix}_act_type_${index}`)||"unsure")).join("; "):"Not applicable";
+    const witnessReview=signerPrefix?labelFromStatus(wizardValue(form,`${signerPrefix}_witness_need`)||"no"):"Not applicable";
+    const mobileOptions=service==="mobile"?[wizardChecked(form,"mobile_print_addon")?"Print preparation":null,wizardChecked(form,"mobile_scan_addon")?"Scan to PDF":null].filter(Boolean).join("; ")||"None":"Not applicable";
     const appointment = [wizardValue(form, "appointment_date") || wizardValue(form, "preferred_date"), wizardValue(form, "appointment_time") || wizardValue(form, "preferred_time_window")].filter(Boolean).join(" · ") || "Not scheduled";
     $("#adminWizardReview", form).innerHTML = `
       <article><h3>Customer</h3><dl>${reviewItem("Name", customer)}${reviewItem("Email", wizardValue(form, "email"))}${reviewItem("Phone", wizardValue(form, "phone"))}${reviewItem("Preferred contact", labelFromStatus(wizardValue(form, "preferred_contact")))}</dl></article>
-      <article><h3>Service</h3><dl>${reviewItem("Service", serviceLabels[service])}${reviewItem("Details", details)}</dl></article>
+      <article><h3>Service</h3><dl>${reviewItem("Service", serviceLabels[service])}${reviewItem("Details", details)}${reviewItem("Signers", signerReview)}${reviewItem("Requested acts", actReview)}${reviewItem("Witnesses", witnessReview)}${service==="mobile"?reviewItem("Mobile add-ons",mobileOptions):""}</dl></article>
       <article><h3>Appointment</h3><dl>${reviewItem("Requested / confirmed", appointment)}${reviewItem("Platform / location", service === "ron" ? wizardValue(form, "ron_platform") : service === "mobile" ? wizardValue(form, "appointment_location") : labelFromStatus(wizardValue(form, "print_fulfillment")))}</dl></article>
       <article><h3>Pricing</h3><dl>${reviewItem("Estimated quote", wizardMoney(estimate.total))}${reviewItem("Invoice", "Created separately in Payments")}</dl></article>
       <article><h3>Documents</h3><dl>${reviewItem("Files", files.length ? files.map((file) => file.name).join(", ") : "No documents selected")}</dl></article>
@@ -1054,11 +1077,12 @@
     setWizardService(form);
     setWizardWitnessFields(form);
     setWizardRonStructuredFields(form);
+    setWizardMobileAddonFields(form);
     form.addEventListener("submit", createAdminRequest);
     form.elements.existing_customer_id?.addEventListener("change", () => selectExistingWizardCustomer(form));
     form.elements.service_type.forEach((control) => control.addEventListener("change", () => { setWizardService(form); setWizardWitnessFields(form); }));
-    form.addEventListener("input", () => { setWizardRonStructuredFields(form); updateWizardEstimate(form); });
-    form.addEventListener("change", (event) => { if (event.target.name?.endsWith("_witness_need")) setWizardWitnessFields(form); setWizardRonStructuredFields(form); updateWizardEstimate(form); });
+    form.addEventListener("input", () => { setWizardRonStructuredFields(form); setWizardMobileAddonFields(form); updateWizardEstimate(form); });
+    form.addEventListener("change", (event) => { if (event.target.name?.endsWith("_witness_need")) setWizardWitnessFields(form); setWizardRonStructuredFields(form); setWizardMobileAddonFields(form); updateWizardEstimate(form); });
     $("#adminWizardNext", form).addEventListener("click", () => { if (validateWizardStep(form)) showWizardStep(form, moduleState.newOrderStep + 1, true); });
     $("#adminWizardPrevious", form).addEventListener("click", () => showWizardStep(form, moduleState.newOrderStep - 1));
     $$('[data-wizard-jump]', form).forEach((button) => button.addEventListener("click", () => { const target = Number(button.dataset.wizardJump); if (target <= moduleState.newOrderMaxStep) showWizardStep(form, target); }));
@@ -1098,7 +1122,7 @@
         const witnesses = wizardWitnessAllocation(form, "mobile");
         const rawWitnessCount = wizardValue(form, "mobile_witness_count");
         const witnessNeed = wizardValue(form, "mobile_witness_need")||"no";
-        serviceDetail={street_address:collapseWhitespace(wizardValue(form,"mobile_street"))||null,unit:collapseWhitespace(wizardValue(form,"mobile_unit"))||null,city:collapseWhitespace(wizardValue(form,"mobile_city"))||null,state:normalizeState(wizardValue(form,"mobile_state")||"TX"),zip:normalizeZip(wizardValue(form,"mobile_zip"))||null,number_of_signers:wizardNumber(form,"mobile_signer_count",1),number_of_notarizations:wizardNumber(form,"mobile_notarization_count",1),witnesses_needed:witnessNeed==="yes",witness_need:witnessNeed,witness_count:rawWitnessCount==="not_sure"?null:witnesses.total,witness_provider:wizardValue(form,"mobile_witness_provider")||null,client_witness_count:witnesses.customer,provided_witness_count:witnesses.aps,witness_review_required:witnessNeed==="not_sure"||wizardValue(form,"mobile_witness_provider")==="not_sure"||rawWitnessCount==="not_sure",print_add_on:false,scan_back_needed:false,scan_to_pdf_needed:false,travel_miles:wizardNumber(form,"mobile_travel_miles")||null,travel_fee:(window.ALIGNED_PRICING?.mobile?.appointmentBase||50),dispatch_payment_required:(window.ALIGNED_PRICING?.mobile?.appointmentBase||50)};
+        serviceDetail={street_address:collapseWhitespace(wizardValue(form,"mobile_street"))||null,unit:collapseWhitespace(wizardValue(form,"mobile_unit"))||null,city:collapseWhitespace(wizardValue(form,"mobile_city"))||null,state:normalizeState(wizardValue(form,"mobile_state")||"TX"),zip:normalizeZip(wizardValue(form,"mobile_zip"))||null,number_of_signers:wizardNumber(form,"mobile_signer_count",1),number_of_notarizations:wizardNumber(form,"mobile_notarization_count",1),witnesses_needed:witnessNeed==="yes",witness_need:witnessNeed,witness_count:rawWitnessCount==="not_sure"?null:witnesses.total,witness_provider:wizardValue(form,"mobile_witness_provider")||null,client_witness_count:witnesses.customer,provided_witness_count:witnesses.aps,witness_review_required:witnessNeed==="not_sure"||wizardValue(form,"mobile_witness_provider")==="not_sure"||rawWitnessCount==="not_sure",print_add_on:wizardChecked(form,"mobile_print_addon"),scan_back_needed:false,scan_to_pdf_needed:wizardChecked(form,"mobile_scan_addon"),travel_miles:wizardNumber(form,"mobile_travel_miles")||null,travel_fee:(window.ALIGNED_PRICING?.mobile?.appointmentBase||50),dispatch_payment_required:(window.ALIGNED_PRICING?.mobile?.appointmentBase||50)};
         const signerCount=Math.min(10,Math.max(1,wizardNumber(form,"mobile_signer_count",1)));
         participants=Array.from({length:signerCount},(_,index)=>{const first=wizardValue(form,`mobile_signer_first_${index}`),middle=wizardValue(form,`mobile_signer_middle_${index}`),last=wizardValue(form,`mobile_signer_last_${index}`);return {participant_type:"signer",first_name:first,middle_name:middle||null,last_name:last,full_legal_name:[first,middle,last].filter(Boolean).join(" "),email:wizardValue(form,`mobile_signer_email_${index}`).toLowerCase()||null,mobile_phone:wizardValue(form,`mobile_signer_phone_${index}`)||null,identity_name_confirmed:true,sort_order:index};});
         for(let index=0;index<witnesses.customer;index++)participants.push({participant_type:"witness",full_legal_name:wizardValue(form,`mobile_witness_name_${index}`),email:wizardValue(form,`mobile_witness_email_${index}`).toLowerCase()||null,mobile_phone:wizardValue(form,`mobile_witness_phone_${index}`)||null,identity_name_confirmed:Boolean(wizardValue(form,`mobile_witness_name_${index}`)),sort_order:signerCount+index});
