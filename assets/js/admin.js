@@ -1544,6 +1544,10 @@ async function selectRequest(id) {
     "Customer not provided";
   const activeClientNote =
     selectedRequest.quote_notes || selectedRequest.customer_message || "";
+  const retryableFinalInvoice = invoices.find(invoice => isFinalPaymentInvoice(invoice) && paymentInvoiceBalance(invoice) > 0.009 && !["void", "cancelled"].includes(String(invoice.status || "").toLowerCase()));
+  const finalInvoiceMessageKey = retryableFinalInvoice ? `invoice:${retryableFinalInvoice.id}:final_balance_due` : null;
+  const finalInvoiceMessage = finalInvoiceMessageKey ? requestMessages.find(message => message.idempotency_key === finalInvoiceMessageKey) : null;
+  const showFinalInvoiceNotificationRetry = retryableFinalInvoice && (!finalInvoiceMessage || finalInvoiceMessage.delivery_state === "failed");
   const requestSchedule =
     selectedRequest.appointment_date ||
     selectedRequest.preferred_date ||
@@ -1592,6 +1596,7 @@ async function selectRequest(id) {
     <div class="admin-detail-section admin-v3-financial-actions" data-v3-tab-target="payments">
       <div><span class="small-label">Balance Summary</span><h3>${money(selectedRequest.balance_due_at_appointment || 0)} due at appointment</h3><p class="admin-muted">Use the quote and invoice records above as the authoritative financial history.</p></div>
       <div><span class="small-label">Financial Actions</span><p class="admin-muted">Quote, invoice, receipt, and final-balance actions remain in their existing sections.</p></div>
+      ${showFinalInvoiceNotificationRetry ? `<div class="email-notice"><strong>Customer invoice notification needs attention</strong><p>The supplemental invoice is preserved. Retry only its customer communication; this will not recreate the invoice or change the balance.</p><button id="retryFinalInvoiceNotificationBtn" class="btn dark" data-invoice-id="${escapeHtml(retryableFinalInvoice.id)}" type="button">Retry Invoice Notification</button></div>` : ""}
     </div>
 
     ${patch32AdminPanels(patch32Records)}
@@ -1816,6 +1821,7 @@ async function selectRequest(id) {
     "click",
     createAdditionalInvoice,
   );
+  $("#retryFinalInvoiceNotificationBtn")?.addEventListener("click", retryFinalInvoiceNotification);
   $("#convertServiceBtn")?.addEventListener("click",openServiceConversionWorkflow);
   $("#saveAppointmentBtn")?.addEventListener("click", saveAppointmentDetails);
   $("#archiveRequestBtn")?.addEventListener("click", toggleArchiveRequest);
@@ -2545,6 +2551,33 @@ async function createAdditionalInvoice() {
       btn.disabled = false;
       btn.textContent = "Issue Final Balance Invoice";
     }
+  }
+}
+
+async function retryFinalInvoiceNotification(event) {
+  if (!selectedRequest) return;
+  const button = event?.currentTarget;
+  const invoiceId = String(button?.dataset.invoiceId || "");
+  if (!invoiceId || button?.disabled) return;
+  button.disabled = true;
+  button.textContent = "Retrying…";
+  try {
+    const { data, error } = await adminClient.functions.invoke("create-additional-invoice", {
+      body: {
+        request_id: selectedRequest.id,
+        invoice_id: invoiceId,
+        notification_only: true,
+        note: selectedRequest.appointment_line_items_note || selectedRequest.quote_notes || "Final balance invoice ready for review and payment.",
+      },
+    });
+    if (error || data?.ok === false) throw new Error(data?.error || error?.message || "Customer notification failed.");
+    showToast(data?.duplicate ? "Invoice notification was already sent; no duplicate was created." : "Invoice notification sent and added to Communication Log.");
+    await refreshSelectedRequest(selectedRequest.id);
+    window.AdminV3?.activateTab("payments");
+  } catch (error) {
+    alert(`The invoice remains unchanged. Customer notification retry failed: ${error.message}`);
+    button.disabled = false;
+    button.textContent = "Retry Invoice Notification";
   }
 }
 

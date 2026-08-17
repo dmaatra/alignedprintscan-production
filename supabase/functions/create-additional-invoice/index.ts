@@ -101,6 +101,27 @@ async function logTimeline(requestId: string, invoice: any, total: number) {
   }
 }
 
+async function notifyFinalInvoice(requestId: string, invoice: any, note: string) {
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/send-order-email`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      request_id: requestId,
+      status: "final_balance_due",
+      invoice_id: invoice.id,
+      note,
+      source_type: "workflow",
+      source_event: "supplemental_invoice_created",
+      idempotency_key: `invoice:${invoice.id}:final_balance_due`,
+    }),
+  });
+  const result = await response.json().catch(() => ({}));
+  return { response, result };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -115,9 +136,11 @@ Deno.serve(async (req) => {
         "Final balance invoice for additional on-site or fulfillment services.",
     ).trim();
     const items = Array.isArray(body.items) ? body.items : [];
+    const notificationOnly = body.notification_only === true;
+    const requestedInvoiceId = String(body.invoice_id || "").trim();
 
     if (!requestId) throw new Error("Missing request_id.");
-    if (!items.length) {
+    if (!notificationOnly && !items.length) {
       throw new Error("At least one final balance line item is required.");
     }
 
@@ -131,6 +154,23 @@ Deno.serve(async (req) => {
       `invoices?select=id,invoice_number,invoice_type,status,amount_due,amount_paid,paid_amount,balance_due&service_request_id=eq.${requestId}&order=created_at.asc`,
     );
     const existing = (await readJsonOrEmpty(invoiceRowsRes)) || [];
+    if (notificationOnly) {
+      const invoice = existing.find((row: any) => row.id === requestedInvoiceId);
+      if (!invoice) throw new Error("Supplemental invoice not found for this request.");
+      const status = String(invoice.status || "").toLowerCase();
+      const supplemental = ["supplemental", "final", "final_balance", "additional"].some((kind) =>
+        String(invoice.invoice_type || "").includes(kind)
+      ) || /-0*[2-9]\d*$/.test(String(invoice.invoice_number || ""));
+      const balance = Number(invoice.balance_due ?? (Number(invoice.amount_due || 0) - Number(invoice.amount_paid || invoice.paid_amount || 0)));
+      if (!supplemental || balance <= 0 || ["void", "cancelled", "paid", "payment_received", "final_payment_received"].includes(status)) {
+        throw new Error("Only an unpaid active supplemental or final invoice notification can be retried.");
+      }
+      const notification = await notifyFinalInvoice(requestId, invoice, note || String(invoice.note || ""));
+      if (!notification.response.ok || notification.result?.ok === false) {
+        return json({ ok: false, retryable: true, error: String(notification.result?.error || "Customer notification failed.") }, 400);
+      }
+      return json({ ok: true, notification_only: true, duplicate: Boolean(notification.result?.duplicate), invoice });
+    }
     const openFinal = existing.find((row: any) => {
       const status = String(row.status || "").toLowerCase();
       const supplemental = ["supplemental", "final", "final_balance", "additional"].some((kind) =>
@@ -264,23 +304,9 @@ Deno.serve(async (req) => {
     await logTimeline(requestId, invoice, total);
 
     // Send the customer a branded Final Balance Due email.
-    const notificationResponse = await fetch(`${SUPABASE_URL}/functions/v1/send-order-email`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        request_id: requestId,
-        status: "final_balance_due",
-        invoice_id: invoice.id,
-        note,
-        source_type: "workflow",
-        source_event: "supplemental_invoice_created",
-        idempotency_key: `invoice:${invoice.id}:final_balance_due`,
-      }),
-    });
-    const notification = await notificationResponse.json().catch(() => ({}));
+    const notificationAttempt = await notifyFinalInvoice(requestId, invoice, note);
+    const notificationResponse = notificationAttempt.response;
+    const notification = notificationAttempt.result;
     if (!notificationResponse.ok || notification?.ok === false) {
       console.warn("Final invoice notification failed", {
         request_id: requestId,
