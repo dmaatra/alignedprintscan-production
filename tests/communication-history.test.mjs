@@ -28,8 +28,9 @@ function historyHarness({ existing = null } = {}) {
     if (url.endsWith("/messages") && init.method === "POST") {
       return response([{ id: "message-1", delivery_state: "sending" }], 201);
     }
-    if (url.includes("/messages?id=eq.message-1")) {
-      return response([{ id: "message-1" }]);
+    if (url.includes("/messages?id=eq.")) {
+      const id = url.split("/messages?id=eq.")[1];
+      return response([{ id, delivery_state: init.body ? JSON.parse(init.body).delivery_state : "sending" }]);
     }
     throw new Error(`Unexpected fetch: ${url}`);
   };
@@ -121,6 +122,21 @@ test("idempotent retry reuses history and never calls the provider again", async
     ).length,
     0,
   );
+});
+
+test("failed idempotent delivery is retried in place and becomes sent", async () => {
+  const existing = { id: "message-failed", delivery_state: "failed", error_message: "temporary" };
+  const harness = historyHarness({ existing });
+  let sends = 0;
+  const result = await deliverCustomerCommunication({ ...options, fetchImpl: harness.fetchImpl }, async () => {
+    sends += 1;
+    return { id: "provider-retry" };
+  });
+  assert.equal(result.duplicate, false);
+  assert.equal(sends, 1);
+  const retry = harness.calls.find(call => call.url.includes("messages?id=eq.message-failed") && call.body?.delivery_state === "sending");
+  assert.ok(retry);
+  assert.equal(harness.calls.filter(call => call.url.endsWith("/messages") && call.method === "POST").length, 0);
 });
 
 test("idempotent insert conflict re-reads history and never duplicates delivery", async () => {

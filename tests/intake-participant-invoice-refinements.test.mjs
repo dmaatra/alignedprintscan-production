@@ -1,0 +1,48 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+const read=(path)=>readFile(new URL(`../${path}`,import.meta.url),"utf8");
+
+test("supplemental invoice reports notification outcome without rolling back financial success",async()=>{
+  const source=await read("supabase/functions/create-additional-invoice/index.ts");
+  assert.match(source,/const notificationResponse = await fetch/);
+  assert.match(source,/retryable: true/);
+  assert.match(source,/invoice:\$\{invoice\.id\}:final_balance_due/);
+  assert.ok(source.indexOf("const notificationResponse")>source.indexOf('await logTimeline'));
+});
+
+test("participant editing is server-authorized, audited, readiness-aware, and terminal-locked",async()=>{
+  const [config,edge,admin]=await Promise.all([read("supabase/config.toml"),read("supabase/functions/admin-update-participant/index.ts"),read("assets/js/admin.js")]);
+  assert.match(config,/\[functions\.admin-update-participant\][\s\S]*verify_jwt = true/);
+  assert.match(edge,/rpc\/is_admin/);
+  assert.match(edge,/participant_updated/);
+  assert.match(edge,/participant_information_incomplete/);
+  assert.match(edge,/terminal\.has/);
+  assert.match(edge,/resolved_at/);
+  assert.match(admin,/Edit Participant/);
+  assert.match(admin,/functions\.invoke\("admin-update-participant"/);
+});
+
+test("participant information template is centralized, manual, neutral, and status-free",async()=>{
+  const sql=await read("supabase/migrations/20260817033729_participant_edit_and_information_template.sql");
+  assert.match(sql,/participant_information_needed/);
+  assert.match(sql,/Do not send identity documents or sensitive identity-verification information by email/);
+  assert.match(sql,/associated_status=null/);
+  assert.match(sql,/active=true/);
+});
+
+test("Admin New Order captures canonical Mobile participants, acts, address, documents, and provenance",async()=>{
+  const [admin,intake]=await Promise.all([read("assets/js/admin-v3.js"),read("supabase/functions/public-request-submit/index.ts")]);
+  for(const token of ["adminMobileSignerFields","mobile_signer_first_","mobile_signer_middle_","mobile_signer_last_","mobile_act_type_","mobile_witness_name_","document_upload_exception_reason"])assert.match(admin,new RegExp(token));
+  assert.match(admin,/participants=Array\.from\(\{length:signerCount\}/);
+  assert.match(admin,/notarialActs=Array\.from\(\{length:actCount\}/);
+  assert.match(admin,/appointment_location:service==="mobile"\?mobileAddress/);
+  assert.match(intake,/service === "ron" \|\| service === "mobile"/);
+  assert.match(intake,/adminRequest[\s\S]*\? "supporting_document"[\s\S]*: "customer_document"/);
+});
+
+test("Print & Scan remains free of notarial participant requirements",async()=>{
+  const [admin,intake]=await Promise.all([read("assets/js/admin-v3.js"),read("supabase/functions/public-request-submit/index.ts")]);
+  assert.match(admin,/participant_state:service==="print"\?"not_applicable"/);
+  assert.match(intake,/if \(service === "ron" \|\| service === "mobile"\)/);
+});

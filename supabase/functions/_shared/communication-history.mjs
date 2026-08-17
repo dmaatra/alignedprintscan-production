@@ -75,7 +75,25 @@ export async function beginCustomerCommunication({
     const existing = await parse(
       await fetchImpl(existingEndpoint, { headers: headers(serviceRoleKey) }),
     );
-    if (existing?.[0]) return { message: existing[0], shouldSend: false };
+    if (existing?.[0]) {
+      const message = existing[0];
+      if (message.delivery_state !== "failed") {
+        return { message, shouldSend: false };
+      }
+      const retryRows = await parse(
+        await fetchImpl(`${supabaseUrl}/rest/v1/messages?id=eq.${message.id}`, {
+          method: "PATCH",
+          headers: headers(serviceRoleKey),
+          body: JSON.stringify({
+            delivery_state: "sending",
+            attempted_at: new Date().toISOString(),
+            failed_at: null,
+            error_message: null,
+          }),
+        }),
+      );
+      return { message: retryRows?.[0] || message, shouldSend: true };
+    }
   }
   const response = await fetchImpl(`${supabaseUrl}/rest/v1/messages`, {
     method: "POST",

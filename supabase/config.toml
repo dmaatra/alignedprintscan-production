@@ -104,6 +104,11 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/admin-service-adjustment/index.ts"
 
+[functions.admin-update-participant]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/admin-update-participant/index.ts"
+
 [functions.customer-request-action]
 enabled = true
 verify_jwt = false

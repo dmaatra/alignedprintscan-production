@@ -264,7 +264,7 @@ Deno.serve(async (req) => {
     await logTimeline(requestId, invoice, total);
 
     // Send the customer a branded Final Balance Due email.
-    await fetch(`${SUPABASE_URL}/functions/v1/send-order-email`, {
+    const notificationResponse = await fetch(`${SUPABASE_URL}/functions/v1/send-order-email`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
@@ -280,12 +280,28 @@ Deno.serve(async (req) => {
         idempotency_key: `invoice:${invoice.id}:final_balance_due`,
       }),
     });
+    const notification = await notificationResponse.json().catch(() => ({}));
+    if (!notificationResponse.ok || notification?.ok === false) {
+      console.warn("Final invoice notification failed", {
+        request_id: requestId,
+        invoice_id: invoice.id,
+        status: notificationResponse.status,
+        error: String(notification?.error || "Unknown notification failure").slice(0, 300),
+      });
+    }
 
     return json({
       ok: true,
       invoice,
       total,
       reference_number: refFromId(requestId),
+      notification: notificationResponse.ok && notification?.ok !== false
+        ? { ok: true, duplicate: Boolean(notification?.duplicate) }
+        : {
+          ok: false,
+          retryable: true,
+          error: String(notification?.error || "Customer notification failed."),
+        },
     });
   } catch (err) {
     return json({
