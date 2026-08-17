@@ -93,6 +93,7 @@ let supportTickets = [];
 let selectedRequest = null;
 let realtimeChannel = null;
 let supportChannel = null;
+const mobileTravelSession = new Map();
 
 function setText(id, text) {
   const el = document.getElementById(id);
@@ -128,6 +129,38 @@ function showToast(message) {
   toast.classList.add("show");
   setTimeout(() => toast.classList.remove("show"), 5200);
 }
+
+async function invokeMobileTravel(command, body = {}) {
+  const { data, error } = await adminClient.functions.invoke("admin-route-distance", { body: { command, request_id: selectedRequest?.id, ...body } });
+  if (error || !data?.ok) throw new Error(data?.error || error?.message || "Travel calculation failed.");
+  return data;
+}
+
+function travelCalculationMarkup(calculation) {
+  if (!calculation) return '<p class="admin-muted">Choose an origin to calculate driving distance. The quote is not changed until you select Add to Quote.</p>';
+  const applied=calculation.application_state==="applied";
+  return `<div class="mobile-travel-results" data-calculation-id="${escapeHtml(calculation.id)}"><div><span>One-way driving distance</span><strong>${Number(calculation.one_way_miles).toFixed(1)} miles</strong></div><div><span>Round-trip distance</span><strong>${Number(calculation.round_trip_miles).toFixed(1)} miles</strong></div><div><span>Estimated drive time</span><strong>${Math.max(1,Math.round(Number(calculation.duration_seconds||0)/60))} minutes each way</strong></div><div><span>APS travel tier</span><strong>${escapeHtml(calculation.pricing_tier_label)}</strong></div><div><span>Suggested travel fee</span><strong>${calculation.suggested_fee==null?"Manual pricing required":money(calculation.suggested_fee)}</strong></div><div><span>Quote state</span><strong>${applied?`${money(calculation.applied_fee)} currently applied`:"Preview only"}</strong></div></div><div class="mobile-travel-apply"><label>Actual fee<input id="mobileTravelFee" type="number" min="0" step=".01" value="${Number(calculation.applied_fee??calculation.suggested_fee??0).toFixed(2)}"></label><label>Override/operator note<textarea id="mobileTravelNote" placeholder="Required when fee differs from suggestion"></textarea></label><button id="applyMobileTravel" class="btn primary" type="button">${applied?"Update Quote":"Add to Quote"}</button></div>`;
+}
+
+async function loadMobileTravelCard({force=false}={}) {
+  const panel=$("#mobileTravelCard");if(!panel||selectedRequest?.service_type!=="mobile")return;
+  const status=$("#mobileTravelStatus",panel),results=$("#mobileTravelResults",panel);
+  try{
+    const state=await invokeMobileTravel("get_request"),detail=state.detail||{},destination=[detail.street_address,detail.unit,detail.city,detail.state,detail.zip].filter(Boolean).join(", ");
+    $("#mobileTravelDestination",panel).textContent=destination||"Complete the Mobile service address first.";
+    const originSelect=$("#mobileTravelOrigin",panel);originSelect.innerHTML='<option value="">Default travel origin</option>'+state.origins.map(origin=>`<option value="${escapeHtml(origin.id)}" ${origin.is_default?"selected":""}>${escapeHtml(origin.label)}${origin.is_default?" — Default":""}</option>`).join("")+'<option value="one-time">Use Different Starting Address</option>';
+    const prior=state.calculations?.[0]||null;results.innerHTML=travelCalculationMarkup(prior);bindMobileTravelActions();
+    if(!destination){status.textContent="Travel distance unavailable — complete the Mobile service address first.";return;}
+    if(!state.origins.length){status.textContent="Add an active Default Travel Origin in Settings or use a one-time starting address.";return;}
+    if(!state.configured){status.textContent="Automatic travel calculation is not configured. Manual travel entry remains available.";return;}
+    const sessionKey=`${selectedRequest.id}:${originSelect.value}:${destination}`;
+    if(force||!mobileTravelSession.has(sessionKey)){mobileTravelSession.set(sessionKey,true);await calculateMobileTravel(force);}
+    else status.textContent=prior?"Saved route result loaded.":"Ready to calculate.";
+  }catch(error){status.textContent=error.message;results.innerHTML=travelCalculationMarkup(null);bindMobileTravelActions();}
+}
+
+async function calculateMobileTravel(force=false){const panel=$("#mobileTravelCard"),status=$("#mobileTravelStatus",panel),origin=$("#mobileTravelOrigin",panel),oneTime=origin.value==="one-time";status.textContent="Calculating driving route…";try{const body={force,origin_id:oneTime?null:origin.value};if(oneTime)body.one_time_origin={label:"One-time origin",street_address:$("#oneTimeOriginStreet",panel).value,city:$("#oneTimeOriginCity",panel).value,state:$("#oneTimeOriginState",panel).value,zip:$("#oneTimeOriginZip",panel).value};const data=await invokeMobileTravel("calculate",body);$("#mobileTravelResults",panel).innerHTML=travelCalculationMarkup(data.calculation);status.textContent=data.cached?"Saved route result reused.":"Route calculated. Review the suggestion before changing the quote.";bindMobileTravelActions();}catch(error){status.textContent=error.message;}}
+function bindMobileTravelActions(){const panel=$("#mobileTravelCard");if(!panel)return;const origin=$("#mobileTravelOrigin",panel);origin?.addEventListener("change",()=>{$("#oneTimeOriginFields",panel).hidden=origin.value!=="one-time";if(origin.value!=="one-time")void calculateMobileTravel(false);});$("#recalculateMobileTravel",panel)?.addEventListener("click",()=>calculateMobileTravel(true));$("#applyMobileTravel",panel)?.addEventListener("click",async()=>{try{await invokeMobileTravel("apply_to_quote",{calculation_id:$(".mobile-travel-results",panel)?.dataset.calculationId,actual_fee:Number($("#mobileTravelFee",panel).value),operator_note:$("#mobileTravelNote",panel).value});showToast("Mobile travel charge applied through the maintained quote workflow.");await selectRequest(selectedRequest.id);}catch(error){alert(error.message);}});$("#applyManualMobileTravel",panel)?.addEventListener("click",async()=>{try{await invokeMobileTravel("apply_manual",{round_trip_miles:Number($("#manualTravelMiles",panel).value),actual_fee:Number($("#manualTravelFee",panel).value),operator_note:$("#manualTravelNote",panel).value});showToast("Manual Mobile travel charge applied with audit history.");await selectRequest(selectedRequest.id);}catch(error){alert(error.message);}});}
 
 function playNewRequestSound() {
   try {
@@ -1556,6 +1589,8 @@ async function selectRequest(id) {
 
     ${patch32AdminPanels(patch32Records)}
 
+    ${selectedRequest.service_type === "mobile" ? `<section class="admin-detail-section mobile-travel-card" id="mobileTravelCard" data-v3-tab-target="fulfillment"><div class="admin-v3-section-heading"><span class="small-label">Mobile Notary</span><h3>Travel Distance &amp; Quote</h3></div><div class="mobile-travel-route"><label>Starting location<select id="mobileTravelOrigin"><option>Loading saved origins…</option></select></label><div><span class="small-label">Destination</span><strong id="mobileTravelDestination">Loading structured service address…</strong></div><button id="recalculateMobileTravel" class="btn dark" type="button">Recalculate</button></div><div id="oneTimeOriginFields" class="admin-detail-grid" hidden><label>Street<input id="oneTimeOriginStreet"></label><label>City<input id="oneTimeOriginCity"></label><label>State<input id="oneTimeOriginState" maxlength="2"></label><label>ZIP<input id="oneTimeOriginZip"></label></div><p id="mobileTravelStatus" class="admin-muted" role="status" aria-live="polite">Loading travel configuration…</p><div id="mobileTravelResults"></div><details class="mobile-travel-manual"><summary>Manual mileage/travel charge fallback</summary><p>Use this only when automatic routing is unavailable. A reason is required and the route is not falsified.</p><div class="admin-detail-grid"><label>Round-trip miles<input id="manualTravelMiles" type="number" min="0" step=".1"></label><label>Travel fee<input id="manualTravelFee" type="number" min="0" step=".01"></label><label>Required reason<textarea id="manualTravelNote"></textarea></label></div><button id="applyManualMobileTravel" class="btn dark" type="button">Add Manual Travel to Quote</button></details></section>` : ""}
+
     <div class="admin-detail-section appointment-editor-card" data-v3-tab-target="fulfillment">
       <h3>Appointment / Fulfillment Details</h3>
       <p class="admin-muted">Update these before marking the appointment confirmed. These details appear on the customer's status page and in the appointment confirmation email.</p>
@@ -1785,6 +1820,7 @@ async function selectRequest(id) {
   // Convert the newly rendered long detail view into the v3 tab workspace.
   window.AdminV3?.organizeRequestDetail();
   void loadProofControlPanel();
+  void loadMobileTravelCard();
   void renderArchivedCustomerUpdates(id);
 }
 
