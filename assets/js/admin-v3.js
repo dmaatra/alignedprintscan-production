@@ -1074,15 +1074,15 @@
   function bindNewOrderWizard(form) {
     moduleState.newOrderStep = 0;
     moduleState.newOrderMaxStep = 0;
-    setWizardService(form);
-    setWizardWitnessFields(form);
     setWizardRonStructuredFields(form);
     setWizardMobileAddonFields(form);
+    setWizardService(form);
+    setWizardWitnessFields(form);
     form.addEventListener("submit", createAdminRequest);
     form.elements.existing_customer_id?.addEventListener("change", () => selectExistingWizardCustomer(form));
     form.elements.service_type.forEach((control) => control.addEventListener("change", () => { setWizardService(form); setWizardWitnessFields(form); }));
-    form.addEventListener("input", () => { setWizardRonStructuredFields(form); setWizardMobileAddonFields(form); updateWizardEstimate(form); });
-    form.addEventListener("change", (event) => { if (event.target.name?.endsWith("_witness_need")) setWizardWitnessFields(form); setWizardRonStructuredFields(form); setWizardMobileAddonFields(form); updateWizardEstimate(form); });
+    form.addEventListener("input", () => { setWizardRonStructuredFields(form); setWizardMobileAddonFields(form); setWizardService(form); updateWizardEstimate(form); });
+    form.addEventListener("change", (event) => { if (event.target.name?.endsWith("_witness_need")) setWizardWitnessFields(form); setWizardRonStructuredFields(form); setWizardMobileAddonFields(form); setWizardService(form); updateWizardEstimate(form); });
     $("#adminWizardNext", form).addEventListener("click", () => { if (validateWizardStep(form)) showWizardStep(form, moduleState.newOrderStep + 1, true); });
     $("#adminWizardPrevious", form).addEventListener("click", () => showWizardStep(form, moduleState.newOrderStep - 1));
     $$('[data-wizard-jump]', form).forEach((button) => button.addEventListener("click", () => { const target = Number(button.dataset.wizardJump); if (target <= moduleState.newOrderMaxStep) showWizardStep(form, target); }));
