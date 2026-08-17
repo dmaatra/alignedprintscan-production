@@ -65,7 +65,7 @@ test("conversion migration is backward-compatible and admin-authorized",async()=
 
 test("production pages load the post-release frontend asset version",async()=>{
   const admin=await read("admin-dashboard.html");
-  assert.match(admin,/admin\.js\?v=20260817-mobile-travel-activation-fix/);
+  assert.match(admin,/admin\.js\?v=20260817-mobile-travel-null-detail-fix/);
   assert.match(admin,/admin-v3\.js\?v=20260817-mobile-travel-ors/);
   for(const page of ["index.html","mobile-notary.html","print-scan.html","remote-online-notary.html","pricing.html","success.html","support.html","accessibility.html","privacy.html","faq.html","terms.html"]){
     assert.match(await read(page),/script\.js\?v=20260816-post-release/,page);
