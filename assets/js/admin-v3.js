@@ -757,7 +757,7 @@
             ${field("RON platform", "ron_platform", '<input name="ron_platform" placeholder="Example: Proof">', "admin-v3-ron-schedule")}
             ${field("Session link", "appointment_link", '<input name="appointment_link" type="url" placeholder="https://">', "admin-v3-ron-schedule")}
             ${field("Appointment location", "appointment_location", '<input name="appointment_location" placeholder="Business name or meeting point">', "admin-v3-mobile-schedule")}
-            ${field("Fulfillment method", "print_fulfillment", '<select name="print_fulfillment"><option value="pickup">Pickup</option><option value="courier">Courier delivery</option><option value="mobile-service">Mobile document service</option><option value="mobile-notary">Mobile notary add-on</option></select>', "admin-v3-print-schedule")}
+            ${field("Fulfillment method", "print_fulfillment", '<select name="print_fulfillment"><option value="courier">Courier delivery</option><option value="mobile-service">Mobile document service</option><option value="mobile-notary">Mobile notary add-on</option></select>', "admin-v3-print-schedule")}
             ${field("Appointment / fulfillment instructions", "appointment_instructions", '<textarea name="appointment_instructions" rows="4" placeholder="Access details, timing, or fulfillment instructions."></textarea>', "wide")}
           </div>
         </section>
@@ -949,7 +949,7 @@
     } else {
       add("Printing / copies estimate", wizardPrintCost(form));
       add("Scan to PDF estimate", wizardNumber(form, "print_scan_pages") * (pricing.documentServices?.scanPerPage || 1));
-      const fulfillment = wizardValue(form, "print_fulfillment") || "pickup";
+      const fulfillment = wizardValue(form, "print_fulfillment") || "courier";
       if (fulfillment === "courier") add("Courier delivery estimate", pricing.documentServices?.courierBase || 20);
       if (fulfillment === "mobile-service") add("Mobile document service base", pricing.documentServices?.mobileDocumentBase || 20);
       if (fulfillment === "mobile-notary") {
@@ -1130,7 +1130,7 @@
         notarialActs=Array.from({length:actCount},(_,index)=>({act_type:wizardValue(form,`mobile_act_type_${index}`)||"unsure"}));
       }
       if (service === "print") {
-        const pages = wizardNumber(form,"print_pages"); const copies = Math.max(1,wizardNumber(form,"print_copies",1)); const totalPages = pages*copies; const isColor=wizardValue(form,"print_color")==="color"; const fulfillment=wizardValue(form,"print_fulfillment")||"pickup"; const printTotal=wizardPrintCost(form);
+        const pages = wizardNumber(form,"print_pages"); const copies = Math.max(1,wizardNumber(form,"print_copies",1)); const totalPages = pages*copies; const isColor=wizardValue(form,"print_color")==="color"; const fulfillment=wizardValue(form,"print_fulfillment")||"courier"; const printTotal=wizardPrintCost(form);
         serviceDetail={fulfillment_type:fulfillment,delivery_address:wizardValue(form,"print_delivery_address")||null,black_white_pages:isColor?0:totalPages,color_pages:isColor?totalPages:0,paper_size:wizardValue(form,"print_paper_size")||null,print_sides:wizardValue(form,"print_sides")||null,paper_type:wizardValue(form,"print_paper_type")||null,scan_pages:wizardNumber(form,"print_scan_pages"),delivery_fee:fulfillment==="courier"?(window.ALIGNED_PRICING?.documentServices?.courierBase||20):0,print_total:printTotal,courier_requested:fulfillment==="courier",mobile_document_service_requested:fulfillment==="mobile-service",courier_fee:fulfillment==="courier"?(window.ALIGNED_PRICING?.documentServices?.courierBase||20):0,mobile_document_service_fee:fulfillment==="mobile-service"?(window.ALIGNED_PRICING?.documentServices?.mobileDocumentBase||20):0,copy_pages:totalPages};
       }
       const files=await Promise.all(Array.from(form.elements.order_documents?.files||[]).map(adminFilePayload));

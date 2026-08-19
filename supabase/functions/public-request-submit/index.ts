@@ -1,4 +1,5 @@
 import { requireProofAdmin } from "../_shared/proof/admin-auth.ts";
+import { detectPdfPageCount } from "../_shared/pdf-page-count.ts";
 
 /** Atomic-enough, server-authorized intake orchestration.
  * Browser callers never receive service-role credentials or direct table write access.
@@ -170,7 +171,6 @@ Deno.serve(async (req) => {
       "fulfillment_state",
       "document_upload_exception_reason",
       "document_upload_exception_detail",
-      "detected_pdf_page_count",
       "is_same_day_request",
       "is_next_day_request",
       "appointment_date",
@@ -380,6 +380,7 @@ Deno.serve(async (req) => {
         throw new Error(`Document upload failed: ${await upload.text()}`);
       }
       storedPaths.push(path);
+      const pageCount = await detectPdfPageCount(raw, file.name || name, mime);
       await rows(
         await api("request_files", {
           method: "POST",
@@ -389,6 +390,11 @@ Deno.serve(async (req) => {
             file_path: path,
             file_type: mime,
             file_size: raw.length,
+            detected_page_count: pageCount.count,
+            page_count_status: pageCount.status,
+            page_count_source: pageCount.status === "detected" ? "server" : null,
+            page_count_error: pageCount.error,
+            page_count_updated_at: new Date().toISOString(),
             uploaded_by: adminRequest ? "admin" : "customer",
             document_category: String(
               file.category || (adminRequest ? "admin-intake" : "intake"),

@@ -513,7 +513,7 @@ function renderRequestList() {
 async function getFiles(requestId) {
   const { data, error } = await adminClient
     .from("request_files")
-    .select("id,file_name,file_path,file_type,file_size,created_at,uploaded_by,document_category,document_classification,customer_visible,eligible_for_delivery,review_state,is_active")
+    .select("id,file_name,file_path,file_type,file_size,created_at,uploaded_by,document_category,document_classification,customer_visible,eligible_for_delivery,review_state,is_active,detected_page_count,page_count_status,page_count_source,page_count_error")
     .eq("service_request_id", requestId)
     .order("created_at", {
       ascending: false,
@@ -1269,11 +1269,33 @@ async function uploadAdminDocuments(requestId) {
     const classification = document.querySelector("#adminDocumentClassification")?.value || "internal_document";
     // Classification describes the file; it never releases the file. Customer
     // access requires the separate, explicit Release to Customer action.
-    const { error: recordError } = await adminClient.from("request_files").insert({ service_request_id: requestId, file_name: file.name, file_path: path, file_type: file.type, file_size: file.size, uploaded_by: "admin", document_category: "admin-additional", document_classification: classification, customer_visible: false, eligible_for_delivery: false, is_active: true });
+    const { data: records, error: recordError } = await adminClient.from("request_files").insert({ service_request_id: requestId, file_name: file.name, file_path: path, file_type: file.type, file_size: file.size, uploaded_by: "admin", document_category: "admin-additional", document_classification: classification, customer_visible: false, eligible_for_delivery: false, is_active: true, page_count_status: /pdf$/i.test(file.name)||file.type==="application/pdf"?"pending":"not_pdf" }).select("id");
     if (recordError) throw recordError;
+    if ((/pdf$/i.test(file.name) || file.type === "application/pdf") && records?.[0]?.id) {
+      const result = await adminClient.functions.invoke("admin-pdf-page-count", { body: { request_id: requestId, file_id: records[0].id } });
+      if (result.error || result.data?.ok === false) console.warn("PDF page count requires review:", result.data?.error || result.error?.message);
+    }
   }
   await adminClient.from("request_timeline_events").insert({ service_request_id: requestId, event_type: "documents_uploaded", title: "Administrator documents uploaded", detail: `${files.length} document(s) uploaded by administrator.`, actor_type: "admin", metadata: { file_count: files.length } });
   await selectRequest(requestId);
+}
+
+async function verifyPdfPageCount(fileId, currentValue = "") {
+  const value = prompt("Enter the verified PDF page count.", currentValue || "");
+  if (value === null) return;
+  const count = Number(value);
+  if (!Number.isInteger(count) || count < 1) {
+    alert("Enter a whole-number page count of 1 or more.");
+    return;
+  }
+  const { data, error } = await adminClient.functions.invoke("admin-pdf-page-count", {
+    body: { request_id: selectedRequest.id, file_id: fileId, manual_page_count: count },
+  });
+  if (error || data?.ok === false) throw new Error(data?.error || error?.message || "Page count could not be saved.");
+  await loadRequests();
+  await selectRequest(selectedRequest.id);
+  window.AdminV3?.activateTab("documents");
+  showToast("Verified PDF page count saved and request total recalculated.");
 }
 
 async function proofCommand(command, extra = {}, documentCommand = false) {
@@ -1520,7 +1542,9 @@ async function selectRequest(id) {
       const removable=!customerUpload&&!proofCompleted&&!released&&f.uploaded_by==="admin";
       const removalControl=removable?`<button class="btn danger-ghost remove-admin-document-btn" data-file-id="${escapeHtml(f.id)}" type="button">Remove Admin Upload</button>`:"";
       const received = f.created_at ? ` · Received ${new Date(f.created_at).toLocaleString()}` : "";
-      return `<li class="${proofCompleted ? "proof-completed-document" : ""}" ${proofCompleted ? `data-proof-return-document="${escapeHtml(f.id)}"` : ""}>${proofCompleted ? '<span class="small-label">Proof Completed Document</span>' : ""}${url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(f.file_name)}</a>` : escapeHtml(f.file_name)}<small>${escapeHtml(provenance)} · ${f.file_type || "file"} · ${f.file_size ? Math.round(f.file_size / 1024) + " KB" : ""}${received} · ${reviewed ? "APS Review Complete" : proofCompleted ? "Pending APS Review" : escapeHtml(access)} · ${escapeHtml(access)}</small>${reviewControl}${releaseControl}${removalControl}</li>`;
+      const pageState = f.page_count_status === "detected" || f.page_count_status === "manual" ? `${f.detected_page_count} page${f.detected_page_count===1?"":"s"}${f.page_count_status==="manual"?" · manually verified":""}` : f.page_count_status === "failed" || f.page_count_status === "pending" ? "Page count needs review" : "Page count not applicable";
+      const pageControl = (/pdf$/i.test(f.file_name)||f.file_type==="application/pdf") ? `<button class="btn dark verify-pdf-page-count-btn" data-file-id="${escapeHtml(f.id)}" data-current="${escapeHtml(f.detected_page_count||"")}" type="button">${f.page_count_status==="failed"||f.page_count_status==="pending"?"Enter Verified Page Count":"Correct Page Count"}</button>` : "";
+      return `<li class="${proofCompleted ? "proof-completed-document" : ""}" ${proofCompleted ? `data-proof-return-document="${escapeHtml(f.id)}"` : ""}>${proofCompleted ? '<span class="small-label">Proof Completed Document</span>' : ""}${url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(f.file_name)}</a>` : escapeHtml(f.file_name)}<small>${escapeHtml(provenance)} · ${f.file_type || "file"} · ${f.file_size ? Math.round(f.file_size / 1024) + " KB" : ""} · ${escapeHtml(pageState)}${received} · ${reviewed ? "APS Review Complete" : proofCompleted ? "Pending APS Review" : escapeHtml(access)} · ${escapeHtml(access)}</small>${pageControl}${reviewControl}${releaseControl}${removalControl}</li>`;
     }),
   );
   const quoteLocked = [
@@ -1562,7 +1586,7 @@ async function selectRequest(id) {
       <div class="admin-v3-overview-grid">
         <div class="admin-v3-overview-card is-financial"><span class="small-label">Financial position</span><strong>${money(totalInvoiced)}</strong><p>${paidInvoiceCount} of ${activeInvoices.length} invoice${activeInvoices.length === 1 ? "" : "s"} paid · ${money(totalPaid)} paid · ${money(totalBalance)} due</p></div>
         <div class="admin-v3-overview-card"><span class="small-label">Schedule</span><strong>${escapeHtml(requestSchedule)}</strong><p>${escapeHtml(selectedRequest.appointment_time || selectedRequest.preferred_time_window || "Time not confirmed")}</p></div>
-        <div class="admin-v3-overview-card is-supporting"><span class="small-label">Operational detail</span><strong>${selectedRequest.detected_pdf_page_count || "—"} pages</strong><p>Detected PDF pages when available</p></div>
+        <div class="admin-v3-overview-card is-supporting"><span class="small-label">PDF page count</span><strong>${selectedRequest.pdf_page_count_review_required ? "Needs review" : selectedRequest.detected_pdf_page_count ? `${selectedRequest.detected_pdf_page_count} pages` : "Pending source document"}</strong><p>${selectedRequest.pdf_page_count_changed_after_quote ? "Changed after quote — pricing review required" : "Authoritative active source-PDF total"}</p></div>
       </div>
       <div class="admin-v3-overview-grid acquisition-summary" aria-label="Acquisition and review status">
         <div class="admin-v3-overview-card"><span class="small-label">How Customer Found APS</span><strong>${escapeHtml(statusLabel(selectedRequest.customer_reported_source || "not_recorded"))}</strong><p>${escapeHtml(selectedRequest.customer_reported_source_detail || "Customer-reported source")}</p></div>
@@ -1609,12 +1633,10 @@ async function selectRequest(id) {
       <div class="admin-detail-grid appointment-fields">
         <label>Appointment Date<input id="appointmentDate" type="date" value="${escapeHtml(selectedRequest.appointment_date || selectedRequest.preferred_date || "")}"></label>
         <label>Appointment Time<input id="appointmentTime" type="text" placeholder="Example: 6:30 PM CST" value="${escapeHtml(selectedRequest.appointment_time || selectedRequest.preferred_time_window || "")}"></label>
-        <label>Platform / Method<input id="appointmentPlatform" type="text" placeholder="Mobile document service, courier delivery, Proof, BlueNotary" value="${escapeHtml(selectedRequest.appointment_platform || "")}"></label>
+        ${selectedRequest.service_type === "ron" ? `<label>RON Platform<input id="appointmentPlatform" type="text" placeholder="Proof" value="${escapeHtml(selectedRequest.appointment_platform || "")}"></label>` : selectedRequest.service_type === "print" ? `<label>Delivery Method<input id="appointmentPlatform" type="text" placeholder="Courier or mobile document service" value="${escapeHtml(selectedRequest.appointment_platform || serviceDetails.fulfillment_type || "")}"></label>` : ""}
       </div>
-      <label>Service Address / Delivery Address</label>
-      <input id="appointmentLocation" type="text" placeholder="Mobile service address, delivery address, or meeting location" value="${escapeHtml(selectedRequest.appointment_location || "")}">
-      <label>Secure Session Link / Optional URL</label>
-      <input id="appointmentLink" type="text" placeholder="RON session URL, meeting link, or tracking/support link" value="${escapeHtml(selectedRequest.appointment_link || selectedRequest.ron_session_url || "")}">
+      ${selectedRequest.service_type === "mobile" ? `<label>Mobile Service Address</label><input id="appointmentLocation" type="text" placeholder="Service address or meeting location" value="${escapeHtml(selectedRequest.appointment_location || mobileAddress || "")}">` : selectedRequest.service_type === "print" ? `<label>Delivery / Service Address</label><input id="appointmentLocation" type="text" placeholder="Courier or mobile-service destination" value="${escapeHtml(selectedRequest.appointment_location || serviceDetails.delivery_address || "")}">` : ""}
+      ${selectedRequest.service_type === "ron" ? `<label>Secure Session Link</label><input id="appointmentLink" type="text" placeholder="Proof signer session URL" value="${escapeHtml(selectedRequest.appointment_link || selectedRequest.ron_session_url || "")}">` : ""}
       <label>Appointment Instructions</label>
       <textarea id="appointmentInstructions" placeholder="ID requirements, parking notes, RON prep, upload instructions, etc.">${escapeHtml(selectedRequest.appointment_instructions || "")}</textarea>
       <label>Due at Appointment / Additional Onsite Fees</label>
@@ -1633,7 +1655,7 @@ async function selectRequest(id) {
       <p class="admin-muted">Record what was actually purchased and fulfilled. A zero balance alone does not complete an order.</p>
       <fieldset><legend>Purchased service components</legend>${({ron:["ron"],mobile:["mobile"],print:["print_copy","scan","courier"]}[selectedRequest.service_type] || []).map(component => `<label class="check"><input class="completion-component" type="checkbox" value="${component}" ${(completionFacts.components || []).includes(component) ? "checked" : ""}> ${escapeHtml(statusLabel(component))}</label>`).join("")}</fieldset>
       <div class="admin-detail-grid">
-        ${(selectedRequest.service_type === "ron" ? [["ron_session_completed","RON session completed"]] : selectedRequest.service_type === "mobile" ? [["mobile_service_completed","Mobile service performed"]] : [["production_completed","Print/Copy production completed"],["scan_completed","Scanning completed"],["pickup_completed","Pickup/handoff completed"],["delivery_completed","Delivery/handoff completed"],["proof_of_delivery_present","Proof of delivery present"]]).map(([key,label]) => `<label class="check"><input class="completion-fact" data-key="${key}" type="checkbox" ${completionFacts[key] ? "checked" : ""}> ${label}</label>`).join("")}
+        ${(selectedRequest.service_type === "ron" ? [["ron_session_completed","RON session completed"]] : selectedRequest.service_type === "mobile" ? [["mobile_service_completed","Mobile service performed"]] : [["production_completed","Print/Copy production completed"],["scan_completed","Scanning completed"],...(String(serviceDetails.fulfillment_type||"").toLowerCase()==="pickup"?[["pickup_completed","Legacy pickup/handoff completed"]]:[]),["delivery_completed","Delivery/handoff completed"],["proof_of_delivery_present","Proof of delivery present"]]).map(([key,label]) => `<label class="check"><input class="completion-fact" data-key="${key}" type="checkbox" ${completionFacts[key] ? "checked" : ""}> ${label}</label>`).join("")}
       </div>
       <div class="admin-detail-grid">
         <label>Document readiness<select id="completionDocumentState"><option value="pending" ${selectedRequest.document_state === "pending" ? "selected" : ""}>Pending / review required</option><option value="approved" ${selectedRequest.document_state === "approved" ? "selected" : ""}>Reviewed and ready</option><option value="not_applicable" ${selectedRequest.document_state === "not_applicable" ? "selected" : ""}>Not applicable</option></select></label>
@@ -1792,6 +1814,7 @@ async function selectRequest(id) {
   $$(".release-document-btn", detail).forEach(button => button.addEventListener("click", () => setDocumentRelease(button.dataset.fileId, button.dataset.released !== "true")));
   $$(".review-proof-document-btn", detail).forEach(button => button.addEventListener("click", () => reviewProofDocument(button.dataset.fileId)));
   $$(".remove-admin-document-btn", detail).forEach(button => button.addEventListener("click", async()=>{if(!confirm("Remove this unreleased administrator upload? The file history will be preserved as inactive."))return;try{await invokeServiceAdjustment({command:"remove_admin_document",file_id:button.dataset.fileId});await selectRequest(id);showToast("Administrator upload removed; audit history preserved.");}catch(error){alert(error.message||"Document could not be removed.")}}));
+  $$(".verify-pdf-page-count-btn", detail).forEach(button => button.addEventListener("click", async()=>{try{await verifyPdfPageCount(button.dataset.fileId,button.dataset.current)}catch(error){alert(error.message||"Page count could not be saved.")}}));
   window.setTimeout(() => focusProofDocument(selectedRequest.id), 0);
   $("#saveCompletionFactsBtn", detail)?.addEventListener("click", saveCompletionFacts);
   $("#completeWithExceptionBtn", detail)?.addEventListener("click", completeWithException);
@@ -2741,7 +2764,7 @@ async function loadRequests() {
   const { data, error } = await adminClient
     .from("service_requests")
     .select(
-      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,is_same_day_request,is_next_day_request,quote_expires_at,customer_reported_source,customer_reported_source_detail,acquisition_landing_page,acquisition_referrer_host,acquisition_utm_source,acquisition_utm_medium,acquisition_utm_campaign,first_touch_source,review_request_state,review_request_eligible_at,review_request_sent_at,customers(id,first_name,last_name,email,phone,preferred_contact,created_at,normalized_email,normalized_phone,normalized_name,merged_at,first_acquisition_source,first_acquisition_at),request_participants(participant_type,first_name,middle_name,last_name,full_legal_name,email),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
+      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,pdf_page_count_review_required,pdf_page_count_changed_after_quote,is_same_day_request,is_next_day_request,quote_expires_at,customer_reported_source,customer_reported_source_detail,acquisition_landing_page,acquisition_referrer_host,acquisition_utm_source,acquisition_utm_medium,acquisition_utm_campaign,first_touch_source,review_request_state,review_request_eligible_at,review_request_sent_at,customers(id,first_name,last_name,email,phone,preferred_contact,created_at,normalized_email,normalized_phone,normalized_name,merged_at,first_acquisition_source,first_acquisition_at),request_participants(participant_type,first_name,middle_name,last_name,full_legal_name,email),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
     )
     .order("created_at", {
       ascending: false,
