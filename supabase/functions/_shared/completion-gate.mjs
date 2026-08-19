@@ -15,6 +15,7 @@ function componentSet(input) {
     if (String(detail.fulfillment_type || "").toLowerCase() === "courier") components.add("courier");
   }
   if (type === "mobile" && input.detail?.scan_to_pdf_needed) components.add("scan");
+  if (type === "loan_signing") components.add("loan_signing");
   return components;
 }
 
@@ -67,6 +68,13 @@ export function evaluateCompletion(input) {
     if (facts.pickup_required !== false && !truthy(facts.pickup_completed)) add("COURIER_PICKUP", "Courier pickup not confirmed", "fulfillment");
     if (!truthy(facts.delivery_completed)) add("COURIER_DELIVERY", "Courier delivery/handoff not confirmed", "fulfillment");
     if (facts.proof_of_delivery_required === true && !truthy(facts.proof_of_delivery_present)) add("PROOF_OF_DELIVERY", "Required proof of delivery is missing", "documents");
+  }
+  if (components.has("loan_signing")) {
+    add(
+      "LOAN_SIGNING_RELEASE_7_REQUIREMENTS_PENDING",
+      "Loan Signing completion remains restricted until package, signing, scanback, and return requirements are verified in Release 7.",
+      "fulfillment",
+    );
   }
   if (facts.aps_deliverable_required === true && !released) add("CUSTOMER_DELIVERABLE", "Required customer deliverable not released", "documents");
   return { allowed: blockers.length === 0, blockers, outstanding_balance: outstanding, components: [...components] };

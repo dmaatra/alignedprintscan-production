@@ -49,4 +49,18 @@ window.ALIGNED_PRICING = Object.freeze({
       "26-30": 50,
     }),
   }),
+  loanSigning: Object.freeze({
+    policyVersion: "lsa-standard-2026-08",
+    standardPackages: Object.freeze({
+      loan_modification: 100,
+      seller: 125,
+      heloc: 125,
+      buyer_purchase: 150,
+      refinance: 150,
+      reverse_mortgage: 175,
+      commercial: 200,
+      other_custom: 200,
+    }),
+    standardAssumption: "Base local travel, one appointment, standard preparation, up to 150 pages × 2 B&W sets, standard scanbacks, and prepaid-label drop-off when required.",
+  }),
 });

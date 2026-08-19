@@ -81,7 +81,7 @@ function validate(body: Record<string, unknown>, adminRequest = false) {
   const service = String(request.service_type || "");
   const exceptionReason = String(request.document_upload_exception_reason || "")
     .trim();
-  if (!["ron", "mobile", "print"].includes(service)) {
+  if (!["ron", "mobile", "print", "loan_signing"].includes(service)) {
     throw new Error("A supported service is required.");
   }
   if (
@@ -124,6 +124,22 @@ function validate(body: Record<string, unknown>, adminRequest = false) {
     ) {
       throw new Error(
         "Provide a supported type for every requested notarial act.",
+      );
+    }
+  }
+  if (service === "loan_signing") {
+    const signers = participants.filter((person) =>
+      person.participant_type === "signer"
+    );
+    if (
+      !signers.length || signers.length > 10 ||
+      signers.some((person) =>
+        !String(person.first_name || person.full_legal_name || "").trim() ||
+        !String(person.email || "").includes("@")
+      )
+    ) {
+      throw new Error(
+        "Provide between 1 and 10 structured Loan Signing signers with individual email addresses.",
       );
     }
   }
@@ -298,6 +314,53 @@ Deno.serve(async (req) => {
           "copy_pages",
         ],
       },
+      loan_signing: {
+        table: "loan_signing_assignments",
+        keys: [
+          "organization_id",
+          "ordering_party_type",
+          "ordering_party_name",
+          "company_file_number",
+          "escrow_transaction_number",
+          "signing_type",
+          "signing_method",
+          "property_address_line1",
+          "property_address_line2",
+          "property_city",
+          "property_state",
+          "property_zip",
+          "signing_address_line1",
+          "signing_address_line2",
+          "signing_city",
+          "signing_state",
+          "signing_zip",
+          "signing_location_notes",
+          "signer_confirmation_required",
+          "package_status",
+          "package_received_at",
+          "package_page_count",
+          "borrower_copy_required",
+          "scanbacks_required",
+          "approval_before_return_required",
+          "physical_return_required",
+          "return_method",
+          "prepaid_label_provided",
+          "stipulations",
+          "lsa_stage",
+          "pricing_source",
+          "base_assignment_fee",
+          "offered_fee",
+          "aps_counter",
+          "agreed_fee",
+          "travel_adjustment",
+          "printing_overage",
+          "after_hours_adjustment",
+          "other_authorized_adjustment",
+          "pricing_status",
+          "payment_terms",
+          "appointment_instructions",
+        ],
+      },
     };
     const config = detailConfig[input.service];
     await rows(
@@ -392,14 +455,18 @@ Deno.serve(async (req) => {
             file_size: raw.length,
             detected_page_count: pageCount.count,
             page_count_status: pageCount.status,
-            page_count_source: pageCount.status === "detected" ? "server" : null,
+            page_count_source: pageCount.status === "detected"
+              ? "server"
+              : null,
             page_count_error: pageCount.error,
             page_count_updated_at: new Date().toISOString(),
             uploaded_by: adminRequest ? "admin" : "customer",
             document_category: String(
               file.category || (adminRequest ? "admin-intake" : "intake"),
             ),
-            document_classification: adminRequest
+            document_classification: input.service === "loan_signing"
+              ? "lsa_signing_package_source"
+              : adminRequest
               ? "supporting_document"
               : "customer_document",
             customer_visible: !adminRequest,

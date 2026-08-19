@@ -229,6 +229,10 @@
               <span> 03 </span>
               Print, Scan & Copies
             </button>
+            <button class="service-tab" data-service="loan_signing" type="button">
+              <span> 04 </span>
+              Loan Signing
+            </button>
           </div>
           <div class="dispatch-panel reveal">
             <div class="dispatch-icon">◆</div>
@@ -458,7 +462,23 @@
                     </div>
                   </div>
                 </div>
-                <div class="add-on-box" data-only="ron mobile print">
+                <div data-only="loan_signing">
+                  <div class="inline-note premium-note"><strong>Loan Signing:</strong> Package handling for lender, title, escrow, signing-service, or authorized direct-client assignments. This is distinct from an ordinary Mobile Notary request.</div>
+                  <div class="form-grid"><div><label>Ordering Party Type</label><select name="lsaOrderingPartyType"><option value="individual">Individual</option><option value="title_escrow">Title / Escrow</option><option value="signing_service">Signing Service</option><option value="lender">Lender</option><option value="law_office">Law Office</option><option value="other_business">Other Business</option></select></div><div><label>Ordering Party / Company</label><input name="lsaOrderingPartyName"></div></div>
+                  <div class="form-grid"><div><label>Company File / Order Number</label><input name="lsaCompanyFileNumber"></div><div><label>Escrow / Transaction Number</label><input name="lsaEscrowNumber"></div></div>
+                  <div class="form-grid"><div><label>Signing Type *</label><select name="lsaSigningType"><option value="buyer_purchase">Buyer / Purchase — $150</option><option value="seller">Seller — $125</option><option value="refinance">Refinance — $150</option><option value="heloc">HELOC — $125</option><option value="loan_modification">Loan Modification / Small Package — $100</option><option value="reverse_mortgage">Reverse Mortgage — $175</option><option value="commercial">Commercial / Complex — $200+ Custom</option><option value="other_custom">Other / Custom — review required</option></select></div><div><label>Signing Method *</label><select name="lsaSigningMethod"><option value="in_person_mobile">In Person / Mobile</option><option value="ron">Remote Online Notarization (subject to eligibility)</option><option value="either_tbd">Either / To Be Determined</option></select></div></div>
+                  <label>Signing Package</label><div class="upload-box"><input multiple name="loanSigningFiles" type="file"><span>Upload the source package if available. Server-side page counting remains active.</span></div>
+                  <div class="add-on-box"><h3>Signer Information</h3><div class="form-grid"><div><label>Number of Signers</label><input min="1" max="10" name="lsaSignerCount" type="number" value="1"></div></div><div id="loanSigningSignerFields"></div></div>
+                  <h3>Property Address</h3><input name="lsaPropertyStreet" placeholder="Property street"><div class="form-grid"><input name="lsaPropertyCity" placeholder="City"><input name="lsaPropertyState" value="TX" maxlength="2"><input name="lsaPropertyZip" placeholder="ZIP"></div>
+                  <h3>Signing Location</h3><input name="lsaSigningStreet" placeholder="Signing-location street (not assumed from property)"><div class="form-grid"><input name="lsaSigningCity" placeholder="City"><input name="lsaSigningState" value="TX" maxlength="2"><input name="lsaSigningZip" placeholder="ZIP"></div><textarea name="lsaSigningLocationNotes" placeholder="Signing-location notes or instructions"></textarea>
+                  <div class="form-grid"><div><label>Package Status</label><select name="lsaPackageStatus"><option value="not_provided">Not Provided</option><option value="awaiting_package">Awaiting Package</option><option value="package_received">Package Received</option><option value="replacement_received">Package Updated / Replacement Received</option><option value="package_ready">Package Ready</option></select></div><div><label>Signer/Borrower Copy Required</label><select name="lsaBorrowerCopy"><option value="unknown">Unknown</option><option value="yes">Yes</option><option value="no">No</option></select></div></div>
+                  <div class="form-grid"><div><label>Scanbacks Required</label><select name="lsaScanbacks"><option value="unknown">Unknown</option><option value="yes">Yes</option><option value="no">No</option></select></div><div><label>Approval Before Return Required</label><select name="lsaApprovalBeforeReturn"><option value="unknown">Unknown</option><option value="yes">Yes</option><option value="no">No</option></select></div></div>
+                  <div class="form-grid"><div><label>Physical Return Required</label><select name="lsaPhysicalReturn"><option value="unknown">Unknown</option><option value="yes">Yes</option><option value="no">No</option></select></div><div><label>Return Method</label><select name="lsaReturnMethod"><option value="">To be determined</option><option value="prepaid_carrier_label">Prepaid Carrier Label</option><option value="fedex">FedEx</option><option value="ups">UPS</option><option value="usps">USPS</option><option value="direct_title_escrow">Direct Title / Escrow Delivery</option><option value="other_authorized">Other Authorized Return</option></select></div></div>
+                  <label>Stipulations / Special Instructions</label><textarea name="lsaStipulations" placeholder="Capture the ordering party’s assignment instructions here."></textarea>
+                  <label class="check"><input name="lsaSignerConfirmationRequired" type="checkbox"> Signer confirmation required</label>
+                  <p class="fine-print">APS does not provide legal, lending, title, or escrow advice. RON eligibility is conditional. Final service scope and pricing depend on package, printing, scanback, travel, and return requirements.</p>
+                </div>
+                <div class="add-on-box" data-only="ron mobile print loan_signing">
                   <label class="check">
                     <input name="documentUploadException" type="checkbox" />
                     I&rsquo;m unable to upload the document right now.
@@ -857,7 +877,7 @@
                   <option>Priority handling requested</option>
                   <option>Flexible</option>
                 </select>
-                <div data-only="ron mobile">
+                <div data-only="ron mobile loan_signing">
                   <div class="ack-card">
                     <h3>Signer Readiness</h3>
                     <label class="check">
@@ -1015,6 +1035,6 @@
     <script src="assets/js/pricing-config.js"></script>
     <script src="assets/js/aps-growth-config.js?v=20260815-ga4-active"></script>
     <script src="assets/js/aps-growth.js?v=20260815-ga4-active"></script>
-    <script src="assets/js/script.js?v=20260819-release-1"></script>
+    <script src="assets/js/script.js?v=20260819-release-6"></script>
   </body>
 </html>

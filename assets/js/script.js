@@ -308,6 +308,15 @@ function calculateEstimate() {
       );
     }
   }
+  if (activeService === "loan_signing") {
+    const packagePrice =
+      PRICING.loanSigning?.standardPackages?.[f.lsaSigningType?.value];
+    addItem(
+      items,
+      "Standard Loan Signing package",
+      Number.isFinite(packagePrice) ? packagePrice : 0,
+    );
+  }
   total = items.reduce((s, i) => s + i[1], 0);
   qs("#estimateTotal").textContent = money(total);
   qs("#lineItems").innerHTML = items.length
@@ -330,11 +339,14 @@ function applyService(service) {
     ron: "Remote Online Notary",
     mobile: "Mobile Notary",
     print: "Print & Scan",
+    loan_signing: "Loan Signing",
   };
   const copy = {
     ron: "Secure online notarization estimate and onboarding details.",
     mobile: "Mobile appointment estimate with relevant add-ons.",
     print: "Printing, copies, scanning, and courier delivery estimate.",
+    loan_signing:
+      "Professional loan-signing assignment intake with package, scanback, and return requirements.",
   };
   qs("#summaryTitle").textContent = names[service];
   qs("#summaryCopy").textContent = copy[service];
@@ -343,19 +355,25 @@ function applyService(service) {
       ? "RON Details"
       : service === "mobile"
         ? "Mobile Notary Details"
-        : "Document Service Details";
+        : service === "loan_signing"
+          ? "Loan Signing Assignment Details"
+          : "Document Service Details";
   qs("#detailsHelp").textContent =
     service === "ron"
       ? "Tell us what will be notarized online."
       : service === "mobile"
         ? "Tell us where the mobile appointment will take place and what will be notarized."
-        : "Upload or describe the documents you need printed, copied, scanned, or couriered.";
+        : service === "loan_signing"
+          ? "Provide the assignment, signer, package, property, signing-location, and return details available now."
+          : "Upload or describe the documents you need printed, copied, scanned, or couriered.";
   qs("#optionsHeading").textContent =
     service === "ron"
       ? "RON Options"
       : service === "mobile"
         ? "Mobile Add-Ons"
-        : "Document Service Options";
+        : service === "loan_signing"
+          ? "Assignment Options"
+          : "Document Service Options";
   qsa("[data-only]").forEach((el) => {
     el.style.display = el.dataset.only.split(" ").includes(service)
       ? "block"
@@ -526,6 +544,11 @@ function renderSignerAndActFields() {
   const actHost = qs("#notarialActFields");
   const signerCount = Math.max(1, Number(wizard.elements.signerCount?.value || 1));
   const actCount = Math.max(1, Number(wizard.elements.notarizationCount?.value || 1));
+  const loanSignerHost = qs("#loanSigningSignerFields");
+  const loanSignerCount = Math.max(
+    1,
+    Number(wizard.elements.lsaSignerCount?.value || 1),
+  );
   if (
     signerHost &&
     (Number(signerHost.dataset.count || 0) !== signerCount ||
@@ -535,6 +558,16 @@ function renderSignerAndActFields() {
     signerHost.dataset.service = activeService;
     const signerRequired = ["ron", "mobile"].includes(activeService);
     signerHost.innerHTML = Array.from({ length: signerCount }, (_, index) => `<fieldset class="signer-identity"><legend>Signer ${index + 1} legal ID name</legend><div class="form-grid"><div><label>First name *</label><input name="signerFirstName${index}" required autocomplete="given-name"></div><div><label>Middle name (optional)</label><input name="signerMiddleName${index}" autocomplete="additional-name"></div><div><label>Last name *</label><input name="signerLastName${index}" required autocomplete="family-name"></div><div><label>Individual email${activeService === "ron" ? " *" : " (optional)"}</label><input name="signerEmail${index}" type="email" ${activeService === "ron" ? "required" : ""}></div></div></fieldset>`).join("");
+  }
+  if (
+    loanSignerHost &&
+    Number(loanSignerHost.dataset.count || 0) !== loanSignerCount
+  ) {
+    loanSignerHost.dataset.count = String(loanSignerCount);
+    loanSignerHost.innerHTML = Array.from(
+      { length: loanSignerCount },
+      (_, index) => `<fieldset class="signer-identity"><legend>Signer ${index + 1} legal ID name</legend><div class="form-grid"><div><label>First name *</label><input name="lsaSignerFirstName${index}" required autocomplete="given-name"></div><div><label>Middle name (optional)</label><input name="lsaSignerMiddleName${index}" autocomplete="additional-name"></div><div><label>Last name *</label><input name="lsaSignerLastName${index}" required autocomplete="family-name"></div><div><label>Individual email *</label><input name="lsaSignerEmail${index}" type="email" required></div></div></fieldset>`,
+    ).join("");
   }
   if (actHost && Number(actHost.dataset.count || 0) !== actCount) {
     actHost.dataset.count = String(actCount);
@@ -667,6 +700,18 @@ function validateStep(showErrors = false) {
         ok = false;
         if (showErrors)
           markInvalid("pages", "Enter the number of print or scan pages.");
+      }
+    }
+    if (activeService === "loan_signing") {
+      need(["lsaSigningType", "lsaSigningMethod", "lsaSignerCount"]);
+      if (!uploadException) need(["loanSigningFiles"]);
+      const signerCount = Math.max(1, numericValue("lsaSignerCount"));
+      for (let index = 0; index < signerCount; index += 1) {
+        need([
+          `lsaSignerFirstName${index}`,
+          `lsaSignerLastName${index}`,
+          `lsaSignerEmail${index}`,
+        ]);
       }
     }
     if (["ron", "mobile"].includes(activeService)) {
@@ -1154,6 +1199,7 @@ async function selectedFilesPayload() {
     mobileFiles: "mobile-documents",
     mobilePrintFiles: "mobile-print-files",
     printFiles: "print-scan-files",
+    loanSigningFiles: "lsa-signing-package",
   };
   const payload = [];
   for (const [inputName, category] of Object.entries(categoryByInput)) {
@@ -1193,7 +1239,7 @@ async function submitPublicRequestSecurely(event) {
       estimated_total: estimateNumber(),
       request_completeness: "submitted",
       document_state: exception ? "pending" : "received",
-      participant_state: ["ron", "mobile"].includes(activeService) ? "submitted" : "not_applicable",
+      participant_state: ["ron", "mobile", "loan_signing"].includes(activeService) ? "submitted" : "not_applicable",
       fulfillment_state: "not_started",
       document_upload_exception_reason: exception ? f.documentUploadExceptionReason?.value || null : null,
       document_upload_exception_detail: exception ? f.documentUploadExceptionDetail?.value || null : null,
@@ -1219,6 +1265,26 @@ async function submitPublicRequestSecurely(event) {
       for (let index = 0; index < allocation.customerProvides; index += 1) participants.push({ participant_type: "witness", role: "witness", witness_source: "customer", full_legal_name: f[`${activeService}WitnessLegalName${index}`]?.value?.trim() || null, email: normalizeEmail(f[`${activeService}WitnessEmail${index}`]?.value) || null, identity_name_confirmed: true, sort_order: signerCount + index });
       if (allocation.alignedProvides > 0) participants.push({ participant_type: "witness", role: "witness", witness_source: "aps", full_legal_name: null, email: null, identity_name_confirmed: false, quantity: allocation.alignedProvides, sort_order: signerCount + allocation.customerProvides });
     }
+    if (activeService === "loan_signing") {
+      const signerCount = Math.max(1, numericValue("lsaSignerCount"));
+      for (let index = 0; index < signerCount; index += 1) {
+        participants.push({
+          participant_type: "signer",
+          role: "signer",
+          first_name: f[`lsaSignerFirstName${index}`]?.value?.trim() || null,
+          middle_name: f[`lsaSignerMiddleName${index}`]?.value?.trim() || null,
+          last_name: f[`lsaSignerLastName${index}`]?.value?.trim() || null,
+          full_legal_name: [
+            f[`lsaSignerFirstName${index}`]?.value,
+            f[`lsaSignerMiddleName${index}`]?.value,
+            f[`lsaSignerLastName${index}`]?.value,
+          ].map((value) => value?.trim()).filter(Boolean).join(" ") || null,
+          email: normalizeEmail(f[`lsaSignerEmail${index}`]?.value) || null,
+          identity_name_confirmed: true,
+          sort_order: index,
+        });
+      }
+    }
     let serviceDetail = {};
     if (activeService === "ron") {
       const allocation = witnessAllocation("ron");
@@ -1229,6 +1295,41 @@ async function submitPublicRequestSecurely(event) {
       const scanAddon = checkedValue("mobileScanAddon");
       const printTotal = printAddon ? printCost({ pages: numericValue("mobilePrintPages"), color: f.mobileColor?.value, sides: f.mobileSides?.value, paperSize: f.mobilePaperSize?.value, paperType: f.mobilePaperType?.value }) : 0;
       serviceDetail = { street_address: f.street.value || null, unit: null, city: f.city.value || null, state: "TX", zip: f.zip.value || null, number_of_signers: numericValue("signerCount"), number_of_notarizations: numericValue("notarizationCount"), witnesses_needed: f.mobileWitnessNeed?.value === "yes", witness_need: f.mobileWitnessNeed?.value || "no", witness_count: f.mobileWitnessCount?.value === "not_sure" ? null : allocation.total, witness_provider: f.mobileWitnessProvider?.value || null, client_witness_count: allocation.customerProvides, provided_witness_count: allocation.alignedProvides, witness_review_required: f.mobileWitnessNeed?.value === "not_sure" || f.mobileWitnessProvider?.value === "not_sure" || f.mobileWitnessCount?.value === "not_sure", print_add_on: printAddon, scan_back_needed: false, scan_to_pdf_needed: scanAddon, travel_miles: null, travel_fee: 50, dispatch_payment_required: 50 + printTotal };
+    } else if (activeService === "loan_signing") {
+      const packagePrice =
+        PRICING.loanSigning?.standardPackages?.[f.lsaSigningType?.value];
+      serviceDetail = {
+        ordering_party_type: f.lsaOrderingPartyType?.value || "individual",
+        ordering_party_name: f.lsaOrderingPartyName?.value?.trim() || null,
+        company_file_number: f.lsaCompanyFileNumber?.value?.trim() || null,
+        escrow_transaction_number: f.lsaEscrowNumber?.value?.trim() || null,
+        signing_type: f.lsaSigningType?.value,
+        signing_method: f.lsaSigningMethod?.value,
+        property_address_line1: f.lsaPropertyStreet?.value?.trim() || null,
+        property_city: f.lsaPropertyCity?.value?.trim() || null,
+        property_state: f.lsaPropertyState?.value?.trim() || null,
+        property_zip: f.lsaPropertyZip?.value?.trim() || null,
+        signing_address_line1: f.lsaSigningStreet?.value?.trim() || null,
+        signing_city: f.lsaSigningCity?.value?.trim() || null,
+        signing_state: f.lsaSigningState?.value?.trim() || null,
+        signing_zip: f.lsaSigningZip?.value?.trim() || null,
+        signing_location_notes: f.lsaSigningLocationNotes?.value?.trim() || null,
+        signer_confirmation_required: checkedValue("lsaSignerConfirmationRequired"),
+        package_status: f.lsaPackageStatus?.value || "not_provided",
+        borrower_copy_required: f.lsaBorrowerCopy?.value || "unknown",
+        scanbacks_required: f.lsaScanbacks?.value || "unknown",
+        approval_before_return_required:
+          f.lsaApprovalBeforeReturn?.value || "unknown",
+        physical_return_required: f.lsaPhysicalReturn?.value || "unknown",
+        return_method: f.lsaReturnMethod?.value || null,
+        stipulations: f.lsaStipulations?.value?.trim() || null,
+        lsa_stage: "assignment_received",
+        pricing_source: "standard_aps",
+        base_assignment_fee: Number.isFinite(packagePrice) ? packagePrice : null,
+        agreed_fee: null,
+        pricing_status: "draft",
+        payment_terms: "prepaid",
+      };
     } else {
       const fulfillment = f.fulfillment?.value || "courier";
       const pages = numericValue("pages");
@@ -1312,7 +1413,12 @@ function initWizard() {
   });
   wizard.addEventListener("submit", submitPublicRequestSecurely);
   const params = new URLSearchParams(location.search);
-  applyService(params.get("service") || "ron");
+  const requestedService = params.get("service");
+  applyService(
+    ["ron", "mobile", "print", "loan_signing"].includes(requestedService)
+      ? requestedService
+      : "ron",
+  );
   window.APSGrowth?.event?.("request_service_view", { service_category: window.APSGrowth.serviceCategory(activeService) });
 }
 initWizard();
