@@ -30,7 +30,14 @@ export function evaluateCompletion(input) {
     const paid = Number(invoice.amount_paid || invoice.paid_amount || 0);
     return sum + Math.max(0, Number(invoice.balance_due ?? (due - paid)));
   }, 0);
-  if (outstanding > 0.009) add("OUTSTANDING_BALANCE", `Outstanding balance: $${outstanding.toFixed(2)}`, "payments");
+  const prepaidOutstanding = invoices.reduce((sum, invoice) => {
+    if (["void", "cancelled"].includes(String(invoice.status || "").toLowerCase())) return sum;
+    const term = String(invoice.payment_terms || "prepaid").toLowerCase();
+    if (term !== "prepaid") return sum;
+    const due = Number(invoice.amount_due || 0), paid = Number(invoice.amount_paid || invoice.paid_amount || 0);
+    return sum + Math.max(0, Number(invoice.balance_due ?? (due - paid)));
+  }, 0);
+  if (prepaidOutstanding > 0.009) add("OUTSTANDING_BALANCE", `Outstanding prepaid balance: $${prepaidOutstanding.toFixed(2)}`, "payments");
   const openReviews = (input.reviewItems || []).filter((item) => String(item.state || "open") === "open");
   if (openReviews.length) add("OPEN_REVIEW_ITEMS", `${openReviews.length} required review item(s) remain unresolved`, openReviews[0]?.target_tab || "overview");
   if (blocked.has(String(input.request?.document_state || "").toLowerCase())) add("DOCUMENT_REVIEW", "Document review or re-review is not complete", "documents");

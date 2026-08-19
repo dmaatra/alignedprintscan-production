@@ -161,6 +161,199 @@ Deno.serve(async (request) => {
     }
     const event = JSON.parse(rawBody);
 
+    if (String(event.type || "").startsWith("invoice.")) {
+      const providerInvoice = event.data?.object || {};
+      const apsInvoiceId = String(
+        providerInvoice.metadata?.aps_invoice_id || "",
+      ).trim();
+      const invoiceRows = await readJson(
+        await supabaseFetch(
+          apsInvoiceId
+            ? `invoices?select=*&id=eq.${apsInvoiceId}&limit=1`
+            : `invoices?select=*&stripe_invoice_id=eq.${
+              encodeURIComponent(providerInvoice.id || "")
+            }&limit=1`,
+        ),
+      );
+      const apsInvoice = invoiceRows?.[0];
+      if (!apsInvoice?.organization_id) {
+        return new Response(JSON.stringify({ received: true, ignored: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const prior = await readJson(
+        await supabaseFetch(
+          `stripe_business_webhook_events?select=id,processing_status&stripe_event_id=eq.${
+            encodeURIComponent(event.id)
+          }&limit=1`,
+        ),
+      );
+      if (prior?.[0]?.processing_status === "processed") {
+        return new Response(
+          JSON.stringify({ received: true, duplicate: true }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (!prior?.length) {
+        await supabaseFetch("stripe_business_webhook_events", {
+          method: "POST",
+          body: JSON.stringify({
+            stripe_event_id: event.id,
+            event_type: event.type,
+            object_id: providerInvoice.id || null,
+            livemode: Boolean(event.livemode),
+            processing_status: "received",
+          }),
+        });
+      }
+      const amountDue = Number(providerInvoice.amount_due || 0) / 100;
+      const providerPaid = Number(providerInvoice.amount_paid || 0) / 100;
+      const currentPaid = Number(
+        apsInvoice.amount_paid || apsInvoice.paid_amount || 0,
+      );
+      const paidDelta = Math.max(0, providerPaid - currentPaid);
+      let financialStatus = apsInvoice.financial_status;
+      if (event.type === "invoice.paid") financialStatus = "paid";
+      else if (
+        ["invoice.payment_failed", "invoice.payment_action_required"].includes(
+          event.type,
+        )
+      ) financialStatus = "payment_failed";
+      else if (
+        providerPaid > 0 && Number(providerInvoice.amount_remaining || 0) > 0
+      ) financialStatus = "partially_paid";
+      else if (event.type === "invoice.voided") financialStatus = "voided";
+      else if (event.type === "invoice.finalized") {
+        financialStatus = apsInvoice.payment_terms === "prepaid"
+          ? "prepayment_required"
+          : `open_${apsInvoice.payment_terms}`;
+      }
+      let paymentId = null;
+      if (paidDelta > 0) {
+        const paymentRows = await readJson(
+          await supabaseFetch("request_payments", {
+            method: "POST",
+            body: JSON.stringify({
+              service_request_id: apsInvoice.service_request_id,
+              invoice_id: apsInvoice.id,
+              organization_id: apsInvoice.organization_id,
+              payment_stage: "business",
+              amount: paidDelta,
+              payment_method: "stripe",
+              payment_state: event.type === "invoice.paid"
+                ? "succeeded"
+                : "processing",
+              external_reference: providerInvoice.payment_intent || event.id,
+              stripe_payment_intent_id: providerInvoice.payment_intent || null,
+              provider_event_id: event.id,
+              idempotency_key: `stripe-event:${event.id}`,
+              receipt_url: providerInvoice.hosted_invoice_url || null,
+              note: "Stripe business invoice reconciliation.",
+              is_test: !event.livemode,
+            }),
+          }),
+        );
+        paymentId = paymentRows?.[0]?.id || null;
+      }
+      const balance = Math.max(0, amountDue - providerPaid);
+      await supabaseFetch(`invoices?id=eq.${apsInvoice.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: event.type === "invoice.paid"
+            ? "paid"
+            : event.type === "invoice.voided"
+            ? "void"
+            : "open",
+          payment_status: event.type === "invoice.paid"
+            ? "paid"
+            : providerPaid > 0
+            ? "partially_paid"
+            : "unpaid",
+          financial_status: financialStatus,
+          amount_paid: providerPaid,
+          paid_amount: providerPaid,
+          balance_due: balance,
+          paid_at: event.type === "invoice.paid"
+            ? new Date().toISOString()
+            : null,
+          stripe_invoice_id: providerInvoice.id,
+          stripe_customer_id: providerInvoice.customer ||
+            apsInvoice.stripe_customer_id,
+          stripe_payment_intent_id: providerInvoice.payment_intent ||
+            apsInvoice.stripe_payment_intent_id,
+          stripe_hosted_invoice_url: providerInvoice.hosted_invoice_url ||
+            apsInvoice.stripe_hosted_invoice_url,
+          stripe_invoice_pdf_url: providerInvoice.invoice_pdf ||
+            apsInvoice.stripe_invoice_pdf_url,
+          stripe_status: providerInvoice.status || null,
+          provider_updated_at: new Date().toISOString(),
+        }),
+      });
+      await supabaseFetch(
+        `service_requests?id=eq.${apsInvoice.service_request_id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            payment_state: event.type === "invoice.paid"
+              ? "paid_in_full"
+              : providerPaid > 0
+              ? "partially_paid"
+              : "unpaid",
+            payment_status: event.type === "invoice.paid"
+              ? "paid_in_full"
+              : providerPaid > 0
+              ? "partially_paid"
+              : "unpaid",
+            paid_amount: providerPaid,
+            balance_due: balance,
+            ...(apsInvoice.payment_terms === "prepaid" &&
+                event.type === "invoice.paid"
+              ? {
+                status: "payment_received",
+                workflow_status: "payment_received",
+              }
+              : {}),
+          }),
+        },
+      );
+      await supabaseFetch("business_financial_events", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: apsInvoice.organization_id,
+          service_request_id: apsInvoice.service_request_id,
+          invoice_id: apsInvoice.id,
+          payment_id: paymentId,
+          event_type: event.type.replaceAll(".", "_"),
+          amount: paidDelta || null,
+          actor_type: "stripe",
+          idempotency_key: `stripe-event:${event.id}:audit`,
+          customer_safe_detail: event.type === "invoice.paid"
+            ? `Payment received for ${apsInvoice.invoice_number}.`
+            : null,
+          metadata: {
+            livemode: Boolean(event.livemode),
+            provider_status: providerInvoice.status || null,
+          },
+        }),
+      });
+      await supabaseFetch(
+        `stripe_business_webhook_events?stripe_event_id=eq.${
+          encodeURIComponent(event.id)
+        }`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            processing_status: "processed",
+            processed_at: new Date().toISOString(),
+          }),
+        },
+      );
+      return new Response(
+        JSON.stringify({ received: true, business_invoice: true }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    }
+
     if (event.type !== "checkout.session.completed") {
       return new Response(JSON.stringify({ received: true }), {
         headers: { "Content-Type": "application/json" },
@@ -227,9 +420,12 @@ Deno.serve(async (request) => {
     if (!paymentResponse.ok) {
       // A concurrent retry may have won the uniqueness race.
       if (paymentResponse.status === 409) {
-        return new Response(JSON.stringify({ received: true, duplicate: true }), {
-          headers: { "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ received: true, duplicate: true }),
+          {
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
       throw new Error(await paymentResponse.text());
     }
@@ -240,21 +436,26 @@ Deno.serve(async (request) => {
     const remaining = Math.max(0, amountDue - newPaid);
     const paidInFull = amountDue > 0 && remaining <= 0.009;
 
-    const invoiceUpdateResponse = await supabaseFetch(`invoices?id=eq.${invoiceId}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        status: paidInFull ? invoiceStatus : "partially_paid",
-        payment_status: paidInFull ? "paid" : "partially_paid",
-        amount_paid: newPaid,
-        paid_amount: newPaid,
-        balance_due: remaining,
-        paid_at: paidInFull ? new Date().toISOString() : null,
-        stripe_checkout_session_id: session.id,
-        stripe_payment_intent_id: session.payment_intent || null,
-        receipt_url: receiptUrl,
-      }),
-    });
-    if (!invoiceUpdateResponse.ok) throw new Error(await invoiceUpdateResponse.text());
+    const invoiceUpdateResponse = await supabaseFetch(
+      `invoices?id=eq.${invoiceId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: paidInFull ? invoiceStatus : "partially_paid",
+          payment_status: paidInFull ? "paid" : "partially_paid",
+          amount_paid: newPaid,
+          paid_amount: newPaid,
+          balance_due: remaining,
+          paid_at: paidInFull ? new Date().toISOString() : null,
+          stripe_checkout_session_id: session.id,
+          stripe_payment_intent_id: session.payment_intent || null,
+          receipt_url: receiptUrl,
+        }),
+      },
+    );
+    if (!invoiceUpdateResponse.ok) {
+      throw new Error(await invoiceUpdateResponse.text());
+    }
 
     const financials = await recalculateRequest(requestId);
     const requestStatus = paidInFull && financials.paidInFull

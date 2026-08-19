@@ -145,3 +145,8 @@ entrypoint = "./functions/accept-release2-invitation/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/business-portal/index.ts"
+
+[functions.business-invoice]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/business-invoice/index.ts"

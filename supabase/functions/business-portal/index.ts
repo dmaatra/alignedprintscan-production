@@ -117,9 +117,40 @@ const INVOICE_SAFE = [
   "amount_paid",
   "amount_due",
   "due_date",
+  "organization_id",
+  "payment_terms",
+  "issued_at",
+  "due_at",
+  "financial_status",
+  "currency",
+  "stripe_hosted_invoice_url",
+  "stripe_invoice_pdf_url",
+  "receipt_url",
+  "refunded_amount",
+  "net_paid_amount",
   "created_at",
 ];
-const PAYMENT_SAFE = ["id", "amount", "status", "payment_method", "created_at"];
+const PAYMENT_SAFE = [
+  "id",
+  "invoice_id",
+  "amount",
+  "status",
+  "payment_state",
+  "payment_method",
+  "received_at",
+  "receipt_url",
+  "created_at",
+];
+const REFUND_SAFE = [
+  "id",
+  "invoice_id",
+  "payment_id",
+  "amount",
+  "refund_method",
+  "status",
+  "issued_at",
+  "created_at",
+];
 const ACTIVITY_SAFE = ["id", "event_type", "title", "detail", "created_at"];
 const origin = Deno.env.get("SITE_URL") || "https://alignedprintscan.com";
 
@@ -370,6 +401,14 @@ Deno.serve(async (req) => {
       if (!organization?.[`service_${service}_enabled`]) {
         throw new Error("This service is not enabled for the organization.");
       }
+      if (
+        organization.credit_hold === true &&
+        organization.payment_terms !== "prepaid"
+      ) {
+        throw new Error(
+          "This account requires payment review before new service can proceed.",
+        );
+      }
       const names = String(membership.full_name || "Business Contact").trim()
         .split(/\s+/);
       const firstName = names.shift() || "Business",
@@ -515,7 +554,7 @@ Deno.serve(async (req) => {
       const requestId = uuid(body.request_id);
       if (!requestId) throw new Error("Request is required.");
       const request = await requestForOrganization(requestId, organizationId);
-      const [participants, files, communications, invoices, payments] =
+      const [participants, files, communications, invoices, payments, refunds] =
         await Promise.all([
           serviceRows(
             `request_participants?select=*&service_request_id=eq.${requestId}&order=sort_order.asc`,
@@ -538,6 +577,11 @@ Deno.serve(async (req) => {
               `request_payments?select=*&service_request_id=eq.${requestId}&order=created_at.desc`,
             )
             : Promise.resolve([]),
+          roleAllows(String(membership.role), "view_billing")
+            ? serviceRows(
+              `refunds?select=*&service_request_id=eq.${requestId}&status=in.(pending,processing,succeeded)&order=created_at.desc`,
+            )
+            : Promise.resolve([]),
         ]);
       return json({
         ok: true,
@@ -557,6 +601,9 @@ Deno.serve(async (req) => {
         ),
         payments: payments.map((row: Record<string, unknown>) =>
           safePick(row, PAYMENT_SAFE)
+        ),
+        refunds: refunds.map((row: Record<string, unknown>) =>
+          safePick(row, REFUND_SAFE)
         ),
       });
     }

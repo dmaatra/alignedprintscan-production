@@ -209,6 +209,7 @@ Deno.serve(async (request) => {
     const paymentMethod = String(body.method || "other").trim();
     const note = String(body.note || "").trim();
     const isTest = Boolean(body.is_test);
+    const idempotencyKey = String(body.idempotency_key || "").trim();
 
     if (!requestId) {
       throw new Error("Missing request_id.");
@@ -286,10 +287,13 @@ Deno.serve(async (request) => {
       body: JSON.stringify({
         service_request_id: requestId,
         invoice_id: targetInvoice.id,
+        organization_id: targetInvoice.organization_id || null,
         payment_stage: paymentStage,
         amount: paymentAmount,
         payment_method: paymentMethod,
+        payment_state: "succeeded",
         external_reference: body.reference || null,
+        idempotency_key: idempotencyKey || null,
         note,
         is_test: isTest,
       }),
@@ -318,7 +322,12 @@ Deno.serve(async (request) => {
       : financials.totalPaid > 0
       ? "partially_paid"
       : "unpaid";
-    const workflowStatus = paymentStage === "final" && financials.paidInFull
+    const postpaid = ["due_on_receipt", "net_15", "net_30"].includes(
+      String(targetInvoice.payment_terms || ""),
+    );
+    const workflowStatus = postpaid
+      ? null
+      : paymentStage === "final" && financials.paidInFull
       ? "final_payment_received"
       : paymentStage === "initial" && invoicePaidInFull
       ? "payment_received"
@@ -329,8 +338,9 @@ Deno.serve(async (request) => {
       {
         method: "PATCH",
         body: JSON.stringify({
-          status: workflowStatus,
-          workflow_status: workflowStatus,
+          ...(workflowStatus
+            ? { status: workflowStatus, workflow_status: workflowStatus }
+            : {}),
           payment_status: paymentState,
           payment_state: paymentState,
           paid_amount: financials.totalPaid,
@@ -346,7 +356,7 @@ Deno.serve(async (request) => {
       method: "POST",
       body: JSON.stringify({
         service_request_id: requestId,
-        status: workflowStatus,
+        status: workflowStatus || "financial_update",
         message: isTest
           ? `Simulated ${paymentStage} payment recorded for $${
             paymentAmount.toFixed(2)
@@ -376,6 +386,31 @@ Deno.serve(async (request) => {
       },
     );
 
+    if (targetInvoice.organization_id) {
+      await supabaseFetch("business_financial_events", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: targetInvoice.organization_id,
+          service_request_id: requestId,
+          invoice_id: targetInvoice.id,
+          event_type: paymentMethod === "check"
+            ? "offline_check_received"
+            : "offline_payment_received",
+          amount: paymentAmount,
+          actor_type: "aps_staff",
+          actor_user_id: admin.id,
+          idempotency_key: idempotencyKey ||
+            `offline-payment:${targetInvoice.id}:${
+              body.reference || crypto.randomUUID()
+            }`,
+          customer_safe_detail: `${
+            paymentMethod === "check" ? "Check" : "Offline payment"
+          } received for ${targetInvoice.invoice_number}.`,
+          metadata: { method: paymentMethod, test: isTest },
+        }),
+      });
+    }
+
     return json({
       ok: true,
       is_test: isTest,
@@ -387,7 +422,7 @@ Deno.serve(async (request) => {
       paid_amount: financials.totalPaid,
       balance_due: financials.balanceDue,
       payment_state: paymentState,
-      workflow_status: workflowStatus,
+      workflow_status: workflowStatus || "unchanged_postpaid_service_status",
     });
   } catch (error) {
     if (error instanceof Response) return error;

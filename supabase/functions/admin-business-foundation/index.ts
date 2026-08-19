@@ -79,7 +79,8 @@ Deno.serve(async (req) => {
         ? "approve_business_accounts"
         : ["invite_staff", "update_staff"].includes(command)
         ? "manage_staff"
-        : command === "save_organization" && body.payment_terms !== undefined
+        : ["set_payment_terms", "set_credit_hold"].includes(command) ||
+            command === "save_organization" && body.payment_terms !== undefined
         ? "change_organization_payment_terms"
         : undefined,
     );
@@ -97,6 +98,10 @@ Deno.serve(async (req) => {
         staffActivities,
         closureRequests,
         privacyRequests,
+        invoices,
+        payments,
+        refunds,
+        financialEvents,
       ] = await Promise.all([
         serviceRows("organizations?select=*&order=created_at.desc"),
         serviceRows(
@@ -115,6 +120,16 @@ Deno.serve(async (req) => {
           "business_account_closure_requests?select=*&order=created_at.desc",
         ),
         serviceRows("business_privacy_requests?select=*&order=created_at.desc"),
+        serviceRows(
+          "invoices?select=*&organization_id=not.is.null&order=created_at.desc",
+        ),
+        serviceRows(
+          "request_payments?select=*&organization_id=not.is.null&order=received_at.desc",
+        ),
+        serviceRows("refunds?select=*&order=created_at.desc"),
+        serviceRows(
+          "business_financial_events?select=*&order=created_at.desc&limit=500",
+        ),
       ]);
       return json({
         ok: true,
@@ -127,7 +142,96 @@ Deno.serve(async (req) => {
         staff_activity: staffActivities,
         closure_requests: closureRequests,
         privacy_requests: privacyRequests,
+        invoices,
+        payments,
+        refunds,
+        financial_events: financialEvents,
       });
+    }
+
+    if (command === "set_payment_terms") {
+      const organizationId = id(body.organization_id),
+        next = text(body.payment_terms);
+      if (
+        !organizationId ||
+        !["prepaid", "due_on_receipt", "net_15", "net_30"].includes(next)
+      ) throw new Error("Supported organization payment terms are required.");
+      const current = (await serviceRows(
+        `organizations?select=id,payment_terms&id=eq.${organizationId}&limit=1`,
+      ))[0];
+      if (!current) throw new Error("Organization not found.");
+      await serviceRows(`organizations?id=eq.${organizationId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          payment_terms: next,
+          updated_at: new Date().toISOString(),
+        }),
+      });
+      await activity(
+        organizationId,
+        staff.id,
+        "payment_terms_changed",
+        "Payment Terms Changed",
+        `${current.payment_terms} → ${next}`,
+      );
+      await serviceRows("business_financial_events", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: organizationId,
+          event_type: "payment_terms_changed",
+          actor_type: "aps_staff",
+          actor_user_id: staff.id,
+          idempotency_key:
+            `terms:${organizationId}:${current.payment_terms}:${next}:${crypto.randomUUID()}`,
+          internal_detail: `${current.payment_terms} → ${next}`,
+        }),
+      });
+      return json({
+        ok: true,
+        old_terms: current.payment_terms,
+        payment_terms: next,
+      });
+    }
+
+    if (command === "set_credit_hold") {
+      const organizationId = id(body.organization_id),
+        hold = body.credit_hold === true;
+      if (!organizationId) throw new Error("Organization is required.");
+      const reason = text(body.reason, 2000);
+      if (hold && !reason) {
+        throw new Error("An internal Credit Hold reason is required.");
+      }
+      await serviceRows(`organizations?id=eq.${organizationId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          credit_hold: hold,
+          credit_hold_reason: hold ? reason : null,
+          credit_hold_at: hold ? new Date().toISOString() : null,
+          credit_hold_by: hold ? staff.id : null,
+          credit_hold_removed_at: hold ? null : new Date().toISOString(),
+          credit_hold_removed_by: hold ? null : staff.id,
+          updated_at: new Date().toISOString(),
+        }),
+      });
+      await activity(
+        organizationId,
+        staff.id,
+        hold ? "credit_hold_applied" : "credit_hold_removed",
+        hold ? "Credit Hold Applied" : "Credit Hold Removed",
+      );
+      await serviceRows("business_financial_events", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: organizationId,
+          event_type: hold ? "credit_hold_applied" : "credit_hold_removed",
+          actor_type: "aps_staff",
+          actor_user_id: staff.id,
+          idempotency_key:
+            `credit-hold:${organizationId}:${hold}:${crypto.randomUUID()}`,
+          internal_detail: reason || null,
+        }),
+      });
+      return json({ ok: true, credit_hold: hold });
     }
 
     if (command === "save_organization") {
@@ -148,9 +252,6 @@ Deno.serve(async (req) => {
         "operational_contact_name",
         "operational_contact_email",
         "status",
-        "payment_terms",
-        "credit_hold",
-        "credit_hold_reason",
         "service_ron_enabled",
         "service_mobile_enabled",
         "service_print_enabled",
@@ -429,11 +530,24 @@ Deno.serve(async (req) => {
           `service_requests?select=id&organization_id=eq.${closure.organization_id}&status=not.in.(completed,cancelled,declined)&limit=1`,
         );
         const balances = await serviceRows(
-          `service_requests?select=id&organization_id=eq.${closure.organization_id}&balance_due=gt.0&limit=1`,
+          `invoices?select=id&organization_id=eq.${closure.organization_id}&balance_due=gt.0&status=not.in.(void,voided,cancelled)&limit=1`,
         );
-        if (activeRequests.length || balances.length) {
+        const pendingRefunds = await serviceRows(
+          `refunds?select=id,invoice_id&status=in.(pending,processing)&limit=100`,
+        );
+        const organizationInvoiceIds = new Set(
+          (await serviceRows(
+            `invoices?select=id&organization_id=eq.${closure.organization_id}`,
+          )).map((row: Record<string, unknown>) => row.id),
+        );
+        if (
+          activeRequests.length || balances.length ||
+          pendingRefunds.some((row: Record<string, unknown>) =>
+            organizationInvoiceIds.has(row.invoice_id)
+          )
+        ) {
           throw new Error(
-            "Resolve active requests and outstanding balances before closing this organization.",
+            "Resolve active requests and outstanding balances, pending refunds, and unresolved financial items before closing this organization.",
           );
         }
         await serviceRows(`organizations?id=eq.${closure.organization_id}`, {
