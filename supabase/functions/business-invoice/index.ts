@@ -18,6 +18,9 @@ const json = (body: unknown, status = 200) =>
     headers: { ...cors, "Content-Type": "application/json" },
   });
 const STRIPE = Deno.env.get("STRIPE_SECRET_KEY") || "";
+const RESEND = Deno.env.get("RESEND_API_KEY") || "";
+const FROM = Deno.env.get("FROM_EMAIL") ||
+  "Aligned Print & Scan <hello@alignedprintscan.com>";
 const uuid = (v: unknown) =>
   /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(String(v || "")) ? String(v) : "";
 const clean = (v: unknown, n = 500) => String(v || "").trim().slice(0, n);
@@ -79,6 +82,160 @@ async function audit(
   });
 }
 
+const reminderCopy: Record<string, { subject: string; message: string }> = {
+  due_on_receipt_day_3: {
+    subject: "Friendly payment reminder",
+    message: "This invoice remains due. Please review the current balance.",
+  },
+  due_on_receipt_day_7: {
+    subject: "Second payment reminder",
+    message: "This invoice remains unpaid and needs attention.",
+  },
+  due_soon: {
+    subject: "Payment due soon",
+    message: "This invoice is due in five days.",
+  },
+  due_today: {
+    subject: "Payment due today",
+    message: "This invoice is due today.",
+  },
+  past_due: {
+    subject: "Payment past due",
+    message: "This invoice has an outstanding past-due balance.",
+  },
+};
+
+async function runReminders(staff: any) {
+  if (!RESEND) throw new Error("Business reminder delivery is not configured.");
+  const today = new Date().toISOString().slice(0, 10);
+  const due = await serviceRows(
+    `business_invoice_reminders?select=*&scheduled_for=lte.${today}&status=in.(pending,failed)&order=scheduled_for.asc&limit=100`,
+  );
+  let sent = 0, skipped = 0, failed = 0;
+  for (const reminder of due) {
+    const claimed = (await serviceRows(
+      `business_invoice_reminders?id=eq.${reminder.id}&status=in.(pending,failed)`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ status: "processing" }),
+      },
+    ))[0];
+    if (!claimed) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      const invoice = (await serviceRows(
+        `invoices?select=*&id=eq.${reminder.invoice_id}&limit=1`,
+      ))[0];
+      if (
+        !invoice || Number(invoice.balance_due || 0) <= 0 ||
+        ["paid", "void", "voided", "cancelled"].includes(
+          String(invoice.status),
+        )
+      ) {
+        await serviceRows(`business_invoice_reminders?id=eq.${reminder.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "cancelled" }),
+        });
+        skipped += 1;
+        continue;
+      }
+      const organization = (await serviceRows(
+        `organizations?select=*&id=eq.${invoice.organization_id}&limit=1`,
+      ))[0];
+      const recipient = clean(
+        organization?.billing_contact_email || organization?.primary_email,
+        320,
+      );
+      if (!recipient) throw new Error("Organization billing email is missing.");
+      const copy = reminderCopy[reminder.milestone];
+      if (!copy) throw new Error("Unsupported reminder milestone.");
+      const subject = `${copy.subject}: ${invoice.invoice_number}`;
+      const message =
+        `${copy.message} Invoice ${invoice.invoice_number} has a current balance of USD ${
+          Number(invoice.balance_due).toFixed(2)
+        }. Sign in to the APS Business Portal to review the authoritative ledger and payment options.`;
+      const providerResponse = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${RESEND}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": `business-reminder/${reminder.id}`,
+        },
+        body: JSON.stringify({
+          from: FROM,
+          to: [recipient],
+          subject,
+          text: message,
+        }),
+      });
+      const provider = await providerResponse.json().catch(() => ({}));
+      if (!providerResponse.ok) {
+        throw new Error(
+          provider.message || "Reminder provider rejected delivery.",
+        );
+      }
+      const communication = (await serviceRows("request_communications", {
+        method: "POST",
+        body: JSON.stringify({
+          service_request_id: invoice.service_request_id,
+          direction: "outbound",
+          channel: "email",
+          subject,
+          message,
+          delivery_status: "sent",
+          provider_message_id: provider.id || null,
+          metadata: {
+            business_invoice_id: invoice.id,
+            reminder_id: reminder.id,
+            milestone: reminder.milestone,
+          },
+        }),
+      }))[0];
+      await serviceRows("request_timeline_events", {
+        method: "POST",
+        body: JSON.stringify({
+          service_request_id: invoice.service_request_id,
+          event_type: "business_payment_reminder_sent",
+          title: copy.subject,
+          detail: `${invoice.invoice_number} reminder logged by APS.`,
+          actor_type: "admin",
+          visibility: "internal",
+          metadata: {
+            reminder_id: reminder.id,
+            communication_id: communication.id,
+          },
+        }),
+      });
+      await serviceRows(`business_invoice_reminders?id=eq.${reminder.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "sent",
+          sent_at: new Date().toISOString(),
+          communication_id: communication.id,
+        }),
+      });
+      await audit(
+        invoice.organization_id,
+        staff,
+        "payment_reminder_sent",
+        `business-reminder:${reminder.id}`,
+        invoice.id,
+        `${copy.subject} sent for ${invoice.invoice_number}.`,
+      );
+      sent += 1;
+    } catch (error) {
+      await serviceRows(`business_invoice_reminders?id=eq.${reminder.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "failed" }),
+      }).catch(() => null);
+      failed += 1;
+    }
+  }
+  return { ok: true, evaluated: due.length, sent, skipped, failed };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
@@ -86,6 +243,7 @@ Deno.serve(async (req) => {
       command = clean(body.command, 60),
       staff = await requireRelease2Staff(req);
     requireBilling(staff);
+    if (command === "run_reminders") return json(await runReminders(staff));
     if (command === "create") {
       const organizationId = uuid(body.organization_id),
         requestId = uuid(body.request_id),
