@@ -152,6 +152,47 @@ const REFUND_SAFE = [
   "created_at",
 ];
 const ACTIVITY_SAFE = ["id", "event_type", "title", "detail", "created_at"];
+const LOAN_SIGNING_SAFE = [
+  "id",
+  "service_request_id",
+  "ordering_party_type",
+  "ordering_party_name",
+  "company_file_number",
+  "escrow_transaction_number",
+  "signing_type",
+  "signing_method",
+  "property_address_line1",
+  "property_address_line2",
+  "property_city",
+  "property_state",
+  "property_zip",
+  "signing_address_line1",
+  "signing_address_line2",
+  "signing_city",
+  "signing_state",
+  "signing_zip",
+  "signing_location_notes",
+  "signer_confirmation_required",
+  "package_status",
+  "package_received_at",
+  "package_page_count",
+  "borrower_copy_required",
+  "scanbacks_required",
+  "approval_before_return_required",
+  "physical_return_required",
+  "return_method",
+  "prepaid_label_provided",
+  "stipulations",
+  "lsa_stage",
+  "pricing_source",
+  "base_assignment_fee",
+  "offered_fee",
+  "aps_counter",
+  "agreed_fee",
+  "pricing_status",
+  "payment_terms",
+  "appointment_instructions",
+];
 const origin = Deno.env.get("SITE_URL") || "https://alignedprintscan.com";
 
 async function activity(
@@ -392,7 +433,7 @@ Deno.serve(async (req) => {
     if (command === "create_request") {
       requireCapability(membership, "create_request");
       const service = text(body.service_type, 20);
-      if (!["ron", "mobile", "print"].includes(service)) {
+      if (!["ron", "mobile", "print", "loan_signing"].includes(service)) {
         throw new Error("A launched APS service is required.");
       }
       const organization = (await serviceRows(
@@ -432,6 +473,21 @@ Deno.serve(async (req) => {
               preferred_date: body.preferred_date || null,
               preferred_time_window: text(body.preferred_time_window, 120) ||
                 null,
+              appointment_date: body.signing_date || null,
+              appointment_time: body.signing_time || null,
+              appointment_timezone: body.signing_date || body.signing_time
+                ? text(body.appointment_timezone, 80) || "America/Chicago"
+                : null,
+              appointment_location: service === "loan_signing" &&
+                  body.signing_method !== "ron"
+                ? [
+                  body.signing_address_line1,
+                  body.signing_city,
+                  body.signing_state,
+                  body.signing_zip,
+                ]
+                  .filter(Boolean).join(", ")
+                : null,
               notes: text(body.notes, 4000) || null,
               request_source: "business_portal",
               document_upload_exception_reason: "business_portal_follow_up",
@@ -456,23 +512,31 @@ Deno.serve(async (req) => {
         }),
       });
       if (service !== "print") {
-        const signerName = text(body.signer_name, 180),
-          signerEmail = text(body.signer_email, 254).toLowerCase();
-        if (!signerName || !signerEmail.includes("@")) {
+        const submittedSigners = Array.isArray(body.signers)
+          ? body.signers
+          : [{ name: body.signer_name, email: body.signer_email }];
+        const signers = submittedSigners.slice(0, 10).map((signer) => ({
+          name: text(signer?.name, 180),
+          email: text(signer?.email, 254).toLowerCase(),
+        }));
+        if (
+          signers.length === 0 ||
+          signers.some((signer) => !signer.name || !signer.email.includes("@"))
+        ) {
           throw new Error(
-            "Signer name and email are required for notary requests.",
+            "Each signer requires a legal name and individual email address.",
           );
         }
         await serviceRows("request_participants", {
           method: "POST",
-          body: JSON.stringify({
+          body: JSON.stringify(signers.map((signer, index) => ({
             service_request_id: requestId,
             participant_type: "signer",
-            full_legal_name: signerName,
-            email: signerEmail,
-            quantity: Number(body.number_of_signers || 1),
-            sort_order: 1,
-          }),
+            full_legal_name: signer.name,
+            email: signer.email,
+            quantity: 1,
+            sort_order: index,
+          }))),
         });
       }
       if (service === "ron") {
@@ -527,6 +591,96 @@ Deno.serve(async (req) => {
           }),
         });
       }
+      if (service === "loan_signing") {
+        const signingType = text(body.signing_type, 60),
+          signingMethod = text(body.signing_method, 60);
+        if (
+          ![
+            "buyer_purchase",
+            "seller",
+            "refinance",
+            "heloc",
+            "loan_modification",
+            "reverse_mortgage",
+            "commercial",
+            "other_custom",
+          ].includes(signingType) ||
+          !["in_person_mobile", "ron", "either_tbd"].includes(signingMethod)
+        ) throw new Error("Signing type and signing method are required.");
+        const standard: Record<string, number> = {
+          loan_modification: 100,
+          seller: 125,
+          heloc: 125,
+          buyer_purchase: 150,
+          refinance: 150,
+          reverse_mortgage: 175,
+          commercial: 200,
+          other_custom: 200,
+        };
+        const supportedOrderingPartyTypes = [
+          "title_escrow",
+          "signing_service",
+          "lender",
+          "law_office",
+        ];
+        await serviceRows("loan_signing_assignments", {
+          method: "POST",
+          body: JSON.stringify({
+            service_request_id: requestId,
+            organization_id: organizationId,
+            ordering_party_type: supportedOrderingPartyTypes.includes(
+                String(organization.business_type),
+              )
+              ? organization.business_type
+              : "other_business",
+            ordering_party_name: organization.organization_name,
+            company_file_number: text(body.company_file_number, 160) || null,
+            escrow_transaction_number:
+              text(body.escrow_transaction_number, 160) || null,
+            signing_type: signingType,
+            signing_method: signingMethod,
+            property_address_line1: text(body.property_address_line1, 220) ||
+              null,
+            property_address_line2: text(body.property_address_line2, 120) ||
+              null,
+            property_city: text(body.property_city, 100) || null,
+            property_state: text(body.property_state, 2).toUpperCase() || null,
+            property_zip: text(body.property_zip, 12) || null,
+            signing_address_line1: text(body.signing_address_line1, 220) ||
+              null,
+            signing_address_line2: text(body.signing_address_line2, 120) ||
+              null,
+            signing_city: text(body.signing_city, 100) || null,
+            signing_state: text(body.signing_state, 2).toUpperCase() || null,
+            signing_zip: text(body.signing_zip, 12) || null,
+            signing_location_notes: text(body.signing_location_notes, 1000) ||
+              null,
+            signer_confirmation_required:
+              body.signer_confirmation_required === true ||
+              body.signer_confirmation_required === "on",
+            package_status: text(body.package_status, 40) || "not_provided",
+            borrower_copy_required: text(body.borrower_copy_required, 20) ||
+              "unknown",
+            scanbacks_required: text(body.scanbacks_required, 20) || "unknown",
+            approval_before_return_required:
+              text(body.approval_before_return_required, 20) || "unknown",
+            physical_return_required: text(body.physical_return_required, 20) ||
+              "unknown",
+            return_method: text(body.return_method, 60) || null,
+            prepaid_label_provided: text(body.prepaid_label_provided, 20) ||
+              "unknown",
+            stipulations: text(body.stipulations, 4000) || null,
+            lsa_stage: "assignment_received",
+            pricing_source: "standard_aps",
+            base_assignment_fee: standard[signingType],
+            agreed_fee: standard[signingType],
+            pricing_status: "draft",
+            payment_terms: organization.payment_terms,
+            appointment_instructions:
+              text(body.appointment_instructions, 2000) || null,
+          }),
+        });
+      }
       await serviceRows("request_status_updates", {
         method: "POST",
         body: JSON.stringify({
@@ -554,35 +708,47 @@ Deno.serve(async (req) => {
       const requestId = uuid(body.request_id);
       if (!requestId) throw new Error("Request is required.");
       const request = await requestForOrganization(requestId, organizationId);
-      const [participants, files, communications, invoices, payments, refunds] =
-        await Promise.all([
-          serviceRows(
-            `request_participants?select=*&service_request_id=eq.${requestId}&order=sort_order.asc`,
-          ),
-          roleAllows(String(membership.role), "view_documents")
-            ? serviceRows(
-              `request_files?select=*&service_request_id=eq.${requestId}&is_active=eq.true&customer_visible=eq.true&eligible_for_delivery=eq.true`,
-            )
-            : Promise.resolve([]),
-          serviceRows(
-            `request_communications?select=*&service_request_id=eq.${requestId}&order=created_at.desc`,
-          ),
-          roleAllows(String(membership.role), "view_billing")
-            ? serviceRows(
-              `invoices?select=*&service_request_id=eq.${requestId}&order=created_at.desc`,
-            )
-            : Promise.resolve([]),
-          roleAllows(String(membership.role), "view_billing")
-            ? serviceRows(
-              `request_payments?select=*&service_request_id=eq.${requestId}&order=created_at.desc`,
-            )
-            : Promise.resolve([]),
-          roleAllows(String(membership.role), "view_billing")
-            ? serviceRows(
-              `refunds?select=*&service_request_id=eq.${requestId}&status=in.(pending,processing,succeeded)&order=created_at.desc`,
-            )
-            : Promise.resolve([]),
-        ]);
+      const [
+        participants,
+        files,
+        communications,
+        invoices,
+        payments,
+        refunds,
+        loanSigning,
+      ] = await Promise.all([
+        serviceRows(
+          `request_participants?select=*&service_request_id=eq.${requestId}&order=sort_order.asc`,
+        ),
+        roleAllows(String(membership.role), "view_documents")
+          ? serviceRows(
+            `request_files?select=*&service_request_id=eq.${requestId}&is_active=eq.true&customer_visible=eq.true&eligible_for_delivery=eq.true`,
+          )
+          : Promise.resolve([]),
+        serviceRows(
+          `request_communications?select=*&service_request_id=eq.${requestId}&order=created_at.desc`,
+        ),
+        roleAllows(String(membership.role), "view_billing")
+          ? serviceRows(
+            `invoices?select=*&service_request_id=eq.${requestId}&order=created_at.desc`,
+          )
+          : Promise.resolve([]),
+        roleAllows(String(membership.role), "view_billing")
+          ? serviceRows(
+            `request_payments?select=*&service_request_id=eq.${requestId}&order=created_at.desc`,
+          )
+          : Promise.resolve([]),
+        roleAllows(String(membership.role), "view_billing")
+          ? serviceRows(
+            `refunds?select=*&service_request_id=eq.${requestId}&status=in.(pending,processing,succeeded)&order=created_at.desc`,
+          )
+          : Promise.resolve([]),
+        request.service_type === "loan_signing"
+          ? serviceRows(
+            `loan_signing_assignments?select=*&service_request_id=eq.${requestId}&organization_id=eq.${organizationId}&limit=1`,
+          )
+          : Promise.resolve([]),
+      ]);
       return json({
         ok: true,
         request: safePick(request, REQUEST_SAFE),
@@ -605,6 +771,9 @@ Deno.serve(async (req) => {
         refunds: refunds.map((row: Record<string, unknown>) =>
           safePick(row, REFUND_SAFE)
         ),
+        loan_signing: loanSigning[0]
+          ? safePick(loanSigning[0], LOAN_SIGNING_SAFE)
+          : null,
       });
     }
 

@@ -431,6 +431,7 @@
     calendar: ["Operations", "Scheduling Center", "Plan and export requested and confirmed APS appointments."],
     review: ["Operations", "Review Queue", "Requests that require a specific administrator decision or correction."],
     sessions: ["Operations", "RON Sessions", "Manage Remote Online Notary sessions, Proof readiness, appointments, signer access, and completed notarized documents."],
+    "loan-signings": ["Operations", "Loan Signings", "Manage assignment intake, packages, pricing, appointments, scanbacks, and authorized return requirements."],
     invoices: ["Financial", "Invoices", "Request-level invoice status and outstanding balances."],
     payments: ["Financial", "Payments", "Paid-to-date and remaining balance visibility."],
     customers: ["Clients", "Customers", "Canonical customer profiles and complete APS request history."],
@@ -469,6 +470,18 @@
     const paid = rows.reduce((sum,r)=>sum+Number(r.paid_amount||0),0);
     const newCount = rows.filter((r)=>["under_review","new"].includes(requestStatus(r))).length;
     return `<div class="admin-v3-module-grid"><article class="admin-v3-module-card admin-v3-kpi"><span>Active requests</span><strong>${rows.length}</strong></article><article class="admin-v3-module-card admin-v3-kpi"><span>Needs review</span><strong>${newCount}</strong></article><article class="admin-v3-module-card admin-v3-kpi"><span>Upcoming dates</span><strong>${upcoming}</strong></article><article class="admin-v3-module-card admin-v3-kpi"><span>Outstanding</span><strong>${displayMoney(outstanding)}</strong></article></div><div class="admin-v3-module-card"><h2>Financial snapshot</h2><p><strong>${displayMoney(paid)}</strong> paid to date across loaded requests · <strong>${displayMoney(outstanding)}</strong> remaining.</p></div>${table(rows.slice(0,10),[{label:"Request",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Customer",render:r=>{const c=getCustomer(r)||{};return safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client");}},{label:"Service",render:r=>safe(labelFromStatus(r.service_type))},{label:"Status",render:r=>safe(labelFromStatus(requestStatus(r)))}])}`;
+  }
+  function renderLoanSignings() {
+    const rows = activeRequests().filter((request) => request.service_type === "loan_signing");
+    const assignment = (request) => Array.isArray(request.loan_signing_assignments)
+      ? request.loan_signing_assignments[0]
+      : request.loan_signing_assignments;
+    const attention = rows.filter((request) => {
+      const detail = assignment(request) || {};
+      return ["draft", "offered", "countered"].includes(detail.pricing_status) ||
+        ["not_provided", "awaiting_package"].includes(detail.package_status);
+    }).length;
+    return `<div class="admin-v3-module-grid"><article class="admin-v3-module-card admin-v3-kpi"><span>Active assignments</span><strong>${rows.length}</strong></article><article class="admin-v3-module-card admin-v3-kpi"><span>Needs attention</span><strong>${attention}</strong></article></div>${table(rows,[{label:"Assignment",render:r=>safe(`APS-${String(r.id).slice(0,8).toUpperCase()}`)},{label:"Customer",render:r=>{const c=getCustomer(r)||{};return safe(`${c.first_name||""} ${c.last_name||""}`.trim()||"Client");}},{label:"Signing",render:r=>safe(labelFromStatus((assignment(r)||{}).signing_type||"Needs review"))},{label:"Stage",render:r=>safe(labelFromStatus((assignment(r)||{}).lsa_stage||"Assignment received"))},{label:"Package",render:r=>safe(labelFromStatus((assignment(r)||{}).package_status||"Not provided"))},{label:"Pricing",render:r=>safe(labelFromStatus((assignment(r)||{}).pricing_status||"Draft"))}])}`;
   }
   function requestBlockers(request) {
     const blockers=[];
@@ -656,7 +669,7 @@
     return `<section class="admin-v3-scheduling-center"><div class="admin-v3-calendar-toolbar"><div class="admin-v3-calendar-navigation"><button class="admin-v3-button admin-v3-button--outline calendar-month-change" data-month-change="-1" type="button" aria-label="Previous Month">Previous Month</button><button class="admin-v3-button admin-v3-button--outline calendar-today" type="button">Today</button><button class="admin-v3-button admin-v3-button--outline calendar-month-change" data-month-change="1" type="button" aria-label="Next Month">Next Month</button></div><div class="admin-v3-calendar-filters"><label>Service<select id="calendarServiceFilter"><option value="all">All Services</option><option value="ron">Remote Online Notary</option><option value="mobile">Mobile Notary</option><option value="print">Print &amp; Scan</option></select></label><label>Status<select id="calendarStatusFilter"><option value="all">All Statuses</option><option value="active">Active</option><option value="pending">Pending / Awaiting Action</option><option value="confirmed">Confirmed</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></label></div></div><div class="admin-v3-scheduling-layout"><div class="admin-v3-month-calendar"><header><span>Month calendar</span><h2 id="calendarMonthHeading" tabindex="-1">${safe(calendarMonthName(month))}</h2>${monthMessage?`<p class="admin-v3-calendar-notice">${safe(monthMessage)}</p>`:""}</header><div class="admin-v3-calendar-weekdays" aria-hidden="true"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div><div class="admin-v3-calendar-grid" role="grid" aria-labelledby="calendarMonthHeading">${cells}</div></div>${renderCalendarAgenda(rows)}</div></section>`;
   }
   const wizardSteps = ["Customer", "Service", "Details", "Scheduling", "Pricing", "Review"];
-  const serviceLabels = { ron: "Remote Online Notary", mobile: "Mobile Notary", print: "Print & Scan" };
+  const serviceLabels = { ron: "Remote Online Notary", mobile: "Mobile Notary", print: "Print & Scan", loan_signing: "Loan Signing" };
   function wizardCustomers() {
     const customers = new Map();
     moduleState.requests.forEach((request) => {
@@ -694,6 +707,7 @@
             <label><input type="radio" name="service_type" value="ron" required checked><span><strong>Remote Online Notary</strong><small>Secure online notarization.</small></span></label>
             <label><input type="radio" name="service_type" value="mobile" required><span><strong>Mobile Notary</strong><small>On-site notarial service.</small></span></label>
             <label><input type="radio" name="service_type" value="print" required><span><strong>Print &amp; Scan</strong><small>Printing, scanning, copies, or delivery.</small></span></label>
+            <label><input type="radio" name="service_type" value="loan_signing" required><span><strong>Loan Signing</strong><small>Structured closing-package assignment intake.</small></span></label>
           </fieldset>
         </section>
         <section class="admin-v3-wizard-step" data-wizard-step="2" aria-labelledby="wizardDetailsHeading" hidden>
@@ -748,6 +762,20 @@
             ${field("Paper type", "print_paper_type", '<select name="print_paper_type"><option value="standard">Standard</option><option value="resume">Résumé</option><option value="cardstock">Cardstock</option><option value="color-paper">Color paper</option></select>')}
             ${field("Pages to scan", "print_scan_pages", '<input name="print_scan_pages" type="number" min="0" value="0">')}
             ${field("Delivery address", "print_delivery_address", '<textarea name="print_delivery_address" rows="3" placeholder="Required for courier or mobile service"></textarea>', "wide")}
+          </div></div>
+          <div class="admin-v3-service-fields" data-service-fields="loan_signing" hidden><div class="admin-v3-form-grid">
+            ${field("Signing type", "lsa_signing_type", '<select name="lsa_signing_type" required><option value="buyer_purchase">Buyer / Purchase</option><option value="seller">Seller</option><option value="refinance">Refinance</option><option value="heloc">HELOC</option><option value="loan_modification">Loan Modification / Small Package</option><option value="reverse_mortgage">Reverse Mortgage</option><option value="commercial">Commercial / Complex</option><option value="other_custom">Other / Custom</option></select>')}
+            ${field("Signing method", "lsa_signing_method", '<select name="lsa_signing_method" required><option value="in_person_mobile">In Person / Mobile</option><option value="ron">RON (subject to eligibility)</option><option value="either_tbd">Either / TBD</option></select>')}
+            ${field("Ordering party", "lsa_ordering_party_name", '<input name="lsa_ordering_party_name">')}
+            ${field("Company file / order number", "lsa_company_file_number", '<input name="lsa_company_file_number">')}
+            ${field("Escrow / transaction number", "lsa_escrow_number", '<input name="lsa_escrow_number">')}
+            ${field("Signer legal name", "lsa_signer_name", '<input name="lsa_signer_name" required>')}
+            ${field("Signer individual email", "lsa_signer_email", '<input name="lsa_signer_email" type="email" required>')}
+            ${field("Property address", "lsa_property_address", '<input name="lsa_property_address">', "wide")}
+            ${field("Signing address", "lsa_signing_address", '<input name="lsa_signing_address">', "wide")}
+            ${field("Package status", "lsa_package_status", '<select name="lsa_package_status"><option value="not_provided">Not provided</option><option value="awaiting_package">Awaiting package</option><option value="package_received">Package received</option><option value="replacement_received">Replacement received</option><option value="package_ready">Package ready</option></select>')}
+            ${field("Return method", "lsa_return_method", '<select name="lsa_return_method"><option value="">To be determined</option><option value="prepaid_carrier_label">Prepaid carrier label</option><option value="fedex">FedEx</option><option value="ups">UPS</option><option value="usps">USPS</option><option value="direct_title_escrow">Direct title / escrow</option><option value="other_authorized">Other authorized return</option></select>')}
+            ${field("Stipulations", "lsa_stipulations", '<textarea name="lsa_stipulations" rows="4"></textarea>', "wide")}
           </div></div>
         </section>
         <section class="admin-v3-wizard-step" data-wizard-step="3" aria-labelledby="wizardSchedulingHeading" hidden>
@@ -812,6 +840,7 @@
     if(view==="calendar") return renderCalendar();
     if(view==="review") return renderReviewQueue();
     if(view==="sessions") return renderRonSessions();
+    if(view==="loan-signings") return renderLoanSignings();
     if(view==="new") return renderNewRequest();
     if(view==="invoices"||view==="payments") return renderFinancial(view);
     if(view==="customers") return renderCustomerMergeButton()+renderCustomers();
@@ -992,6 +1021,8 @@
       add("APS-provided witness coordination", (pricing.mobile?.providedWitness || 50) * wizardWitnessAllocation(form, "mobile").aps);
       if (wizardChecked(form, "mobile_print_addon")) add("Print preparation estimate", wizardPrintCost(form, "mobile"));
       if (wizardChecked(form, "mobile_scan_addon")) add("Scan to PDF estimate", wizardNumber(form, "mobile_scan_pages") * (pricing.documentServices?.scanPerPage || 1));
+    } else if (service === "loan_signing") {
+      add("Standard Loan Signing package", Number(pricing.loanSigning?.standardPackages?.[wizardValue(form, "lsa_signing_type")]) || 0);
     } else {
       add("Printing / copies estimate", wizardPrintCost(form));
       add("Scan to PDF estimate", wizardNumber(form, "print_scan_pages") * (pricing.documentServices?.scanPerPage || 1));
@@ -1174,6 +1205,11 @@
         for(let index=0;index<witnesses.customer;index++)participants.push({participant_type:"witness",full_legal_name:wizardValue(form,`mobile_witness_name_${index}`),email:wizardValue(form,`mobile_witness_email_${index}`).toLowerCase()||null,mobile_phone:wizardValue(form,`mobile_witness_phone_${index}`)||null,identity_name_confirmed:Boolean(wizardValue(form,`mobile_witness_name_${index}`)),sort_order:signerCount+index});
         const actCount=Math.max(1,wizardNumber(form,"mobile_notarization_count",1));
         notarialActs=Array.from({length:actCount},(_,index)=>({act_type:wizardValue(form,`mobile_act_type_${index}`)||"unsure"}));
+      }
+      if (service === "loan_signing") {
+        const signerName=wizardValue(form,"lsa_signer_name");
+        serviceDetail={ordering_party_type:"individual",ordering_party_name:wizardValue(form,"lsa_ordering_party_name")||null,company_file_number:wizardValue(form,"lsa_company_file_number")||null,escrow_transaction_number:wizardValue(form,"lsa_escrow_number")||null,signing_type:wizardValue(form,"lsa_signing_type"),signing_method:wizardValue(form,"lsa_signing_method"),property_address_line1:wizardValue(form,"lsa_property_address")||null,signing_address_line1:wizardValue(form,"lsa_signing_address")||null,package_status:wizardValue(form,"lsa_package_status")||"not_provided",borrower_copy_required:"unknown",scanbacks_required:"unknown",approval_before_return_required:"unknown",physical_return_required:"unknown",return_method:wizardValue(form,"lsa_return_method")||null,stipulations:wizardValue(form,"lsa_stipulations")||null,lsa_stage:"assignment_received",pricing_source:"standard_aps",base_assignment_fee:estimate.total,agreed_fee:null,pricing_status:"draft",payment_terms:"prepaid"};
+        participants=[{participant_type:"signer",role:"signer",full_legal_name:signerName,email:wizardValue(form,"lsa_signer_email").toLowerCase(),identity_name_confirmed:true,sort_order:0}];
       }
       if (service === "print") {
         const pages = wizardNumber(form,"print_pages"); const copies = Math.max(1,wizardNumber(form,"print_copies",1)); const totalPages = pages*copies; const isColor=wizardValue(form,"print_color")==="color"; const fulfillment=wizardValue(form,"print_fulfillment")||"courier"; const printTotal=wizardPrintCost(form);
