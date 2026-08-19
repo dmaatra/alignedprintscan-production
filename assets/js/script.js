@@ -11,6 +11,16 @@ const menuBtn = document.querySelector(
 const navLinks = document.querySelector(
   ".site-header .nav-links",
 );
+if (navLinks && !navLinks.querySelector('a[href="loan-signing.html"]')) {
+  const pricingLink = navLinks.querySelector('a[href="pricing.html"]');
+  const loanSigningLink = document.createElement("a");
+  loanSigningLink.href = "loan-signing.html";
+  loanSigningLink.textContent = "Loan Signing";
+  if (location.pathname.endsWith("/loan-signing.html")) {
+    loanSigningLink.setAttribute("aria-current", "page");
+  }
+  navLinks.insertBefore(loanSigningLink, pricingLink);
+}
 if (menuBtn && navLinks) {
   const closeMenu = () => {
     navLinks.classList.remove("open");
@@ -144,7 +154,7 @@ const PRICING = window.ALIGNED_PRICING || {
 let activeService = "ron";
 let currentStep = 0;
 const selectedRequestFiles = new Map();
-const requestFileInputs = new Set(["ronFiles", "mobileFiles", "mobilePrintFiles", "printFiles"]);
+const requestFileInputs = new Set(["ronFiles", "mobileFiles", "mobilePrintFiles", "printFiles", "loanSigningFiles"]);
 
 function filesForInput(name) {
   return [...(selectedRequestFiles.get(name)?.values() || [])];

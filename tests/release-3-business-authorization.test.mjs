@@ -34,7 +34,8 @@ test("browser bundle contains no service-role credential", () => {
 test("business and APS staff entry points are independently authorized", () => {
   assert.match(read("assets/js/admin.js"), /command: "staff_access"/);
   assert.match(read("supabase/functions/admin-business-foundation/index.ts"), /requireRelease2Staff/);
-  assert.match(read("business-login.html"), /Customer request access and APS staff access use separate authorization paths/);
+  assert.match(read("business-login.html"), /This area is for approved Business Account users/);
+  assert.match(read("business-login.html"), /business-accounts\.html/);
 });
 
 test("business invitation continuation activates membership before opening a session", () => {
