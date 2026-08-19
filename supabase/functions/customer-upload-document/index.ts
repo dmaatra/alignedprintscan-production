@@ -1,3 +1,5 @@
+import { detectPdfPageCount } from "../_shared/pdf-page-count.ts";
+
 /** Secure request-scoped customer upload after matching the request email. */
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -96,6 +98,7 @@ Deno.serve(async (req) => {
       );
       if (!upload.ok) throw new Error(await upload.text());
       stored.push(path);
+      const pageCount = await detectPdfPageCount(raw, file.name || name, mime);
       const inserted = await rows(
         await db("request_files", {
           method: "POST",
@@ -105,6 +108,11 @@ Deno.serve(async (req) => {
             file_path: path,
             file_type: mime,
             file_size: raw.length,
+            detected_page_count: pageCount.count,
+            page_count_status: pageCount.status,
+            page_count_source: pageCount.status === "detected" ? "server" : null,
+            page_count_error: pageCount.error,
+            page_count_updated_at: new Date().toISOString(),
             uploaded_by: "customer",
             document_category: String(body.category || "additional"),
             document_classification: "customer_document",

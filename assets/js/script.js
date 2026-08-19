@@ -760,33 +760,6 @@ function cleanFileName(name) {
     .slice(0, 120);
 }
 
-function estimatePdfPageCountFromText(text) {
-  const matches = String(text || "").match(/\/Type\s*\/Page(?!s)/g);
-  return matches ? matches.length : 0;
-}
-async function countPdfPagesFromFile(file) {
-  if (
-    !file ||
-    (!/pdf$/i.test(file.name || "") && file.type !== "application/pdf")
-  )
-    return 0;
-  try {
-    const text = await file.text();
-    return estimatePdfPageCountFromText(text);
-  } catch (err) {
-    console.warn("PDF page count detection skipped:", err);
-    return 0;
-  }
-}
-async function detectUploadedPdfPageCount(inputNames = []) {
-  let total = 0;
-  for (const name of inputNames) {
-    const files = filesForInput(name);
-    for (const file of files) total += await countPdfPagesFromFile(file);
-  }
-  return total || null;
-}
-
 function appointmentUrgencyFlags(dateValue) {
   if (!dateValue)
     return {
@@ -943,11 +916,6 @@ async function submitRequestToSupabase(e) {
       ...normalizePersonInput({ first_name: f.firstName.value, last_name: f.lastName.value, email: f.email.value, phone: f.phone.value }),
       preferred_contact: f.contactMethod?.value || null,
     };
-    const detectedPdfPageCount = await detectUploadedPdfPageCount([
-      "ronFiles",
-      "mobilePrintFiles",
-      "printFiles",
-    ]);
     const urgencyFlags = appointmentUrgencyFlags(f.preferredDate.value || null);
     const servicePayload = {
       service_type: activeService,
@@ -962,7 +930,6 @@ async function submitRequestToSupabase(e) {
       fulfillment_state: "not_started",
       document_upload_exception_reason: f.documentUploadException?.checked ? f.documentUploadExceptionReason?.value || null : null,
       document_upload_exception_detail: f.documentUploadException?.checked ? f.documentUploadExceptionDetail?.value || null : null,
-      detected_pdf_page_count: detectedPdfPageCount,
       ...urgencyFlags,
     };
     const { data: resolution, error: requestError } = await supabaseClient.rpc(
@@ -1230,7 +1197,6 @@ async function submitPublicRequestSecurely(event) {
       fulfillment_state: "not_started",
       document_upload_exception_reason: exception ? f.documentUploadExceptionReason?.value || null : null,
       document_upload_exception_detail: exception ? f.documentUploadExceptionDetail?.value || null : null,
-      detected_pdf_page_count: await detectUploadedPdfPageCount(["ronFiles", "mobilePrintFiles", "printFiles"]),
       customer_reported_source: f.customerReportedSource?.value || null,
       customer_reported_source_detail: f.customerReportedSource?.value === "other" ? f.customerReportedSourceOther?.value?.trim() || null : null,
       acquisition_landing_page: requestTouch.landing_page || null,
