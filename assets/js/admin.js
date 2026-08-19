@@ -190,6 +190,12 @@ function playNewRequestSound() {
 async function ensureAdminSession() {
   if (!adminClient) return null;
   const { data } = await adminClient.auth.getSession();
+  if (!data.session) return null;
+  const { error } = await adminClient.functions.invoke("admin-business-foundation", { body: { command: "staff_access" } });
+  if (error) {
+    await adminClient.auth.signOut();
+    return null;
+  }
   return data.session;
 }
 async function handleLogin() {
@@ -207,6 +213,11 @@ async function handleLogin() {
     });
     if (error) {
       if (status) status.textContent = error.message;
+      return;
+    }
+    const session = await ensureAdminSession();
+    if (!session) {
+      if (status) status.textContent = "Active APS staff access is required. Business members must use Business Sign In.";
       return;
     }
     window.location.href = "admin-dashboard.html";

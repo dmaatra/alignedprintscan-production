@@ -27,6 +27,8 @@ Deno.serve(async (req) => {
       ? "change_organization_payment_terms"
       : undefined);
 
+    if (command === "staff_access") return json({ ok: true });
+
     if (command === "snapshot") {
       const [organizations, applications, members, locations, activities, staffProfiles, staffActivities] = await Promise.all([
         serviceRows("organizations?select=*&order=created_at.desc"), serviceRows("business_account_applications?select=*&order=submitted_at.desc"),
@@ -82,7 +84,7 @@ Deno.serve(async (req) => {
     if (command === "invite_member") {
       const organizationId = id(body.organization_id), email = text(body.email, 254).toLowerCase(); if (!organizationId || !email.includes("@")) throw new Error("Organization and email are required.");
       const role = text(body.role); if (!["organization_admin","order_creator","billing","viewer"].includes(role)) throw new Error("Supported organization role required.");
-      const auth = await inviteAuthUser(email, `${origin}/admin-login.html`, { access_domain: "organization_member", organization_id: organizationId, organization_role: role });
+      const auth = await inviteAuthUser(email, `${origin}/business-login.html`, { access_domain: "organization_member", organization_id: organizationId, organization_role: role });
       const rows = await serviceRows("organization_members", { method: "POST", body: JSON.stringify({ organization_id: organizationId, user_id: auth.id || null, full_name: text(body.full_name, 180), email, phone: text(body.phone, 40) || null, role, status: "invited", invited_at: new Date().toISOString(), invited_by: staff.id }) });
       await activity(organizationId, staff.id, "member_invited", "Organization Member Invited", `${email} · ${role}`);
       return json({ ok: true, member: rows[0] });
@@ -102,7 +104,7 @@ Deno.serve(async (req) => {
       const memberId = id(body.member_id);
       const member = (await serviceRows(`organization_members?id=eq.${memberId}&status=eq.invited&limit=1`))[0];
       if (!member) throw new Error("An invited organization member is required.");
-      await resendAuthInvite(member.email, `${origin}/admin-login.html`);
+      await resendAuthInvite(member.email, `${origin}/business-login.html`);
       await serviceRows(`organization_members?id=eq.${member.id}`, { method: "PATCH", body: JSON.stringify({ invited_at: new Date().toISOString(), invited_by: staff.id, updated_at: new Date().toISOString() }) });
       await activity(member.organization_id, staff.id, "member_invitation_resent", "Member Invitation Resent", member.email);
       return json({ ok: true });

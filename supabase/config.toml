@@ -140,3 +140,8 @@ entrypoint = "./functions/admin-business-foundation/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/accept-release2-invitation/index.ts"
+
+[functions.business-portal]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/business-portal/index.ts"
