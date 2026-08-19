@@ -6,7 +6,12 @@ import {
   roleAllows,
   safePick,
 } from "../_shared/business-authorization.ts";
-import { serviceRows } from "../_shared/release2-auth.ts";
+import {
+  inviteAuthUser,
+  requireRelease2Staff,
+  resendAuthInvite,
+  serviceRows,
+} from "../_shared/release2-auth.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -67,6 +72,13 @@ const REQUEST_SAFE = [
   "quoted_total",
   "final_total",
   "payment_status",
+  "workflow_status",
+  "payment_state",
+  "appointment_state",
+  "balance_due",
+  "appointment_platform",
+  "preferred_time_window",
+  "business_created_by_member_id",
 ];
 const PARTICIPANT_SAFE = [
   "id",
@@ -89,10 +101,10 @@ const FILE_SAFE = [
 ];
 const MESSAGE_SAFE = [
   "id",
-  "communication_type",
   "direction",
+  "channel",
   "subject",
-  "message_body",
+  "message",
   "created_at",
 ];
 const INVOICE_SAFE = [
@@ -108,6 +120,49 @@ const INVOICE_SAFE = [
   "created_at",
 ];
 const PAYMENT_SAFE = ["id", "amount", "status", "payment_method", "created_at"];
+const ACTIVITY_SAFE = ["id", "event_type", "title", "detail", "created_at"];
+const origin = Deno.env.get("SITE_URL") || "https://alignedprintscan.com";
+
+async function activity(
+  organizationId: string,
+  actorId: string,
+  eventType: string,
+  title: string,
+  detail = "",
+) {
+  await serviceRows("organization_activity", {
+    method: "POST",
+    body: JSON.stringify({
+      organization_id: organizationId,
+      event_type: eventType,
+      title,
+      detail,
+      actor_user_id: actorId,
+      actor_type: "organization_member",
+    }),
+  });
+}
+async function assertNotLastAdmin(
+  organizationId: string,
+  member: Record<string, unknown>,
+  nextRole?: string,
+  nextStatus?: string,
+) {
+  if (
+    member.role !== "organization_admin" ||
+    (nextRole === undefined && nextStatus === undefined) ||
+    (nextRole === "organization_admin" &&
+      (!nextStatus || nextStatus === "active"))
+  ) return;
+  const admins = await serviceRows(
+    `organization_members?select=id&organization_id=eq.${organizationId}&role=eq.organization_admin&status=eq.active`,
+  );
+  if (admins.length <= 1) {
+    throw new Error(
+      "You are the only active Organization Administrator. Assign another active Organization Administrator or request account closure before removing your administrator access.",
+    );
+  }
+}
 
 async function requestForOrganization(
   requestId: string,
@@ -154,16 +209,129 @@ Deno.serve(async (req) => {
         })),
       });
     }
+    if (command === "admin_preview") {
+      const staff = await requireRelease2Staff(req);
+      const previewOrganizationId = uuid(body.organization_id),
+        previewRole = text(body.role, 40);
+      if (
+        !previewOrganizationId ||
+        !["organization_admin", "order_creator", "billing", "viewer"].includes(
+          previewRole,
+        )
+      ) throw new Error("Valid preview organization and role are required.");
+      const organization = (await serviceRows(
+        `organizations?select=*&id=eq.${previewOrganizationId}&limit=1`,
+      ))[0];
+      if (!organization) throw new Error("Organization not found.");
+      const requests = await serviceRows(
+        `service_requests?select=*&organization_id=eq.${previewOrganizationId}&order=created_at.desc&limit=100`,
+      );
+      const requestIds = requests.map((r: Record<string, unknown>) => r.id)
+          .filter(Boolean),
+        filter = requestIds.length
+          ? `service_request_id=in.(${requestIds.join(",")})`
+          : "service_request_id=eq.00000000-0000-0000-0000-000000000000";
+      const [files, invoices, payments, messages, locations, activityRows] =
+        await Promise.all([
+          roleAllows(previewRole, "view_documents")
+            ? serviceRows(
+              `request_files?select=*&${filter}&is_active=eq.true&customer_visible=eq.true&eligible_for_delivery=eq.true`,
+            )
+            : [],
+          roleAllows(previewRole, "view_billing")
+            ? serviceRows(`invoices?select=*&${filter}`)
+            : [],
+          roleAllows(previewRole, "view_billing")
+            ? serviceRows(`request_payments?select=*&${filter}`)
+            : [],
+          serviceRows(`request_communications?select=*&${filter}`),
+          serviceRows(
+            `organization_locations?select=id,location_name,address_line1,address_line2,city,state,zip,phone,is_active,is_default&organization_id=eq.${previewOrganizationId}&order=is_default.desc,location_name.asc`,
+          ),
+          serviceRows(
+            `organization_activity?select=id,event_type,title,detail,created_at&organization_id=eq.${previewOrganizationId}&order=created_at.desc&limit=50`,
+          ),
+        ]);
+      return json({
+        ok: true,
+        preview: true,
+        preview_role: previewRole,
+        staff: { email: staff.email },
+        organization: safePick(organization, ORG_SAFE),
+        membership: {
+          full_name: "APS Admin Preview",
+          email: staff.email,
+          role: previewRole,
+        },
+        requests: requests.map((row: Record<string, unknown>) =>
+          safePick(row, REQUEST_SAFE)
+        ),
+        locations,
+        activity: activityRows.map((row: Record<string, unknown>) =>
+          safePick(row, ACTIVITY_SAFE)
+        ),
+        closures: [],
+        privacy_requests: [],
+        preview_details: {
+          documents: files.filter(documentMayBeReleased).map((
+            r: Record<string, unknown>,
+          ) => safePick(r, [...FILE_SAFE, "service_request_id"])),
+          invoices: invoices.map((r: Record<string, unknown>) =>
+            safePick(r, [...INVOICE_SAFE, "service_request_id"])
+          ),
+          payments: payments.map((r: Record<string, unknown>) =>
+            safePick(r, [...PAYMENT_SAFE, "service_request_id"])
+          ),
+          messages: messages.filter((r: Record<string, unknown>) =>
+            (r.metadata as Record<string, unknown>)?.customer_visible === true
+          ).map((r: Record<string, unknown>) =>
+            safePick(r, [...MESSAGE_SAFE, "message", "service_request_id"])
+          ),
+        },
+        capabilities: {
+          view_requests: true,
+          create_request: ["organization_admin", "order_creator"].includes(
+            previewRole,
+          ),
+          mutate_request: ["organization_admin", "order_creator"].includes(
+            previewRole,
+          ),
+          view_documents: ["organization_admin", "order_creator", "viewer"]
+            .includes(previewRole),
+          view_billing: ["organization_admin", "billing"].includes(previewRole),
+          manage_members: previewRole === "organization_admin",
+        },
+      });
+    }
     if (!organizationId) throw new Error("Organization is required.");
     const context = await requireBusinessContext(req, organizationId);
     const membership = context.membership as Record<string, unknown>;
 
     if (command === "snapshot") {
       requireCapability(membership, "view_requests");
-      const [organization, requests] = await Promise.all([
+      const [
+        organization,
+        requests,
+        locations,
+        closures,
+        privacy,
+        activityRows,
+      ] = await Promise.all([
         serviceRows(`organizations?select=*&id=eq.${organizationId}&limit=1`),
         serviceRows(
           `service_requests?select=*&organization_id=eq.${organizationId}&order=created_at.desc&limit=100`,
+        ),
+        serviceRows(
+          `organization_locations?select=id,location_name,address_line1,address_line2,city,state,zip,phone,is_active,is_default&organization_id=eq.${organizationId}&order=is_default.desc,location_name.asc`,
+        ),
+        serviceRows(
+          `business_account_closure_requests?select=id,status,reason,resolution,created_at,updated_at&organization_id=eq.${organizationId}&order=created_at.desc`,
+        ),
+        serviceRows(
+          `business_privacy_requests?select=id,request_type,status,requester_comments,resolution,created_at,updated_at&organization_id=eq.${organizationId}&order=created_at.desc`,
+        ),
+        serviceRows(
+          `organization_activity?select=id,event_type,title,detail,created_at&organization_id=eq.${organizationId}&order=created_at.desc&limit=50`,
         ),
       ]);
       return json({
@@ -173,6 +341,172 @@ Deno.serve(async (req) => {
         requests: requests.map((row: Record<string, unknown>) =>
           safePick(row, REQUEST_SAFE)
         ),
+        locations,
+        closures,
+        privacy_requests: privacy,
+        activity: activityRows.map((row: Record<string, unknown>) =>
+          safePick(row, ACTIVITY_SAFE)
+        ),
+        capabilities: {
+          view_requests: true,
+          create_request: roleAllows(String(membership.role), "create_request"),
+          mutate_request: roleAllows(String(membership.role), "mutate_request"),
+          view_documents: roleAllows(String(membership.role), "view_documents"),
+          view_billing: roleAllows(String(membership.role), "view_billing"),
+          manage_members: roleAllows(String(membership.role), "manage_members"),
+        },
+      });
+    }
+
+    if (command === "create_request") {
+      requireCapability(membership, "create_request");
+      const service = text(body.service_type, 20);
+      if (!["ron", "mobile", "print"].includes(service)) {
+        throw new Error("A launched APS service is required.");
+      }
+      const organization = (await serviceRows(
+        `organizations?select=*&id=eq.${organizationId}&limit=1`,
+      ))[0];
+      if (!organization?.[`service_${service}_enabled`]) {
+        throw new Error("This service is not enabled for the organization.");
+      }
+      const names = String(membership.full_name || "Business Contact").trim()
+        .split(/\s+/);
+      const firstName = names.shift() || "Business",
+        lastName = names.join(" ") || "Contact";
+      const resolution = await serviceRows(
+        "rpc/aps_create_request_with_customer",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            p_customer: {
+              first_name: firstName,
+              last_name: lastName,
+              email: membership.email,
+              phone: body.phone || organization.primary_phone || null,
+              preferred_contact: "email",
+            },
+            p_request: {
+              service_type: service,
+              status: "under_review",
+              workflow_status: "under_review",
+              preferred_date: body.preferred_date || null,
+              preferred_time_window: text(body.preferred_time_window, 120) ||
+                null,
+              notes: text(body.notes, 4000) || null,
+              request_source: "business_portal",
+              document_upload_exception_reason: "business_portal_follow_up",
+              request_completeness: "needs_review",
+              document_state: "awaiting_documents",
+              participant_state: service === "print"
+                ? "not_applicable"
+                : "needs_review",
+              fulfillment_state: "pending",
+            },
+          }),
+        },
+      );
+      const created = Array.isArray(resolution) ? resolution[0] : resolution,
+        requestId = String(created?.request_id || "");
+      if (!requestId) throw new Error("Request could not be created.");
+      await serviceRows(`service_requests?id=eq.${requestId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          organization_id: organizationId,
+          business_created_by_member_id: membership.id,
+        }),
+      });
+      if (service !== "print") {
+        const signerName = text(body.signer_name, 180),
+          signerEmail = text(body.signer_email, 254).toLowerCase();
+        if (!signerName || !signerEmail.includes("@")) {
+          throw new Error(
+            "Signer name and email are required for notary requests.",
+          );
+        }
+        await serviceRows("request_participants", {
+          method: "POST",
+          body: JSON.stringify({
+            service_request_id: requestId,
+            participant_type: "signer",
+            full_legal_name: signerName,
+            email: signerEmail,
+            quantity: Number(body.number_of_signers || 1),
+            sort_order: 1,
+          }),
+        });
+      }
+      if (service === "ron") {
+        await serviceRows("ron_requests", {
+          method: "POST",
+          body: JSON.stringify({
+            service_request_id: requestId,
+            document_type: text(body.document_type, 120) || "To be confirmed",
+            number_of_signers: Number(body.number_of_signers || 1),
+            number_of_notarizations: Number(body.number_of_notarizations || 1),
+            ron_platform: "proof",
+            tech_ready: body.tech_ready === true,
+            valid_id_confirmed: body.valid_id_confirmed === true,
+            consent_to_recording: body.consent_to_recording === true,
+          }),
+        });
+      }
+      if (service === "mobile") {
+        await serviceRows("mobile_notary_requests", {
+          method: "POST",
+          body: JSON.stringify({
+            service_request_id: requestId,
+            street_address: text(body.street_address, 220),
+            unit: text(body.unit, 80) || null,
+            city: text(body.city, 100),
+            state: text(body.state, 2).toUpperCase(),
+            zip: text(body.zip, 12),
+            number_of_signers: Number(body.number_of_signers || 1),
+            number_of_notarizations: Number(body.number_of_notarizations || 1),
+            witnesses_needed: false,
+            print_add_on: false,
+            scan_back_needed: false,
+          }),
+        });
+      }
+      if (service === "print") {
+        await serviceRows("print_scan_requests", {
+          method: "POST",
+          body: JSON.stringify({
+            service_request_id: requestId,
+            fulfillment_type: text(body.fulfillment_type, 60) ||
+              "digital_delivery",
+            delivery_address: text(body.delivery_address, 300) || null,
+            black_white_pages: Number(body.black_white_pages || 0),
+            color_pages: Number(body.color_pages || 0),
+            scan_pages: Number(body.scan_pages || 0),
+            paper_size: "letter",
+            print_sides: "single",
+            paper_type: "standard",
+            courier_requested: false,
+            mobile_document_service_requested: false,
+          }),
+        });
+      }
+      await serviceRows("request_status_updates", {
+        method: "POST",
+        body: JSON.stringify({
+          service_request_id: requestId,
+          status: "under_review",
+          message: "Business request submitted for APS review.",
+        }),
+      });
+      await activity(
+        organizationId,
+        context.user.id,
+        "request_submitted",
+        "Request Submitted",
+        `${service} · APS-${requestId.slice(0, 8).toUpperCase()}`,
+      );
+      return json({
+        ok: true,
+        request_id: requestId,
+        reference: `APS-${requestId.slice(0, 8).toUpperCase()}`,
       });
     }
 
@@ -265,6 +599,287 @@ Deno.serve(async (req) => {
       return json({ ok: true, ...(await signed.json()), expires_in: 60 });
     }
 
+    if (command === "save_profile") {
+      requireCapability(membership, "manage_members");
+      const update = Object.fromEntries(
+        [
+          "primary_email",
+          "primary_phone",
+          "business_address_line1",
+          "business_address_line2",
+          "business_city",
+          "business_state",
+          "business_zip",
+          "mailing_address_line1",
+          "mailing_address_line2",
+          "mailing_city",
+          "mailing_state",
+          "mailing_zip",
+          "billing_contact_name",
+          "billing_contact_email",
+          "operational_contact_name",
+          "operational_contact_email",
+        ].filter((key) => body[key] !== undefined).map(
+          (key) => [key, text(body[key], 254) || null],
+        ),
+      );
+      if (!Object.keys(update).length) {
+        throw new Error("No safe organization changes were supplied.");
+      }
+      update.updated_at = new Date().toISOString();
+      await serviceRows(`organizations?id=eq.${organizationId}`, {
+        method: "PATCH",
+        body: JSON.stringify(update),
+      });
+      await activity(
+        organizationId,
+        context.user.id,
+        "profile_updated",
+        "Organization Profile Updated",
+      );
+      return json({ ok: true });
+    }
+    if (command === "save_location") {
+      requireCapability(membership, "manage_members");
+      const locationId = uuid(body.location_id);
+      const payload = {
+        location_name: text(body.location_name, 180),
+        address_line1: text(body.address_line1, 220),
+        address_line2: text(body.address_line2, 120) || null,
+        city: text(body.city, 100),
+        state: text(body.state, 2).toUpperCase(),
+        zip: text(body.zip, 12),
+        phone: text(body.phone, 40) || null,
+        is_default: body.is_default === true,
+        is_active: body.is_active !== false,
+        updated_at: new Date().toISOString(),
+      };
+      if (
+        !payload.location_name || !payload.address_line1 || !payload.city ||
+        !payload.state || !payload.zip
+      ) throw new Error("Complete location details are required.");
+      if (payload.is_default) {
+        await serviceRows(
+          `organization_locations?organization_id=eq.${organizationId}&is_default=eq.true`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              is_default: false,
+              updated_at: new Date().toISOString(),
+            }),
+          },
+        );
+      }
+      if (locationId) {
+        await serviceRows(
+          `organization_locations?id=eq.${locationId}&organization_id=eq.${organizationId}`,
+          { method: "PATCH", body: JSON.stringify(payload) },
+        );
+      } else {await serviceRows("organization_locations", {
+          method: "POST",
+          body: JSON.stringify({ ...payload, organization_id: organizationId }),
+        });}
+      await activity(
+        organizationId,
+        context.user.id,
+        locationId ? "location_updated" : "location_added",
+        locationId
+          ? "Organization Location Updated"
+          : "Organization Location Added",
+        payload.location_name,
+      );
+      return json({ ok: true });
+    }
+    if (command === "invite_member") {
+      requireCapability(membership, "manage_members");
+      const email = text(body.email, 254).toLowerCase(),
+        role = text(body.role, 40),
+        fullName = text(body.full_name, 180);
+      if (
+        !email.includes("@") || !fullName ||
+        !["organization_admin", "order_creator", "billing", "viewer"].includes(
+          role,
+        )
+      ) {
+        throw new Error(
+          "Valid name, email, and organization role are required.",
+        );
+      }
+      const auth = await inviteAuthUser(
+        email,
+        `${origin}/business-login.html`,
+        {
+          access_domain: "organization_member",
+          organization_id: organizationId,
+          organization_role: role,
+        },
+      );
+      await serviceRows("organization_members", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: organizationId,
+          user_id: auth.id || null,
+          full_name: fullName,
+          email,
+          role,
+          status: "invited",
+          invited_at: new Date().toISOString(),
+          invited_by: context.user.id,
+        }),
+      });
+      await activity(
+        organizationId,
+        context.user.id,
+        "member_invited",
+        "Business User Invited",
+        `${email} · ${role}`,
+      );
+      return json({ ok: true });
+    }
+    if (command === "resend_invitation") {
+      requireCapability(membership, "manage_members");
+      const memberId = uuid(body.member_id);
+      const target = (await serviceRows(
+        `organization_members?select=*&id=eq.${memberId}&organization_id=eq.${organizationId}&status=eq.invited&limit=1`,
+      ))[0];
+      assertResourceOrganization(target, organizationId);
+      await resendAuthInvite(target.email, `${origin}/business-login.html`);
+      return json({ ok: true });
+    }
+    if (command === "leave_organization") {
+      await assertNotLastAdmin(
+        organizationId,
+        membership,
+        undefined,
+        "removed",
+      );
+      await serviceRows(
+        `organization_members?id=eq.${membership.id}&organization_id=eq.${organizationId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "removed",
+            removed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }),
+        },
+      );
+      await activity(
+        organizationId,
+        context.user.id,
+        "member_left",
+        "User Left Organization",
+        String(membership.email),
+      );
+      return json({ ok: true });
+    }
+    if (command === "request_closure") {
+      requireCapability(membership, "manage_members");
+      const reason = text(body.reason, 2000);
+      await serviceRows("business_account_closure_requests", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: organizationId,
+          requested_by_member_id: membership.id,
+          reason: reason || null,
+        }),
+      });
+      await activity(
+        organizationId,
+        context.user.id,
+        "closure_requested",
+        "Business Account Closure Requested",
+      );
+      return json({ ok: true });
+    }
+    if (command === "cancel_closure") {
+      requireCapability(membership, "manage_members");
+      const closureId = uuid(body.closure_id);
+      const rows = await serviceRows(
+        `business_account_closure_requests?id=eq.${closureId}&organization_id=eq.${organizationId}&status=in.(requested,under_review,information_needed)`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "cancelled",
+            cancelled_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }),
+        },
+      );
+      if (!rows[0]) throw new Error("Closure request cannot be cancelled.");
+      await activity(
+        organizationId,
+        context.user.id,
+        "closure_cancelled",
+        "Business Account Closure Cancelled",
+      );
+      return json({ ok: true });
+    }
+    if (command === "privacy_request") {
+      const requestType = text(body.request_type, 40);
+      if (
+        !["access", "correction", "deletion_closure_review"].includes(
+          requestType,
+        )
+      ) throw new Error("Supported privacy request type is required.");
+      await serviceRows("business_privacy_requests", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: organizationId,
+          requested_by_member_id: membership.id,
+          request_type: requestType,
+          requester_comments: text(body.comments, 2000) || null,
+        }),
+      });
+      await activity(
+        organizationId,
+        context.user.id,
+        "privacy_request_submitted",
+        "Privacy/Data Request Submitted",
+        requestType,
+      );
+      return json({ ok: true });
+    }
+    if (command === "send_message") {
+      if (
+        !["organization_admin", "order_creator", "billing"].includes(
+          String(membership.role),
+        )
+      ) {
+        throw new Error(
+          "This organization role is not permitted to send messages.",
+        );
+      }
+      const requestId = uuid(body.request_id);
+      await requestForOrganization(requestId, organizationId);
+      const message = text(body.message, 4000);
+      if (!message) throw new Error("Message is required.");
+      await serviceRows("request_communications", {
+        method: "POST",
+        body: JSON.stringify({
+          service_request_id: requestId,
+          direction: "inbound",
+          channel: "business_portal",
+          subject: text(body.subject, 180) || "Business Portal Message",
+          message,
+          delivery_status: "received",
+          metadata: {
+            customer_visible: true,
+            organization_id: organizationId,
+            author_member_id: membership.id,
+            author_name: membership.full_name,
+          },
+        }),
+      });
+      await activity(
+        organizationId,
+        context.user.id,
+        "message_sent",
+        "Business Message Sent",
+      );
+      return json({ ok: true });
+    }
+
     if (command === "members") {
       requireCapability(membership, "manage_members");
       const members = await serviceRows(
@@ -280,9 +895,6 @@ Deno.serve(async (req) => {
         `organization_members?select=id,organization_id,user_id,role,status&id=eq.${memberId}&organization_id=eq.${organizationId}&limit=1`,
       ))[0];
       assertResourceOrganization(target, organizationId);
-      if (target.user_id === context.user.id) {
-        throw new Error("You cannot change your own organization access.");
-      }
       const role = body.role === undefined ? undefined : text(body.role, 40);
       const status = body.status === undefined
         ? undefined
@@ -300,6 +912,7 @@ Deno.serve(async (req) => {
       if (!role && !status) {
         throw new Error("A role or status change is required.");
       }
+      await assertNotLastAdmin(organizationId, target, role, status);
       const update: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
       };

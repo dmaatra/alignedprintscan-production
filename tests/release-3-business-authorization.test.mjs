@@ -39,5 +39,5 @@ test("business and APS staff entry points are independently authorized", () => {
 
 test("business invitation continuation activates membership before opening a session", () => {
   assert.match(browser, /functions\.invoke\("accept-release2-invitation"/);
-  assert.match(browser, /if \(isInvitation\) await acceptBusinessInvitation\(\); await portal\("session"\)/);
+  assert.match(browser, /if\(invite\)await acceptBusinessInvitation\(\);await portal\("session"\)/);
 });
