@@ -36,3 +36,8 @@ test("business and APS staff entry points are independently authorized", () => {
   assert.match(read("supabase/functions/admin-business-foundation/index.ts"), /requireRelease2Staff/);
   assert.match(read("business-login.html"), /Customer request access and APS staff access use separate authorization paths/);
 });
+
+test("business invitation continuation activates membership before opening a session", () => {
+  assert.match(browser, /functions\.invoke\("accept-release2-invitation"/);
+  assert.match(browser, /if \(isInvitation\) await acceptBusinessInvitation\(\); await portal\("session"\)/);
+});

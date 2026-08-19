@@ -11,18 +11,24 @@ async function portal(command, details = {}) {
   return data;
 }
 
+async function acceptBusinessInvitation() {
+  const { data, error } = await businessClient.functions.invoke("accept-release2-invitation", { body: {} });
+  if (error || !data?.ok || data.access_domain !== "organization_member") throw new Error(data?.error || error?.message || "Business invitation could not be activated.");
+}
+
 async function initBusinessLogin() {
   const login = byId("businessLoginForm"); if (!login || !businessClient) return;
   const status = byId("businessAuthStatus"), recovery = byId("businessRecoveryForm"), password = byId("businessPasswordForm");
   const params = new URLSearchParams(location.search);
-  if (params.get("mode") === "recovery" || location.hash.includes("type=recovery") || location.hash.includes("type=invite")) {
+  const isInvitation = location.hash.includes("type=invite");
+  if (params.get("mode") === "recovery" || location.hash.includes("type=recovery") || isInvitation) {
     login.hidden = true; password.hidden = false; byId("showRecovery").hidden = true;
     byId("authTitle").textContent = location.hash.includes("type=invite") ? "Finish your invitation" : "Choose a new password";
   }
   login.addEventListener("submit", async (event) => { event.preventDefault(); status.textContent = "Signing in…"; const { error } = await businessClient.auth.signInWithPassword({ email: login.email.value.trim(), password: login.password.value }); if (error) return status.textContent = error.message; try { await portal("session"); location.href = "business.html"; } catch (failure) { await businessClient.auth.signOut(); status.textContent = failure.message; } });
   byId("showRecovery").addEventListener("click", () => { login.hidden = true; recovery.hidden = false; byId("showRecovery").hidden = true; byId("authTitle").textContent = "Reset your password"; });
   recovery.addEventListener("submit", async (event) => { event.preventDefault(); status.textContent = "Sending reset link…"; const { error } = await businessClient.auth.resetPasswordForEmail(recovery.email.value.trim(), { redirectTo: `${location.origin}/business-login.html?mode=recovery` }); status.textContent = error ? error.message : "If an eligible account exists, a reset link has been sent."; });
-  password.addEventListener("submit", async (event) => { event.preventDefault(); status.textContent = "Saving password…"; const { error } = await businessClient.auth.updateUser({ password: password.password.value }); if (error) return status.textContent = error.message; try { await portal("session"); location.href = "business.html"; } catch (failure) { await businessClient.auth.signOut(); status.textContent = failure.message; } });
+  password.addEventListener("submit", async (event) => { event.preventDefault(); status.textContent = "Saving password…"; const { error } = await businessClient.auth.updateUser({ password: password.password.value }); if (error) return status.textContent = error.message; try { if (isInvitation) await acceptBusinessInvitation(); await portal("session"); location.href = "business.html"; } catch (failure) { await businessClient.auth.signOut(); status.textContent = failure.message; } });
 }
 
 async function initBusinessPortal() {
