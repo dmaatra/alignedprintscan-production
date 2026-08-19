@@ -125,3 +125,18 @@ entrypoint = "./functions/admin-resolve-customer-action/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/proof-webhook/index.ts"
+
+[functions.business-account-application]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/business-account-application/index.ts"
+
+[functions.admin-business-foundation]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/admin-business-foundation/index.ts"
+
+[functions.accept-release2-invitation]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/accept-release2-invitation/index.ts"
