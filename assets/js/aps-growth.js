@@ -5,7 +5,7 @@
   const SESSION_KEY = "aps_request_touch_v1";
   const SENT_KEY = "aps_analytics_events_v1";
   const SAFE = /^[a-z0-9._-]{1,100}$/i;
-  const PUBLIC_PATHS = new Set(["/", "/index.html", "/pricing.html", "/remote-online-notary.html", "/mobile-notary.html", "/print-scan.html", "/faq.html", "/terms.html", "/privacy.html", "/accessibility.html", "/support.html"]);
+  const PUBLIC_PATHS = new Set(["/", "/index.html", "/pricing.html", "/remote-online-notary.html", "/mobile-notary.html", "/print-scan.html", "/loan-signing.html", "/business-accounts.html", "/resources/", "/faq.html", "/terms.html", "/privacy.html", "/accessibility.html", "/support.html"]);
   const ANALYTICS_PATHS = new Set([...PUBLIC_PATHS, "/success.html"]);
 
   function clean(value) {
@@ -57,7 +57,7 @@
     return true;
   }
   function event(name, params = {}, onceKey = "") {
-    if (!/^(request_service_view|request_started|service_selected|request_submitted|quote_viewed|quote_approved|payment_checkout_started|customer_portal_opened)$/.test(name)) return false;
+    if (!/^(request_service_view|request_started|service_selected|request_submitted|quote_viewed|quote_approved|payment_checkout_started|customer_portal_opened|resource_search|resource_article_view|resource_helpful_submitted|resource_question_submitted)$/.test(name)) return false;
     const sent = new Set(JSON.parse(sessionStorage.getItem(SENT_KEY) || "[]"));
     const key = onceKey || name;
     if (sent.has(key)) return false;

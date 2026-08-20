@@ -21,6 +21,24 @@ if (navLinks && !navLinks.querySelector('a[href="loan-signing.html"]')) {
   }
   navLinks.insertBefore(loanSigningLink, pricingLink);
 }
+if (navLinks && !navLinks.querySelector('a[href="resources/"]')) {
+  const faqLink = navLinks.querySelector('a[href="faq.html"]');
+  const resourceLink = document.createElement("a");
+  resourceLink.href = "resources/";
+  resourceLink.textContent = "Resources";
+  navLinks.insertBefore(resourceLink, faqLink);
+}
+document.querySelectorAll(".site-footer .footer-grid").forEach((footer) => {
+  if (footer.querySelector('a[href="resources/"]')) return;
+  const columns = footer.querySelectorAll(":scope > div");
+  const services = columns[1];
+  if (services) {
+    const link = document.createElement("a");
+    link.href = "resources/";
+    link.textContent = "Resource Center";
+    services.append(link);
+  }
+});
 if (menuBtn && navLinks) {
   const closeMenu = () => {
     navLinks.classList.remove("open");
