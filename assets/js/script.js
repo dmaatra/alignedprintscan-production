@@ -2343,12 +2343,12 @@ function ronNextStepPanel(request = {}, detail = {}, session = null) {
   const link = request.appointment_link || request.ron_session_url || "";
   const copy = {
     payment_required: ["Payment Required", "Your required payment must be received before the secure online notary session can begin."],
-    appointment_pending: ["Appointment Confirmation Pending", "APS is confirming the date and time for your secure online notary session."],
-    preparing: ["Preparing Your Session", "APS is preparing your signers and documents in the secure notary platform."],
+    appointment_pending: ["Appointment Confirmation Pending", "Our team is confirming the date and time for your secure online notary session."],
+    preparing: ["Preparing Your Session", "Our team is preparing your signers and documents in the secure notary platform."],
     invitation_sent: ["Secure Session Invitation Sent", "Proof has sent the required secure invitation to the signer email associated with this request."],
     ready: ["Session Ready", "Your secure online notary session is ready. Use the signer-specific invitation sent to your email."],
-    completed: ["Session Completed", "Your secure online notarization is complete. APS will release reviewed completed documents here when available."],
-  }[session?.state] || ["Preparing Your Session", "APS will provide secure-session instructions when all requirements are ready."];
+    completed: ["Session Completed", "Your secure online notarization is complete. Aligned Print & Scan will make reviewed completed documents available here when ready."],
+  }[session?.state] || ["Preparing Your Session", "Our team will provide secure-session instructions when all requirements are ready."];
   const preparation = `<ul class="portal-preparation-list"><li>Have a valid government-issued photo ID ready.</li><li>Use a supported device with a working camera and microphone.</li><li>Use a reliable internet connection.</li><li>Make sure all required documents have been uploaded.</li><li>Do not sign documents before the notarization session.</li><li>Be prepared to complete identity verification if required.</li></ul>`;
   return `<div class="next-panel reveal"><h3>${copy[0]}</h3><p>${copy[1]}</p>${preparation}${link && session?.state === "ready" ? `<a class="btn primary" href="${escapePublic(link)}" target="_blank" rel="noopener">Join Secure Notary Session</a>` : ""}</div>`;
 }
@@ -2482,14 +2482,14 @@ function customerActionPanel(request, reference, customerActions = []) {
   return `<div class="next-panel reveal customer-action-panel">
     <h3>Manage This Request</h3>
     <p>Upload additional documents or request a cancellation/reschedule. Paid services are reviewed before cancellation or refund decisions are made.</p>
-    ${pending ? `<div class="email-notice"><strong>${pending.action_type === "cancel" ? "Cancellation Requested" : "Reschedule Requested"}:</strong> APS will review the request before changing service or financial records.</div>` : request.cancellation_state === "refund_pending" ? '<div class="email-notice"><strong>Refund Pending:</strong> APS approved a refund and is completing the original-payment process.</div>' : ["partially_refunded","refunded"].includes(request.cancellation_state) ? '<div class="email-notice"><strong>Refund Processed:</strong> See Quote &amp; Payment for the current financial result.</div>' : request.cancellation_state === "cancelled" ? '<div class="email-notice"><strong>Cancellation Confirmed</strong></div>' : ""}
+    ${pending ? `<div class="email-notice"><strong>${pending.action_type === "cancel" ? "Cancellation Requested" : "Reschedule Requested"}:</strong> Our team will review the request before changing service or financial records.</div>` : request.cancellation_state === "refund_pending" ? '<div class="email-notice"><strong>Refund Pending:</strong> Aligned Print & Scan approved a refund and is completing the original-payment process.</div>' : ["partially_refunded","refunded"].includes(request.cancellation_state) ? '<div class="email-notice"><strong>Refund Processed:</strong> See Quote &amp; Payment for the current financial result.</div>' : request.cancellation_state === "cancelled" ? '<div class="email-notice"><strong>Cancellation Confirmed</strong></div>' : ""}
     <label>Email used on this request<input id="customerActionEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>
     <label>Reason / details<textarea id="customerActionReason" placeholder="Tell us what changed or what you need."></textarea></label>
     <label>Proposed new date and time<input id="proposedAppointmentAt" type="datetime-local"></label>
     <div class="cta-row"><button id="requestCancellationBtn" class="btn secondary visible-secondary" type="button">Request Cancellation</button><button id="requestRescheduleBtn" class="btn secondary visible-secondary" type="button">Request Reschedule</button></div>
     <hr>
     <label>Additional documents<input id="additionalCustomerFiles" type="file" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"></label>
-    <label>Message with these documents (optional)<textarea id="additionalCustomerMessage" placeholder="Tell APS what you uploaded or what needs review."></textarea></label>
+    <label>Message with these documents (optional)<textarea id="additionalCustomerMessage" placeholder="Tell our team what you uploaded or what needs review."></textarea></label>
     <button id="uploadAdditionalFilesBtn" class="btn dark" type="button">Upload Additional Documents</button>
     <div id="customerActionStatus" class="form-submit-status" role="status" aria-live="polite"></div>
   </div>`;
@@ -2539,7 +2539,7 @@ function customerPrimaryAction({ request = {}, invoices = [], documents = [], me
   const balanceDue = activeInvoices.reduce((sum, invoice) => sum + Math.max(0, Number(invoice.balance_due ?? invoice.amount_due ?? 0) - Number(invoice.amount_paid ?? invoice.paid_amount ?? 0)), 0) || Math.max(0, Number(request.balance_due || 0));
   if (["quote_ready", "quote_sent", "awaiting_approval"].includes(status) && hasQuote && request.id) return { key: "quote", label: "Review & Approve Quote", tab: "quote-payment", title: "Review and approve your quote" };
   if (!sessionId && ["awaiting_payment", "payment_pending", "final_balance_due"].includes(status) && balanceDue > 0 && request.id) return { key: "payment", label: "Make Payment", tab: "quote-payment", title: "Payment required", detail: `Amount due: ${money(balanceDue)}` };
-  if (status === "document_pending" || request.document_state === "customer_action_required") return { key: "document", label: "Upload Document", tab: "documents", title: "Document needed", detail: "Upload the document APS requested for review." };
+  if (status === "document_pending" || request.document_state === "customer_action_required") return { key: "document", label: "Upload Document", tab: "documents", title: "Document needed", detail: "Upload the document our team requested for review." };
   if (["appointment_confirmed", "scheduled", "appointment_needs_rescheduling"].includes(status)) return { key: "appointment", label: "View Appointment", tab: "fulfillment", title: "Appointment details available" };
   if (["completed", "final_payment_received"].includes(status) && documents.length) return { key: "deliverable", label: "View Documents", tab: "documents", title: "Your documents are available" };
   if (request.customer_message_requires_attention === true && messages.length) return { key: "message", label: "View Message", tab: "messages", title: "A message needs your attention" };
@@ -2651,12 +2651,12 @@ async function initSuccessPage() {
     </section>
     <section data-portal-panel="documents" ${portalTab !== "documents" ? "hidden" : ""}>
       <div class="next-panel reveal"><h3>Documents You Provided</h3><p>Files you uploaded with this request or later through Manage This Request.</p>${portalDocumentList(customerProvidedDocuments, "You have not uploaded any documents yet.")}</div>
-      <div class="next-panel reveal"><h3>Documents from Aligned Print &amp; Scan</h3><p>Customer deliverables intentionally released by APS.</p>${portalDocumentList(apsDocuments, "No APS deliverables have been released yet.")}</div>
-      ${request.service_type === "ron" ? `<div class="next-panel reveal"><h3>Completed Notarized Documents</h3><p>Reviewed notarized documents appear here only after APS releases them to you.</p>${portalDocumentList(completedNotarizedDocuments)}</div>` : ""}
+      <div class="next-panel reveal"><h3>Documents from Aligned Print &amp; Scan</h3><p>Files provided to you by Aligned Print &amp; Scan will appear here.</p>${portalDocumentList(apsDocuments, "No documents have been provided yet.")}</div>
+      ${request.service_type === "ron" ? `<div class="next-panel reveal"><h3>Completed Notarized Documents</h3><p>Reviewed notarized documents appear here after Aligned Print & Scan makes them available to you.</p>${portalDocumentList(completedNotarizedDocuments)}</div>` : ""}
       <div id="customerActionsPanel">${customerActionPanel(request, reference, customerActions)}</div>
     </section>
     <section data-portal-panel="quote-payment" ${portalTab !== "quote-payment" ? "hidden" : ""}>
-      ${hasQuote ? `<div class="next-panel invoice-panel reveal"><h3>Prepared Service Quote</h3>${invoiceList(items)}${quoteNote ? `<div class="email-notice slim-note"><h3>APS Note</h3><p>${escapePublic(quoteNote)}</p></div>` : ""}</div><div id="paymentSchedule">${paymentSchedulePanel({ request, invoices, refunds, quoteItems: items, additionalItems, quoteAmount })}</div>` : '<div class="next-panel"><h3>Quote &amp; Payment</h3><p>Your quote is being prepared.</p></div>'}
+      ${hasQuote ? `<div class="next-panel invoice-panel reveal"><h3>Prepared Service Quote</h3>${invoiceList(items)}${quoteNote ? `<div class="email-notice slim-note"><h3>Note from Aligned Print &amp; Scan</h3><p>${escapePublic(quoteNote)}</p></div>` : ""}</div><div id="paymentSchedule">${paymentSchedulePanel({ request, invoices, refunds, quoteItems: items, additionalItems, quoteAmount })}</div>` : '<div class="next-panel"><h3>Quote &amp; Payment</h3><p>Your quote is being prepared.</p></div>'}
       ${canApprove ? `<div class="next-panel" id="quoteActionPanel"><h3>Review Quote</h3><div class="cta-row"><button id="approveQuoteBtn" class="btn primary" type="button">Approve Quote</button><a class="btn secondary visible-secondary" href="support.html?ref=${encodeURIComponent(reference)}&reason=quote_change_request">Request Changes</a></div><div id="quoteActionStatus" role="status"></div></div>` : ""}
       ${receiptPanel({ ...request, status: displayStatus }, reference)}
     </section>
@@ -2697,7 +2697,7 @@ async function initSuccessPage() {
   initOverflowCues();
   if (hasQuote) window.APSGrowth?.event?.("quote_viewed", {}, "quote_viewed");
   window.APSGrowth?.event?.("customer_portal_opened", {}, "customer_portal_opened");
-  qs("#approveQuoteBtn")?.addEventListener("click", async () => { const box = qs("#quoteActionStatus"); try { if (box) box.textContent = "Approving your quote…"; await submitQuoteDecision(request.id, reference, "approve", request.current_quote_id || ""); window.APSGrowth?.event?.("quote_approved", {}, "quote_approved"); location.reload(); } catch (_) { if (box) box.textContent = "Approval failed. Refresh this page or contact APS."; } });
+  qs("#approveQuoteBtn")?.addEventListener("click", async () => { const box = qs("#quoteActionStatus"); try { if (box) box.textContent = "Approving your quote…"; await submitQuoteDecision(request.id, reference, "approve", request.current_quote_id || ""); window.APSGrowth?.event?.("quote_approved", {}, "quote_approved"); location.reload(); } catch (_) { if (box) box.textContent = "Approval failed. Refresh this page or contact Aligned Print & Scan."; } });
   bindCustomerActionControls(request.id || requestId);
   const portalInitialInvoice = findInitialInvoice(invoices);
   qs("#startPaymentBtn")?.addEventListener("click", event => startEmbeddedPayment(request.id || requestId, event.currentTarget?.dataset?.invoiceId || portalInitialInvoice?.id || null));

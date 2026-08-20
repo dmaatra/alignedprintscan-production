@@ -10,11 +10,11 @@
 
 **CONFIRMED IN CODE:** Admin login uses Supabase email/password Auth in `assets/js/admin.js`. The browser retains a Supabase session and uses its access token for protected admin payment recording.
 
-**CONFIRMED IN DOCUMENTATION:** Admin access is intended to be restricted by an `admin_users` table and `is_admin()` RLS function. These definitions are not in migrations, so production state is **PRODUCTION VERIFICATION REQUIRED**.
+**CONFIRMED IN PRODUCTION (Release 10 audit):** Admin access is enforced through Supabase Auth and maintained APS authorization helpers. Security-definer entry points were inventoried and checked for current-user/admin or tenant authorization.
 
 ### Storage
 
-**CONFIRMED IN CODE:** Request documents are uploaded to the `service-request-files` bucket. Browser intake uploads directly under public/RLS permissions; later customer upload uses a service-role Edge Function after email matching; admin upload uses the authenticated client. Admin downloads use signed URLs.
+**CONFIRMED IN CODE AND PRODUCTION:** Current public intake and later customer uploads use validated Edge boundaries; admin upload uses authenticated authorization. All four production buckets are private, and permitted downloads use short-lived signed URLs or server-side document delivery.
 
 **CONFIRMED IN CODE:** The local Proof document integration retrieves approved source PDFs server-side from `service-request-files`; signed URLs and storage paths are never returned by the Proof admin function. It enforces the existing APS 10 MB ceiling even though Proof documents may be up to 30 MB, computes SHA-256, and sends multipart bytes only through `ProofService` and `ProofClient`. The feature is not deployed and the supporting migrations are unapplied.
 
@@ -28,13 +28,13 @@
 
 ## Edge Function catalog
 
-The existing APS function set is supplemented by exactly three Phase 4.2 Proof foundation directories. The two admin functions require an authenticated Supabase administrator JWT. The webhook is a fail-closed placeholder reserved for future Proof HMAC authentication. Existing non-Proof configuration gaps remain outside this increment.
+**CONFIRMED IN CODE AND PRODUCTION (Release 10 audit):** APS maintains and deploys 33 Edge Functions. This includes public intake/status/resources, customer actions/documents, business account/auth/billing/portal functions, administrator operations, Stripe/Resend flows, route calculation, PDF page counting, and the three Proof functions. The table below is historical detail for the original catalog; current source and the Release 10 certification report are authoritative where it conflicts.
 
 | Function | Purpose and caller | Auth/validation | Dependencies | Status |
 |---|---|---|---|---|
 | `send-request-email` | Sends request-received customer email and admin alert; invoked by intake | `verify_jwt=false`; requires request ID and uses service role | Supabase, Resend | **CONFIRMED IN CODE** |
 | `route-distance` | Current handler echoes `Hello {name}` | Generated Supabase publishable/secret wrapper | Supabase runtime only | **CONFIRMED IN CODE: STUB** |
-| `admin-route-distance` | Current handler echoes `Hello {name}` | Generated Supabase publishable/secret wrapper | Supabase runtime only | **CONFIRMED IN CODE: STUB** |
+| `admin-route-distance` | Admin-only OpenRouteService travel calculation with private origin, cache, fallback/manual handling, and quote-lock safeguards | Authenticated APS administrator | Supabase, ORS | **CONFIRMED IN CODE AND PRODUCTION** |
 | `get-request-status` | Assembles public customer-status payload | `verify_jwt=false`; request ID/reference checks in handler | Supabase service role | **CONFIRMED IN CODE** |
 | `create-embedded-checkout` | Selects eligible invoice and creates Stripe Embedded Checkout | `verify_jwt=false`; request/invoice validation, no customer account auth | Supabase, Stripe | **CONFIRMED IN CODE** |
 | `send-invoice-email` | Compatibility wrapper: updates awaiting-approval state then calls `send-order-email` | `verify_jwt=false` | Supabase, `send-order-email` | **CONFIRMED IN CODE; HISTORICAL PATH** |
@@ -106,9 +106,8 @@ The existing APS function set is supplemented by exactly three Phase 4.2 Proof f
 ## Route distance
 
 - **CONFIRMED IN DOCUMENTATION:** V13 intended an admin-only OpenRouteService calculator using `ORS_API_KEY`; early README material also mentioned Google Maps as a possible future provider.
-- **CONFIRMED IN CODE:** Both current route functions are generated hello-world stubs and do not call OpenRouteService, Google Maps, or any routing API.
-- **CONFIRMED IN DOCUMENTATION:** The current implementation is acceptable until replaced. Future direction is reliable distance/travel calculation supporting Mobile Notary pricing.
-- **OWNER DECISION REQUIRED:** Approve the provider and implementation proposal before replacement, including private-origin handling, rate limits, and whether public routing is required.
+- **CONFIRMED IN CODE AND PRODUCTION:** `admin-route-distance` is the maintained administrator-only OpenRouteService implementation. It keeps origin configuration server-side, caches results, preserves exact tier-selection mileage, and fails to an explicit manual workflow.
+- **INTENTIONAL / DEFERRED:** `route-distance` remains an unreferenced generated stub. It is not a production workflow dependency and may be removed in a separately reviewed hygiene change.
 
 ## Not active in current code
 

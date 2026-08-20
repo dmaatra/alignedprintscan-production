@@ -137,7 +137,7 @@ Deno.serve(async (req) => {
         metadata: { file_count: created.length },
       }),
     });
-    let messageRecord = null;
+    let messageRecord: { id: string } | null = null;
     if (message) {
       const insertedMessage = await rows(await db("messages", {
         method: "POST",

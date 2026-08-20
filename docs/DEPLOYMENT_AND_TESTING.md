@@ -78,7 +78,7 @@ Deploy by exact function name, for example:
 supabase functions deploy get-request-status
 ```
 
-See `docs/INTEGRATIONS.md` for all 15 functions and security caveats. Do not assume `supabase/config.toml` records the configuration of every deployed function.
+See `docs/INTEGRATIONS.md` for the maintained catalog. Release 10 verified 33 deployed functions matching 33 maintained directories. Do not assume `supabase/config.toml` alone records every deployed function setting.
 
 ### Secrets inventory
 
@@ -100,7 +100,7 @@ Current source references:
 - `EMAIL_LOGO_URL`
 - `SITE_URL`
 
-**HISTORICAL OR POSSIBLY OUTDATED:** `OWNER_EMAIL`, `ORS_API_KEY`, and `STRIPE_WEBHOOK_SECRET` appear in older setup documentation but are not consumed by the current corresponding source. `STRIPE_WEBHOOK_SECRET` should be revisited as a security requirement.
+**CONFIRMED IN CODE:** `ORS_API_KEY`, `STRIPE_WEBHOOK_SECRET`, and the Proof integration secrets are consumed only by server-side functions. Release 10 verified secret names/presence without reading secret values.
 
 ## Minimum regression matrix
 
