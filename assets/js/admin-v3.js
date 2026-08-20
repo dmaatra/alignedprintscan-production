@@ -367,6 +367,12 @@
         String(button.classList.contains("is-active")),
       );
       button.addEventListener("click", () => {
+        $$('[data-quick-filter]').forEach((item) =>
+          item.classList.toggle("is-active", item === button),
+        );
+        window.APSAdminRequestFilters?.setQuickFilter(
+          button.dataset.quickFilter || "all",
+        );
         window.queueMicrotask(() => {
           $$("[data-quick-filter]").forEach((item) => {
             item.setAttribute(

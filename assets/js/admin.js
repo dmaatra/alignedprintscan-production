@@ -455,16 +455,40 @@ function filteredRequests() {
   const service = $("#requestFilter")?.value || "all";
   const status = $("#statusFilter")?.value || "all";
   const archive = $("#archiveFilter")?.value || "active";
+  const quick = window.APSAdminRequestFilters?.active || "all";
   return requests.filter((r) => {
+    const requestStatus = r.status || "under_review";
     const serviceOk = service === "all" || r.service_type === service;
-    const statusOk =
-      status === "all" || (r.status || "under_review") === status;
+    const statusOk = status === "all" || requestStatus === status;
     const archiveOk =
       archive === "all" ||
       (archive === "active" ? !isArchived(r) : isArchived(r));
-    return serviceOk && statusOk && archiveOk;
+    const quickOk =
+      quick === "all" ||
+      (quick === "active" && !["completed", "cancelled"].includes(requestStatus)) ||
+      (quick === "pending" && [
+        "under_review",
+        "quote_ready",
+        "awaiting_approval",
+        "changes_requested",
+        "awaiting_payment",
+        "payment_pending",
+        "final_balance_due",
+      ].includes(requestStatus)) ||
+      (quick === "completed" && requestStatus === "completed");
+    return serviceOk && statusOk && archiveOk && quickOk;
   });
 }
+
+window.APSAdminRequestFilters = {
+  active: "all",
+  setQuickFilter(value) {
+    this.active = ["all", "active", "pending", "completed"].includes(value)
+      ? value
+      : "all";
+    renderRequestList();
+  },
+};
 
 function renderRequestList() {
   const list = $("#requestList");

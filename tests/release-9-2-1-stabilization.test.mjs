@@ -72,3 +72,14 @@ test("Templates resolves specifications through its maintained module import", (
   assert.match(module, /import\("\.\.\/\.\.\/supabase\/functions\/_shared\/template-preview\.mjs"\)/);
   assert.doesNotMatch(module, /const spec=TEMPLATE_SPECIFICATIONS\[template\.template_key\]\|\|\{\},service/);
 });
+
+test("Admin request quick tabs apply real status groups", () => {
+  const admin = read("assets/js/admin.js");
+  const module = read("assets/js/admin-v3.js");
+  assert.match(admin, /APSAdminRequestFilters/);
+  assert.match(admin, /quick === "active"/);
+  assert.match(admin, /quick === "pending"/);
+  assert.match(admin, /quick === "completed"/);
+  assert.match(module, /setQuickFilter/);
+  assert.match(module, /classList\.toggle\("is-active"/);
+});
