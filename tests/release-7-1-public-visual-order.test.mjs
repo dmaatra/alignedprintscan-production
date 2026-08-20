@@ -32,7 +32,7 @@ test("Loan Signing uses the canonical light-dark-light section rhythm", async ()
   assert.match(html, /<section class="section">.*Our Role/s);
   assert.match(html, /<section class="section dark-band">.*Structured Review/s);
   assert.match(html, /Structured Review.*<section class="section">.*For Businesses/s);
-  assert.match(html, /styles\.css\?v=20260819-release-7-1/);
+  assert.match(html, /styles\.css\?v=20260820-release-7-2/);
   assert.match(css, /service-page main > \.section\.dark-band/);
   assert.match(css, /section\.dark-band \.card/);
   assert.match(html, /class="btn primary"[^>]*>Start a Loan Signing Request/);
