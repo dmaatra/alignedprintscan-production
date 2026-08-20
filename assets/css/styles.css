@@ -3342,6 +3342,22 @@ button.btn.secondary:hover {
   background: var(--aps-cream-2);
 }
 
+.pass-2-public.service-page main > .section.dark-band {
+  background: linear-gradient(135deg, var(--aps-navy-primary), var(--aps-dark-accent));
+  color: #fff;
+}
+
+.pass-2-public.service-page main > .section.dark-band .card {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(200, 169, 107, 0.28);
+  color: #fff;
+  box-shadow: none;
+}
+
+.pass-2-public.service-page main > .section.dark-band .card:hover {
+  box-shadow: 0 18px 48px rgba(5, 9, 38, 0.24);
+}
+
 .pass-2-public.service-page main > .section li {
   margin-bottom: var(--aps-space-2);
 }
