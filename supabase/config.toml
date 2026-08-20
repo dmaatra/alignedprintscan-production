@@ -155,3 +155,13 @@ entrypoint = "./functions/business-portal/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/business-invoice/index.ts"
+
+[functions.resource-public]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/resource-public/index.ts"
+
+[functions.admin-resource-center]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/admin-resource-center/index.ts"

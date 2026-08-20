@@ -3,5 +3,10 @@ Allow: /
 Disallow: /admin-dashboard.html
 Disallow: /admin-login.html
 Disallow: /success.html
+Disallow: /business.html
+Disallow: /business-login.html
+Disallow: /business-reset-password.html
+Disallow: /business-forgot-password.html
 
 Sitemap: https://alignedprintscan.com/sitemap.xml
+Sitemap: https://alignedprintscan.com/resources-sitemap.xml
