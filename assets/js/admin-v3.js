@@ -405,6 +405,7 @@
     customerView: { search:"", service:"all", history:"all", sort:"recent_desc" },
     reviewView: { sort:"priority" },
     templateView: { search:"", category:"all", service:"all" },
+    templateSpecifications: {},
     ronInventory: null,
     ronError: "",
     ronView: { search:"", session:"all", payment:"all", appointment:"all", proof:"all", returnState:"all", sort:"operational" },
@@ -533,7 +534,7 @@
   function renderTemplates() {
     if(!moduleState.templates.length)return '<div class="admin-v3-module-card admin-v3-empty-module"><h3>No templates loaded</h3><p>Apply the workflow migration to register the complete APS template library.</p></div>';
     const categories=[...new Set(moduleState.templates.map(templateCategory))].sort(),services=["ron","mobile","print","loan_signing","business"];
-    const rows=moduleState.templates.filter(template=>{const spec=TEMPLATE_SPECIFICATIONS[template.template_key]||{},service=templateService(template),haystack=`${template.template_key} ${template.name} ${template.description||""} ${spec.purpose||""} ${spec.trigger||""} ${service} ${template.associated_status||""}`.toLowerCase();return(!moduleState.templateView.search||haystack.includes(moduleState.templateView.search.toLowerCase()))&&(moduleState.templateView.category==="all"||templateCategory(template)===moduleState.templateView.category)&&(moduleState.templateView.service==="all"||service===moduleState.templateView.service);});
+    const rows=moduleState.templates.filter(template=>{const spec=moduleState.templateSpecifications[template.template_key]||{},service=templateService(template),haystack=`${template.template_key} ${template.name} ${template.description||""} ${spec.purpose||""} ${spec.trigger||""} ${service} ${template.associated_status||""}`.toLowerCase();return(!moduleState.templateView.search||haystack.includes(moduleState.templateView.search.toLowerCase()))&&(moduleState.templateView.category==="all"||templateCategory(template)===moduleState.templateView.category)&&(moduleState.templateView.service==="all"||service===moduleState.templateView.service);});
     const groups=new Map(); rows.forEach(template=>{const family=templateCategory(template);if(!groups.has(family))groups.set(family,[]);groups.get(family).push(template);});
     const controls=`<section class="admin-v3-financial-controls" aria-label="Template search and filters"><label><span>Search</span><input id="templateSearch" type="search" value="${safe(moduleState.templateView.search)}" placeholder="Title, key, or purpose"></label><label><span>Category</span><select id="templateCategory"><option value="all">All categories</option>${categories.map(value=>`<option value="${safe(value)}" ${moduleState.templateView.category===value?"selected":""}>${safe(value)}</option>`).join("")}</select></label><label><span>Service</span><select id="templateService"><option value="all">All services</option>${services.map(value=>`<option value="${value}" ${moduleState.templateView.service===value?"selected":""}>${safe(labelFromStatus(value))}</option>`).join("")}</select></label></section>`;
     return controls+([...groups].map(([family,templates])=>`<section class="reference-group"><header><p class="small-label">${safe(family)}</p><h2>${safe(family)} templates</h2></header><div class="admin-v3-module-grid">${templates.map(template=>`<button class="admin-v3-module-card template-library-card" data-template-id="${safe(template.id)}" type="button"><p class="small-label">${safe(template.associated_status?labelFromStatus(template.associated_status):family)}</p><h3>${safe(template.name)}</h3><p>${safe(template.description||"")}</p><p><strong>Required attachment:</strong> ${safe(template.required_attachment_type?labelFromStatus(template.required_attachment_type):"None")}</p><span class="template-card-action">View specification &amp; full preview →</span></button>`).join("")}</div></section>`).join("")||'<div class="admin-v3-module-card"><p>No templates match these filters.</p></div>');
@@ -1280,8 +1281,12 @@
       moduleState.messages=data||[];
     }
     if(view==="templates") {
-      const {data}=await adminClient.from("message_templates").select("*").eq("active",true).order("name");
+      const [{data},{TEMPLATE_SPECIFICATIONS}]=await Promise.all([
+        adminClient.from("message_templates").select("*").eq("active",true).order("name"),
+        import("../../supabase/functions/_shared/template-preview.mjs"),
+      ]);
       moduleState.templates=data||[];
+      moduleState.templateSpecifications=TEMPLATE_SPECIFICATIONS;
     }
     if(view==="invoices"||view==="payments") {
       financialTools ||= await import("./admin-financial-view.mjs");
