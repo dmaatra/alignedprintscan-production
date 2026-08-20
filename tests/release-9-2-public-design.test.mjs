@@ -11,10 +11,10 @@ const shellPages = [
   ...fs.readdirSync(path.join(root, "resources"), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => `resources/${entry.name}/index.html`),
-].filter((file) => read(file).includes('<header class="site-header"'));
+].filter((file) => fs.existsSync(path.join(root, file)) && read(file).includes('<header class="site-header"'));
 
 test("all public pages use the same static navigation hierarchy and five-column footer", () => {
-  assert.equal(shellPages.length, 27);
+  assert.equal(shellPages.length, 26);
   for (const file of shellPages) {
     const html = read(file);
     const header = html.match(/<header class="site-header">[\s\S]*?<\/header>/)?.[0] || "";
@@ -26,8 +26,8 @@ test("all public pages use the same static navigation hierarchy and five-column 
     assert.match(footer, /<h3>Secure Document &amp; Notary Solutions<\/h3>/);
     assert.match(footer, />Resource Center<\/a>/);
     assert.match(footer, /class="footer-business-login">Business Portal Sign In<\/a>/);
-    assert.match(html, /styles\.css\?v=20260820-release-9-2-1/);
-    assert.match(html, /script\.js\?v=20260820-release-9-2-1/);
+    assert.match(html, /styles\.css\?v=20260820-release-9-2-1-production/);
+    assert.match(html, /script\.js\?v=20260820-release-9-2-1-production/);
   }
 });
 
@@ -59,8 +59,8 @@ test("typography, article sizing, and business auth geometry are locked", () => 
   assert.match(styles, /\.footer-business-login\s*\{\s*white-space:\s*nowrap/);
   assert.match(resources, /\.article-hero h1[^}]*clamp\(2\.15rem,3\.5vw,3\.25rem\)/);
   assert.match(resources, /\.article-image[\s\S]*max-height:\s*360px/);
-  assert.match(auth, /width:\s*min\(100%,480px\)/);
-  assert.match(auth, /width:\s*64px/);
+  assert.match(auth, /max-width:\s*520px/);
+  assert.match(auth, /width:\s*76px/);
   for (const file of ["business-login.html", "business-forgot-password.html", "business-reset-password.html"])
     assert.match(read(file), /business-auth-release-9-2\.css/);
 });

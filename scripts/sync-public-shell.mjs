@@ -31,10 +31,10 @@ for (const file of publicFiles) {
   const next = html
     .replace(/<header class="site-header">[\s\S]*?<\/header>/, header(prefix, pageName(file)))
     .replace(/<footer class="site-footer footer">[\s\S]*?<\/footer>/, footer(prefix))
-    .replace(/(assets\/css\/styles\.css)(?:\?[^"']*)?/g, "$1?v=20260820-release-9-2-1")
-    .replace(/(assets\/css\/resources\.css)(?:\?[^"']*)?/g, "$1?v=20260820-release-9-2-1")
-    .replace(/(assets\/js\/script\.js)(?:\?[^"']*)?/g, "$1?v=20260820-release-9-2-1")
-    .replace(/(assets\/js\/resources\.js)(?:\?[^"']*)?/g, "$1?v=20260820-release-9-2-1");
+    .replace(/(assets\/css\/styles\.css)(?:\?[^"']*)?/g, "$1?v=20260820-release-9-2-1-production")
+    .replace(/(assets\/css\/resources\.css)(?:\?[^"']*)?/g, "$1?v=20260820-release-9-2-1-production")
+    .replace(/(assets\/js\/script\.js)(?:\?[^"']*)?/g, "$1?v=20260820-release-9-2-1-production")
+    .replace(/(assets\/js\/resources\.js)(?:\?[^"']*)?/g, "$1?v=20260820-release-9-2-1-production");
   if (next !== html) {
     fs.writeFileSync(target, next);
     changed += 1;

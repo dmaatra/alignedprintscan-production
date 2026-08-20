@@ -2811,24 +2811,56 @@ async function loadRequests() {
   const { data, error } = await adminClient
     .from("service_requests")
     .select(
-      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,pdf_page_count_review_required,pdf_page_count_changed_after_quote,is_same_day_request,is_next_day_request,quote_expires_at,customer_reported_source,customer_reported_source_detail,acquisition_landing_page,acquisition_referrer_host,acquisition_utm_source,acquisition_utm_medium,acquisition_utm_campaign,first_touch_source,review_request_state,review_request_eligible_at,review_request_sent_at,customers(id,first_name,last_name,email,phone,preferred_contact,created_at,normalized_email,normalized_phone,normalized_name,merged_at,first_acquisition_source,first_acquisition_at),request_participants(participant_type,first_name,middle_name,last_name,full_legal_name,email),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address),loan_signing_assignments(*)",
+      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,pdf_page_count_review_required,pdf_page_count_changed_after_quote,is_same_day_request,is_next_day_request,quote_expires_at,customer_reported_source,customer_reported_source_detail,acquisition_landing_page,acquisition_referrer_host,acquisition_utm_source,acquisition_utm_medium,acquisition_utm_campaign,first_touch_source,review_request_state,review_request_eligible_at,review_request_sent_at,customers(id,first_name,last_name,email,phone,preferred_contact,created_at,normalized_email,normalized_phone,normalized_name,merged_at,first_acquisition_source,first_acquisition_at),request_participants(participant_type,first_name,middle_name,last_name,full_legal_name,email),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
     )
     .order("created_at", {
       ascending: false,
     })
     .limit(300);
   if (error) {
-    setText("adminLiveStatus", `Could not load requests: ${error.message}`);
+    console.error("Authorized request loader failed:", error);
+    const safeRequestError = "Requests could not be loaded. Refresh your session and try again.";
+    setText("adminLiveStatus", safeRequestError);
     $("#requestList").innerHTML =
-      `<div class="request-empty">${escapeHtml(error.message)}</div>`;
+      `<div class="request-empty">${safeRequestError}</div>`;
     window.dispatchEvent(
       new CustomEvent("aps:requests-error", {
-        detail: { message: error.message || "Requests could not be loaded." },
+        detail: { message: safeRequestError },
       }),
     );
     return;
   }
   requests = data || [];
+  const loanSigningRequests = requests.filter(
+    (request) => request.service_type === "loan_signing",
+  );
+  if (loanSigningRequests.length) {
+    const enrichmentResults = await Promise.allSettled(
+      loanSigningRequests.map(async (request) => {
+        const { data: snapshot, error: snapshotError } =
+          await adminClient.functions.invoke("admin-loan-signing-fulfillment", {
+            body: { command: "snapshot", request_id: request.id },
+          });
+        if (snapshotError || !snapshot?.ok || !snapshot.assignment) {
+          throw new Error(
+            snapshot?.error ||
+              snapshotError?.message ||
+              "Loan Signing details could not be loaded.",
+          );
+        }
+        request.loan_signing_assignments = [snapshot.assignment];
+        request.loan_signing_snapshot = snapshot;
+      }),
+    );
+    enrichmentResults.forEach((result, index) => {
+      if (result.status === "fulfilled") return;
+      loanSigningRequests[index].loan_signing_enrichment_error = true;
+      console.error("Authorized Loan Signing enrichment failed:", {
+        request_id: loanSigningRequests[index].id,
+        error: result.reason,
+      });
+    });
+  }
   const requestIds = requests.map((request) => request.id).filter(Boolean);
   if (requestIds.length) {
     const { data: invoiceSearchRows, error: invoiceSearchError } =

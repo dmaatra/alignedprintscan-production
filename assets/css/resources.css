@@ -1,5 +1,5 @@
 /* Release 9.2 — Resource Center and RON use the canonical public design system. */
-.resource-hero{padding:clamp(68px,8vw,104px) 0 clamp(48px,6vw,76px);background:linear-gradient(135deg,var(--aps-navy-primary),var(--aps-navy-secondary));color:#fff;border-bottom:1px solid rgba(200,169,107,.24)}
+.resource-hero{padding:clamp(68px,8vw,104px) 0 clamp(48px,6vw,76px);background:radial-gradient(circle at 12% 18%,rgba(200,169,107,.17),transparent 30%),linear-gradient(135deg,var(--aps-navy-primary),var(--aps-navy-secondary));color:#fff;border-bottom:1px solid rgba(200,169,107,.24)}
 .resource-hero h1{max-width:760px;margin-bottom:16px;color:#fff;font-size:clamp(2.35rem,4vw,3.7rem);font-weight:700;line-height:1.05}
 .resource-hero .lead{max-width:680px;color:rgba(255,255,255,.82);font-size:var(--aps-text-lead)}
 .resource-browse{background:var(--aps-cream-2)}
@@ -45,10 +45,17 @@
 .article-faq summary{color:var(--aps-navy-primary);font-weight:700;cursor:pointer}
 .resource-sources{font-size:.92rem}
 .resource-sources a{word-break:break-word;text-decoration:underline;text-underline-offset:3px}
-.helpfulness{margin-top:42px;padding:20px 22px;border-left:4px solid var(--aps-gold-primary);border-radius:12px;background:var(--aps-navy-primary);color:#fff}
-.helpfulness h2{margin:0 0 12px!important;font-family:var(--aps-font-ui);font-size:1.15rem!important;font-weight:700}
+.helpfulness{margin-top:42px;padding:22px 24px;border-left:4px solid var(--aps-gold-primary);border-radius:12px;background:var(--aps-navy-primary);color:#fff}
+.helpfulness h2{margin:0 0 14px!important;background:transparent!important;color:#fff!important;font-family:var(--aps-font-ui);font-size:1.15rem!important;font-weight:700;line-height:1.35}
 .helpfulness button{min-height:40px;margin:0 8px 8px 0;padding:.55rem .8rem}
-.helpfulness form{margin-top:14px}
+.helpfulness [data-helpful="yes"]{background:linear-gradient(135deg,var(--aps-gold-primary),var(--aps-gold-secondary));color:#17131a;border-color:transparent}
+.helpfulness [data-helpful="no"]{background:var(--aps-cream-1)!important;color:var(--aps-navy-primary)!important;border-color:var(--aps-gold-primary)!important}
+.helpfulness [data-helpful]:hover,.helpfulness [data-helpful]:focus-visible{box-shadow:0 0 0 3px rgba(255,255,255,.86),0 0 0 6px var(--aps-gold-primary);transform:none}
+.helpfulness [data-helpful].is-selected{box-shadow:0 0 0 3px #fff,0 0 0 6px var(--aps-gold-primary)}
+.helpfulness form{margin-top:14px;padding:18px;border:1px solid rgba(200,169,107,.55);border-radius:10px;background:rgba(255,255,255,.08);color:#fff}
+.helpfulness form label{display:grid;gap:7px;margin:12px 0;color:#fff;font-weight:700}
+.helpfulness form select,.helpfulness form textarea{width:100%;padding:.7rem .8rem;border:1px solid var(--aps-border);border-radius:8px;background:#fff;color:var(--aps-text-body);font:inherit}
+.helpfulness [data-helpful-status]{margin:8px 0 0;color:#fff}
 .resource-feedback{margin-top:28px;padding:24px;border:1px solid var(--aps-border);border-radius:16px;background:var(--aps-cream-1)}
 .resource-feedback h2{margin:0 0 12px!important;font-family:var(--aps-font-ui);font-size:1.2rem!important;font-weight:700}
 .resource-feedback label{display:grid;gap:7px;margin:16px 0;font-weight:700}
