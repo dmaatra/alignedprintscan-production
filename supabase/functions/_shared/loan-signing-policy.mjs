@@ -24,6 +24,17 @@ export function waitReview({arrival_at,signing_started_at,departure_at,aps_cause
   const increments=aps_caused_delay?0:Math.max(0,Math.ceil((wait_minutes-rule.included_minutes)/rule.increment_minutes));
   return {wait_minutes,suggested_amount:increments*rule.amount_per_increment,requires_review:increments>0,excluded_for_aps_cause:Boolean(aps_caused_delay)};
 }
+export function resignReview({agreedFee=0,cause="unknown_review"}={}){
+  const apsCaused=cause==="aps_notary";
+  return {suggested_amount:apsCaused?0:Math.max(0,Number(agreedFee)||0),requires_admin_review:true,excluded_for_aps_cause:apsCaused};
+}
+export function financialResolutionPreview({originalAgreedFee=0,previouslyInvoiced=0,previouslyPaid=0,authorizedCharge=0,authorizedAdditionalCharges=0}={}){
+  const original=Math.max(0,Number(originalAgreedFee)||0),invoiced=Math.max(0,Number(previouslyInvoiced)||0),paid=Math.max(0,Number(previouslyPaid)||0),charge=Math.max(0,Number(authorizedCharge)||0),additional=Math.max(0,Number(authorizedAdditionalCharges)||0);
+  const final_service_value=charge+additional;
+  const refund_due=Math.max(0,Math.min(paid,paid-final_service_value));
+  const additional_amount_due=Math.max(0,final_service_value-paid);
+  return {original_agreed_fee:original,previously_invoiced:invoiced,previously_paid:paid,authorized_charge:charge,authorized_additional_charges:additional,final_service_value,refund_due,additional_amount_due,net_retained:Math.max(0,paid-refund_due)};
+}
 export function customerSafeException(outcome,status="review_required"){
   if(["resolved","closed"].includes(status))return "Resolved";
   if(outcome==="cancelled")return "Cancellation Under Review";
