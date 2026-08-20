@@ -28,6 +28,20 @@ if (navLinks && !navLinks.querySelector('a[href="resources/"]')) {
   resourceLink.textContent = "Resources";
   navLinks.insertBefore(resourceLink, faqLink);
 }
+if (navLinks && !navLinks.querySelector(".service-dropdown")) {
+  const servicePaths = ["remote-online-notary.html", "mobile-notary.html", "print-scan.html", "loan-signing.html"];
+  const serviceLinks = servicePaths.map((href) => navLinks.querySelector(`a[href="${href}"]`)).filter(Boolean);
+  const legacyServices = navLinks.querySelector('a[href="index.html#services"]');
+  if (serviceLinks.length === 4) {
+    const dropdown = document.createElement("span");
+    dropdown.className = "service-dropdown";
+    dropdown.innerHTML = '<button type="button" aria-haspopup="true">Services ▾</button><span class="service-dropdown-menu"></span>';
+    const menu = dropdown.querySelector(".service-dropdown-menu");
+    serviceLinks.forEach((link) => menu.append(link));
+    navLinks.insertBefore(dropdown, legacyServices || navLinks.querySelector('a[href="pricing.html"]'));
+    legacyServices?.remove();
+  }
+}
 document.querySelectorAll(".site-footer .footer-grid").forEach((footer) => {
   if (footer.querySelector('a[href="resources/"]')) return;
   const columns = footer.querySelectorAll(":scope > div");
