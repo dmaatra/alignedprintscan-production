@@ -23,11 +23,11 @@ test("admin and portal workflows separate exception facts, financial authorizati
     read("supabase/functions/business-portal/index.ts"),
     read("assets/js/admin.js"),
   ]);
-  assert.match(admin, /save_exception/); assert.match(admin, /resolve_financial/); assert.match(admin, /save_charge/); assert.match(admin, /save_visit/);
+  assert.match(admin, /save_exception/); assert.match(admin, /resolve_financial/); assert.match(admin, /save_charge/); assert.match(admin, /save_visit/); assert.match(admin, /close_exception/);
   assert.match(admin, /organization_contract/); assert.match(admin, /assignment_specific_agreement/); assert.match(admin, /manual_authorized_exception/);
   assert.doesNotMatch(admin, /from\("invoices"\)|from\("refunds"\)|send-message/);
   assert.match(portal, /request_lsa_cancellation/); assert.match(portal, /customer_safe_status/); assert.match(portal, /customer_safe_explanation/);
-  assert.match(ui, /Exception &amp; Financial Review/); assert.match(admin, /no financial action was automatic/);
+  assert.match(ui, /Exception &amp; Financial Review/); assert.match(ui, /Complete Communication &amp; Close/); assert.match(admin, /no financial action was automatic/);
 });
 
 test("Release 8 adds Loan Signing terms, templates, search, scripts, and checklist references", async () => {

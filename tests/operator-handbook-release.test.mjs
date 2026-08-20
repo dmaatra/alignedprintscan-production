@@ -35,5 +35,5 @@ test("handbook source includes all approved visuals and complete public policies
 test("admin reference and handbook use the same maintained script catalog",async()=>{
   const admin=await read("assets/js/admin-v3.js"),builder=await read("docs/handbook/build_operator_handbook.py");
   assert.match(admin,/operator-reference-catalog\.mjs/);assert.match(builder,/operator-reference-catalog\.mjs/);
-  assert.equal(OPERATOR_REFERENCE_SCRIPTS.length,27);assert.equal(SCRIPT_CATEGORY_ORDER.length,8);
+  assert.ok(OPERATOR_REFERENCE_SCRIPTS.length>=48);assert.equal(SCRIPT_CATEGORY_ORDER.length,8);
 });

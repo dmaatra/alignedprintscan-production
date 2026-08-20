@@ -451,6 +451,7 @@ Deno.serve(async (req) => {
           "This account requires payment review before new service can proceed.",
         );
       }
+      if(service==="loan_signing"&&body.lsa_terms_acknowledged!==true&&body.lsa_terms_acknowledged!=="on")throw new Error("Acknowledge the Loan Signing Assignment Terms before submitting.");
       const names = String(membership.full_name || "Business Contact").trim()
         .split(/\s+/);
       const firstName = names.shift() || "Business",
@@ -679,6 +680,9 @@ Deno.serve(async (req) => {
             payment_terms: organization.payment_terms,
             appointment_instructions:
               text(body.appointment_instructions, 2000) || null,
+            terms_policy_version: "lsa-policy-2026-08-v1",
+            terms_acknowledged_at: new Date().toISOString(),
+            terms_acknowledged_by_user_id: context.user.id,
           }),
         });
       }
@@ -720,6 +724,7 @@ Deno.serve(async (req) => {
         loanSigningScanbacks,
         loanSigningReturns,
         loanSigningExceptions,
+        loanSigningResolutions,
       ] = await Promise.all([
         serviceRows(
           `request_participants?select=*&service_request_id=eq.${requestId}&order=sort_order.asc`,
@@ -761,6 +766,9 @@ Deno.serve(async (req) => {
         request.service_type === "loan_signing"
           ? serviceRows(`loan_signing_exceptions?select=id,outcome,status,customer_safe_status,customer_safe_explanation,requested_at,resolved_at&service_request_id=eq.${requestId}&organization_id=eq.${organizationId}&order=created_at.desc&limit=5`)
           : Promise.resolve([]),
+        request.service_type === "loan_signing" && roleAllows(String(membership.role), "view_billing")
+          ? serviceRows(`loan_signing_financial_resolutions?select=id,resolution_type,original_agreed_fee,authorized_charge,authorized_additional_charges,final_service_value,refund_due,additional_amount_due,net_retained,customer_safe_explanation,resolution_state,invoice_id,created_at&service_request_id=eq.${requestId}&order=created_at.desc&limit=5`)
+          : Promise.resolve([]),
       ]);
       return json({
         ok: true,
@@ -791,17 +799,18 @@ Deno.serve(async (req) => {
           ? customerSafeLoanSigningProgress({ assignment: loanSigning[0], scanbacks: loanSigningScanbacks, returns: loanSigningReturns })
           : null,
         loan_signing_exceptions: loanSigningExceptions,
+        loan_signing_financial_resolutions: loanSigningResolutions,
       });
     }
 
     if (command === "request_lsa_cancellation") {
-      requireCapability(membership, "view_requests");
+      requireCapability(membership, "mutate_request");
       const requestId = uuid(body.request_id); if (!requestId) throw new Error("Request is required.");
       const request = await requestForOrganization(requestId, organizationId); if (request.service_type !== "loan_signing") throw new Error("Loan Signing request is required.");
       const assignment=(await serviceRows(`loan_signing_assignments?select=*&service_request_id=eq.${requestId}&organization_id=eq.${organizationId}&limit=1`))[0]; if(!assignment)throw new Error("Loan Signing assignment was not found.");
       const existing=await serviceRows(`loan_signing_exceptions?select=id&service_request_id=eq.${requestId}&outcome=eq.cancelled&status=in.(requested,review_required,financial_review,communication_needed)&limit=1`); if(existing.length)return json({ok:true,exception_id:existing[0].id,reused:true});
-      const created=await serviceRows("loan_signing_exceptions?select=id",{method:"POST",body:JSON.stringify({loan_signing_assignment_id:assignment.id,service_request_id:requestId,organization_id:organizationId,outcome:"cancelled",status:"requested",requested_by_type:"ordering_organization",requested_at:new Date().toISOString(),reason_code:"organization_requested",neutral_internal_note:text(body.reason,2000)||null,lsa_stage_snapshot:assignment.lsa_stage,operational_facts:{print_status:assignment.print_status,arrival_at:assignment.arrival_at,signing_started_at:assignment.signing_started_at},policy_source:"default_aps_policy",policy_snapshot:{pending_admin_review:true},cause_category:"unknown_review",customer_safe_status:"Cancellation Requested"})});
-      await serviceRows("review_queue_items",{method:"POST",body:JSON.stringify({service_request_id:requestId,blocker_key:`lsa_cancellation_${created[0].id}`,title:"Loan Signing Cancellation Review",detail:"An authorized organization user requested cancellation. Financial and service consequences require APS review.",target_tab:"fulfillment"})});
+      const reason=text(body.reason,2000);if(!reason)throw new Error("A cancellation reason is required.");const requestedAt=new Date().toISOString(),created=await serviceRows("loan_signing_exceptions?select=id",{method:"POST",body:JSON.stringify({loan_signing_assignment_id:assignment.id,service_request_id:requestId,organization_id:organizationId,outcome:"cancelled",status:"requested",requested_by_type:"ordering_organization",requested_by_user_id:context.user.id,requested_at:requestedAt,reason_code:"organization_requested",neutral_internal_note:reason,lsa_stage_snapshot:assignment.lsa_stage,operational_facts:{appointment_state:request.appointment_status||request.workflow_status,package_state:assignment.package_status,print_status:assignment.print_status,travel_started_at:assignment.travel_started_at||null,arrival_at:assignment.arrival_at,signing_started_at:assignment.signing_started_at,signing_ended_at:assignment.signing_ended_at,departure_at:assignment.departure_at,return_state:assignment.return_status||null,payment_terms:assignment.payment_terms,agreed_fee:assignment.agreed_fee},policy_source:"default_aps_policy",policy_snapshot:{pending_admin_review:true},cause_category:"unknown_review",customer_safe_status:"Cancellation Requested",communication_state:"needed",idempotency_key:`business-cancellation:${assignment.id}`})});
+      await serviceRows("review_queue_items",{method:"POST",body:JSON.stringify({service_request_id:requestId,blocker_key:"lsa_cancellation_review",title:"Loan Signing Cancellation Review",detail:"An authorized organization user requested cancellation. Financial and service consequences require APS review.",target_tab:"fulfillment",source_object_type:"loan_signing_exception",source_object_id:created[0].id})});await activity(organizationId,String(context.user.id),"loan_signing_cancellation_requested","Loan Signing Cancellation Requested",`Cancellation review requested for APS-${requestId.slice(0,8).toUpperCase()}.`);
       return json({ok:true,exception_id:created[0].id,reused:false});
     }
 
