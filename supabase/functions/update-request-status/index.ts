@@ -154,8 +154,8 @@ Deno.serve(async (request) => {
       if (!requestResponse.ok) throw new Error(await requestResponse.text());
       const serviceRequest = (await requestResponse.json())?.[0];
       if (!serviceRequest) throw new Error("Request not found.");
-      const detailTable = serviceRequest.service_type === "ron" ? "ron_requests" : serviceRequest.service_type === "mobile" ? "mobile_notary_requests" : "print_scan_requests";
-      const [invoiceResponse, reviewResponse, fileResponse, participantResponse, detailResponse, factsResponse, proofResponse] = await Promise.all([
+      const detailTable = serviceRequest.service_type === "ron" ? "ron_requests" : serviceRequest.service_type === "mobile" ? "mobile_notary_requests" : serviceRequest.service_type === "loan_signing" ? "loan_signing_assignments" : "print_scan_requests";
+      const [invoiceResponse, reviewResponse, fileResponse, participantResponse, detailResponse, factsResponse, proofResponse, lsaRequirementsResponse, lsaPackagesResponse, lsaStipulationsResponse, lsaScanbacksResponse, lsaReturnsResponse] = await Promise.all([
         supabaseFetch(`invoices?select=*&service_request_id=eq.${requestId}`),
         supabaseFetch(`review_queue_items?select=*&service_request_id=eq.${requestId}&state=eq.open`),
         supabaseFetch(`request_files?select=*&service_request_id=eq.${requestId}&is_active=eq.true`),
@@ -163,8 +163,13 @@ Deno.serve(async (request) => {
         supabaseFetch(`${detailTable}?select=*&service_request_id=eq.${requestId}&limit=1`),
         supabaseFetch(`request_completion_facts?select=*&service_request_id=eq.${requestId}&limit=1`),
         supabaseFetch(`proof_transactions?select=proof_status,aps_status&service_request_id=eq.${requestId}&order=created_at.desc&limit=1`),
+        serviceRequest.service_type === "loan_signing" ? supabaseFetch(`loan_signing_requirements?select=*&service_request_id=eq.${requestId}`) : Promise.resolve(new Response("[]",{status:200})),
+        serviceRequest.service_type === "loan_signing" ? supabaseFetch(`loan_signing_package_versions?select=*&service_request_id=eq.${requestId}&order=version_number.desc`) : Promise.resolve(new Response("[]",{status:200})),
+        serviceRequest.service_type === "loan_signing" ? supabaseFetch(`loan_signing_stipulations?select=*&service_request_id=eq.${requestId}`) : Promise.resolve(new Response("[]",{status:200})),
+        serviceRequest.service_type === "loan_signing" ? supabaseFetch(`loan_signing_scanbacks?select=*&service_request_id=eq.${requestId}`) : Promise.resolve(new Response("[]",{status:200})),
+        serviceRequest.service_type === "loan_signing" ? supabaseFetch(`loan_signing_returns?select=*&service_request_id=eq.${requestId}`) : Promise.resolve(new Response("[]",{status:200})),
       ]);
-      for (const response of [invoiceResponse, reviewResponse, fileResponse, participantResponse, detailResponse, factsResponse, proofResponse]) {
+      for (const response of [invoiceResponse, reviewResponse, fileResponse, participantResponse, detailResponse, factsResponse, proofResponse, lsaRequirementsResponse, lsaPackagesResponse, lsaStipulationsResponse, lsaScanbacksResponse, lsaReturnsResponse]) {
         if (!response.ok) throw new Error(await response.text());
       }
       const result = evaluateCompletion({
@@ -176,6 +181,11 @@ Deno.serve(async (request) => {
         detail: (await detailResponse.json())?.[0] || {},
         facts: (await factsResponse.json())?.[0] || {},
         proofTransaction: (await proofResponse.json())?.[0] || null,
+        loanSigningRequirements: await lsaRequirementsResponse.json(),
+        loanSigningPackages: await lsaPackagesResponse.json(),
+        loanSigningStipulations: await lsaStipulationsResponse.json(),
+        loanSigningScanbacks: await lsaScanbacksResponse.json(),
+        loanSigningReturns: await lsaReturnsResponse.json(),
       });
       if (body.validate_only === true) return json({ ok: true, validation: result });
 

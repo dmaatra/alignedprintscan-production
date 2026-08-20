@@ -12,6 +12,7 @@ import {
   resendAuthInvite,
   serviceRows,
 } from "../_shared/release2-auth.ts";
+import { customerSafeLoanSigningProgress } from "../_shared/loan-signing-fulfillment.mjs";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -716,6 +717,8 @@ Deno.serve(async (req) => {
         payments,
         refunds,
         loanSigning,
+        loanSigningScanbacks,
+        loanSigningReturns,
       ] = await Promise.all([
         serviceRows(
           `request_participants?select=*&service_request_id=eq.${requestId}&order=sort_order.asc`,
@@ -748,6 +751,12 @@ Deno.serve(async (req) => {
             `loan_signing_assignments?select=*&service_request_id=eq.${requestId}&organization_id=eq.${organizationId}&limit=1`,
           )
           : Promise.resolve([]),
+        request.service_type === "loan_signing"
+          ? serviceRows(`loan_signing_scanbacks?select=status,submitted_at,approved_at&service_request_id=eq.${requestId}&organization_id=eq.${organizationId}&order=created_at.desc&limit=1`)
+          : Promise.resolve([]),
+        request.service_type === "loan_signing"
+          ? serviceRows(`loan_signing_returns?select=return_method,carrier,tracking_number,tracking_status,drop_off_at,completed_at&service_request_id=eq.${requestId}&organization_id=eq.${organizationId}&order=created_at.desc&limit=1`)
+          : Promise.resolve([]),
       ]);
       return json({
         ok: true,
@@ -773,6 +782,9 @@ Deno.serve(async (req) => {
         ),
         loan_signing: loanSigning[0]
           ? safePick(loanSigning[0], LOAN_SIGNING_SAFE)
+          : null,
+        loan_signing_progress: loanSigning[0]
+          ? customerSafeLoanSigningProgress({ assignment: loanSigning[0], scanbacks: loanSigningScanbacks, returns: loanSigningReturns })
           : null,
       });
     }
