@@ -64,3 +64,11 @@ test("admin core requests survive protected Loan Signing enrichment failures", (
   assert.match(edge, /serviceRows/);
   assert.doesNotMatch(admin, /service_role/i);
 });
+
+test("Templates resolves specifications through its maintained module import", () => {
+  const module = read("assets/js/admin-v3.js");
+  assert.match(module, /templateSpecifications:\s*\{\}/);
+  assert.match(module, /moduleState\.templateSpecifications\[template\.template_key\]/);
+  assert.match(module, /import\("\.\.\/\.\.\/supabase\/functions\/_shared\/template-preview\.mjs"\)/);
+  assert.doesNotMatch(module, /const spec=TEMPLATE_SPECIFICATIONS\[template\.template_key\]\|\|\{\},service/);
+});
