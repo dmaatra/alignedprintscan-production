@@ -5,52 +5,13 @@ const supabaseClient = window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
-// Release 9.1 canonical public shell. Legacy pages intentionally keep their
-// content markup, while the shared shell guarantees one accessible hierarchy.
-const publicHeader = document.querySelector(".pass-2-public .site-header, .pass-3-public .site-header");
-const publicFooter = document.querySelector(".pass-2-public .site-footer, .pass-3-public .site-footer");
-const resourceTail = location.pathname.split("/resources/")[1] || "";
-const pathDepth = location.pathname.includes("/resources/")
-  ? (resourceTail && resourceTail !== "index.html" ? "../../" : "../")
-  : "";
-const atPage = (name) => location.pathname.endsWith(`/${name}`) || (name === "index.html" && /\/$/.test(location.pathname));
-const current = (name) => atPage(name) ? ' aria-current="page"' : "";
-const resourceCurrent = location.pathname.includes("/resources/") ? ' aria-current="page"' : "";
-
-if (publicHeader) {
-  publicHeader.innerHTML = `<div class="container nav">
-    <a class="brand" href="${pathDepth}index.html"><img src="${pathDepth}assets/images/logo-symbol.webp" alt="Aligned Print & Scan symbol logo"><span>Aligned Print & Scan</span></a>
-    <button class="menu-btn" type="button" aria-label="Open menu" aria-controls="primary-navigation" aria-expanded="false"><span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span></button>
-    <nav class="nav-links" id="primary-navigation" aria-label="Primary navigation">
-      <a href="${pathDepth}index.html"${current("index.html")}>Home</a>
-      <span class="service-dropdown"><button type="button" aria-haspopup="true" aria-expanded="false">Services <span aria-hidden="true">▾</span></button><span class="service-dropdown-menu">
-        <a href="${pathDepth}remote-online-notary.html"${current("remote-online-notary.html")}>Remote Online Notary</a>
-        <a href="${pathDepth}mobile-notary.html"${current("mobile-notary.html")}>Mobile Notary</a>
-        <a href="${pathDepth}print-scan.html"${current("print-scan.html")}>Print &amp; Scan</a>
-        <a href="${pathDepth}loan-signing.html"${current("loan-signing.html")}>Loan Signing</a>
-        <span class="service-dropdown-divider" aria-hidden="true"></span><span class="service-dropdown-label">For Businesses</span>
-        <a href="${pathDepth}business-accounts.html"${current("business-accounts.html")}>Business Accounts</a>
-      </span></span>
-      <a href="${pathDepth}pricing.html"${current("pricing.html")}>Pricing</a>
-      <a href="${pathDepth}resources/"${resourceCurrent}>Resources</a>
-      <a href="${pathDepth}faq.html"${current("faq.html")}>FAQs</a>
-      <a href="${pathDepth}pricing.html#request" class="nav-cta">Request Service</a>
-    </nav></div>`;
-}
-
-if (publicFooter) {
-  publicFooter.innerHTML = `<div class="container"><div class="footer-grid">
-    <div><img class="footer-logo" src="${pathDepth}assets/images/logo-full.webp" alt="Aligned Print & Scan full logo"><h3>Secure Document &amp; Notary Solutions</h3><p>Remote Online &amp; Mobile Notary Services<br>Professional Print, Scan &amp; Document Support</p></div>
-    <div><h4>Services</h4><a href="${pathDepth}remote-online-notary.html">Remote Online Notary</a><a href="${pathDepth}mobile-notary.html">Mobile Notary</a><a href="${pathDepth}print-scan.html">Print &amp; Scan</a><a href="${pathDepth}loan-signing.html">Loan Signing</a><a href="${pathDepth}pricing.html">Pricing</a><a href="${pathDepth}faq.html">FAQs</a></div>
-    <div><h4>Company</h4><a href="${pathDepth}index.html#about">About</a><a href="${pathDepth}pricing.html#request">Request Service</a><a href="${pathDepth}terms.html">Terms of Service</a><a href="${pathDepth}privacy.html">Privacy Policy</a><a href="${pathDepth}accessibility.html">Accessibility</a><a href="${pathDepth}support.html">Customer Support</a></div>
-    <div><h4>For Businesses</h4><a href="${pathDepth}business-accounts.html">Business Accounts</a><a href="${pathDepth}business-login.html">Business Portal Sign In</a><a href="${pathDepth}loan-signing.html">Loan Signing Services</a></div>
-    <div><h4>Connect</h4><div class="socials"><a href="https://www.instagram.com/aligned.printscan" target="_blank" rel="noopener noreferrer" aria-label="Instagram">IG</a><a href="https://www.facebook.com/profile.php?id=61593146406891" target="_blank" rel="noopener noreferrer" aria-label="Aligned Print & Scan on Facebook">FB</a><a href="https://share.google/rBUN6hRZiTF5UZPwz" target="_blank" rel="noopener noreferrer" aria-label="Aligned Print & Scan on Google Business Profile (opens in a new tab)">GB</a><a href="https://www.youtube.com/@alignedprintscan" target="_blank" rel="noopener noreferrer" aria-label="YouTube">YT</a></div><a href="mailto:hello@alignedprintscan.com">hello@alignedprintscan.com</a><a href="tel:+14693838879">(469) 383-8879</a><p>Waxahachie, Texas</p></div>
-  </div><div class="footer-bottom">© 2026 Aligned Print &amp; Scan. All Rights Reserved.</div></div>`;
-}
-
 const menuBtn = document.querySelector(".site-header .menu-btn");
 const navLinks = document.querySelector(".site-header .nav-links");
 const serviceToggle = navLinks?.querySelector(".service-dropdown > button");
+const closeServiceMenu = () => {
+  serviceToggle?.setAttribute("aria-expanded", "false");
+  serviceToggle?.closest(".service-dropdown")?.classList.remove("is-open");
+};
 serviceToggle?.addEventListener("click", () => {
   const expanded = serviceToggle.getAttribute("aria-expanded") === "true";
   serviceToggle.setAttribute("aria-expanded", String(!expanded));
@@ -59,6 +20,7 @@ serviceToggle?.addEventListener("click", () => {
 if (menuBtn && navLinks) {
   const closeMenu = () => {
     navLinks.classList.remove("open");
+    closeServiceMenu();
     menuBtn.setAttribute("aria-expanded", "false");
     menuBtn.setAttribute("aria-label", "Open menu");
   };
@@ -74,9 +36,13 @@ if (menuBtn && navLinks) {
   });
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && navLinks.classList.contains("open")) {
-      closeMenu();
-      menuBtn.focus();
+    if (event.key === "Escape") {
+      const menuWasOpen = navLinks.classList.contains("open");
+      const servicesWereOpen = serviceToggle?.getAttribute("aria-expanded") === "true";
+      if (menuWasOpen) closeMenu();
+      else if (servicesWereOpen) closeServiceMenu();
+      if (menuWasOpen) menuBtn.focus();
+      else if (servicesWereOpen) serviceToggle?.focus();
     }
   });
 
