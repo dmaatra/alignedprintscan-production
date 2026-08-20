@@ -4,13 +4,13 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("canonical navigation launches Loan Signing without adding Business Accounts", async () => {
+test("canonical navigation nests Business Accounts within Services", async () => {
   const pages = await Promise.all(["index.html", "business-accounts.html", "loan-signing.html"].map(read));
   for (const page of pages) {
     const nav = page.match(/<nav class="nav-links"[\s\S]*?<\/nav>/)?.[0] || "";
     assert.match(nav, /loan-signing\.html/);
     assert.match(nav, />Request Service</);
-    assert.doesNotMatch(nav, />Business Accounts</);
+    assert.match(nav, /service-dropdown-divider[\s\S]*>Business Accounts</);
   }
 });
 

@@ -8,7 +8,7 @@ test("customer portal hamburger uses the shared accessible mobile navigation", a
   const html = await read("success.html");
   const js = await read("assets/js/script.js");
   assert.match(html, /body class="pass-2-public"/);
-  assert.match(html, /aria-expanded="false" aria-label="Open menu" class="menu-btn"/);
+  assert.match(html, /class="menu-btn"[^>]*aria-label="Open menu"[^>]*aria-expanded="false"/);
   assert.match(js, /\.site-header \.menu-btn/);
   assert.match(js, /menuBtn\.setAttribute\("aria-expanded"/);
 });

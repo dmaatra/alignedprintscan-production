@@ -1,0 +1,20 @@
+/* Canonical business authentication presentation, matched to Admin Login. */
+.business-auth-body{font-family:var(--aps-font-ui);background:linear-gradient(145deg,var(--aps-cream-1),var(--aps-cream-2));color:var(--aps-text-body)}
+.business-auth-shell{padding:clamp(20px,5vw,48px)}
+.business-auth-card{width:min(100%,480px);padding:clamp(26px,5vw,40px);border:1px solid rgba(22,28,77,.1);border-radius:var(--aps-radius-featured);box-shadow:var(--aps-shadow-featured)}
+.business-auth-logo-link{display:block;width:64px;margin-bottom:20px;border-radius:16px}
+.business-auth-mark{width:64px;height:64px;margin:0;object-fit:contain;border-radius:16px}
+.business-auth-card .eyebrow{margin:0 0 8px;font-size:var(--aps-text-caption)}
+.business-auth-card h1{margin:0 0 12px;color:var(--aps-navy-primary);font-family:var(--aps-font-display);font-size:clamp(2rem,5vw,2.55rem);font-weight:700;line-height:1.1}
+.business-auth-card>p:not(.eyebrow):not(.business-auth-status){margin-bottom:22px;font-size:1rem;line-height:1.6}
+.business-auth-card form{display:grid;gap:16px;margin-top:22px}
+.business-auth-card label{display:grid;gap:7px;color:var(--aps-navy-primary);font-size:.9rem;font-weight:700}
+.business-auth-card input{width:100%;height:46px;padding:0 14px;border:1px solid rgba(22,28,77,.25);border-radius:var(--aps-radius-control);background:#fff;color:var(--aps-text-body);font:1rem var(--aps-font-ui)}
+.business-auth-card input:focus-visible{border-color:var(--aps-gold-primary)}
+.business-auth-card .btn{min-height:46px;margin-top:4px;padding:.7rem 1rem;border-radius:var(--aps-radius-control);font-size:.9rem;font-weight:700}
+.business-auth-status{min-height:24px;margin:14px 0 0;font-size:.9rem}
+.business-auth-links{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:20px;padding-top:18px;border-top:1px solid var(--aps-border);font-size:.88rem;font-weight:700}
+.business-auth-links a{color:var(--aps-navy-primary);text-decoration:underline;text-decoration-color:var(--aps-gold-primary);text-underline-offset:4px}
+.business-auth-invalid{margin-top:18px}
+.field-guidance{margin:-4px 0 0;font-size:.84rem}
+@media(max-width:520px){.business-auth-card{padding:24px}.business-auth-links{align-items:flex-start;flex-direction:column;gap:12px}.business-auth-card h1{font-size:2rem}}
