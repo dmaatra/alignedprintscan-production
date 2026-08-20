@@ -2,6 +2,10 @@
 
 This roadmap distinguishes approved known repair work from documented deferrals. It does not authorize implementation.
 
+## Release 10 reconciliation
+
+**CONFIRMED IN PRODUCTION:** Release 10 completed the production-truth inventory for Supabase schema/RLS/Storage/functions, current GitHub main, and Vercel runtime. Proven release-blocking browser-access defects were repaired with a forward migration; historical rows were preserved. Remaining advisor performance items, customer accounts, external calendar/SMS/accounting work, and deletion of the unreferenced `route-distance` stub are deferred enhancements rather than Release 10 defects.
+
 ## Immediate: production truth and security baseline
 
 1. **PRODUCTION VERIFICATION REQUIRED:** Export or inspect the production Supabase schema, migration ledger, RLS policies, Storage policies, Realtime publication, and deployed-function settings.

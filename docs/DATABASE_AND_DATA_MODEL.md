@@ -4,7 +4,7 @@
 
 **CONFIRMED IN CODE:** Supabase Postgres is the application database. Browser code uses supabase-js; Edge Functions use Supabase REST with the service-role key.
 
-**PRODUCTION VERIFICATION REQUIRED:** The repository does not contain the original base migration that created `customers`, `service_requests`, `ron_requests`, `mobile_notary_requests`, `print_scan_requests`, `request_files`, `quotes`, `payments`, `admin_users`, or Storage buckets. Their complete live schemas and policies cannot be reconstructed with certainty from this repository.
+**CONFIRMED IN PRODUCTION (Release 10 audit):** Production has 85 public tables, all with RLS enabled, 52 applied migrations before Release 10, 88 effective policies, and four private Storage buckets. The repository still lacks the original base migration, so production metadata—not historical assumptions—is authoritative for the base schema.
 
 ## Core entities
 
@@ -54,16 +54,16 @@ All are **CONFIRMED IN CODE**.
 - **CONFIRMED IN CODE:** The unapplied Increment 3 migration extends `proof_transaction_assets` with a restricted `request_files` foreign key, stable tracking ID, exact SHA-256/byte count, approved document flags, upload/dispatch/processing states, ambiguity and retry controls, safe errors, audit identities, and provider synchronization timestamps. Partial unique indexes prevent a source file or tracking ID from being mapped twice to one Proof transaction.
 - **CONFIRMED IN CODE:** `proof_document_command_attempts` is a service-role-only sanitized command ledger. It stores identifiers, command/outcome, administrator identity, provider status/error code, and timestamps—not document bytes, signed URLs, storage paths, credentials, or raw provider responses.
 - **CONFIRMED IN DOCUMENTATION:** The bucket is intended to be private, with signed admin links.
-- **PRODUCTION VERIFICATION REQUIRED:** Live bucket creation, size/type restrictions, and current Storage RLS are not fully defined in migrations.
+- **CONFIRMED IN PRODUCTION (Release 10 audit):** `service-request-files`, `request-files`, `order_files`, and `proof-assets` are private. `proof-assets` is constrained to PDF with a 30 MB bucket limit; request-document authorization remains server/request scoped.
 - **CONFIRMED IN DOCUMENTATION:** APS will comply with Texas notary requirements and applicable legal/business record-retention obligations. Specific retention periods remain an intentionally deferred future policy decision.
 
 ## Auth and RLS
 
 - **CONFIRMED IN CODE:** Browser admin uses Supabase Auth session tokens.
 - **CONFIRMED IN DOCUMENTATION:** Intended admin authorization uses `admin_users` plus `is_admin()`.
-- **CONFIRMED IN CODE:** Later migrations often grant all authenticated users access instead of calling `is_admin()`.
-- **CONFIRMED IN CODE:** Some migrations grant anonymous/public reads or writes to invoice items, invoices, and status updates.
-- **PRODUCTION VERIFICATION REQUIRED:** Effective production policies and whether historical broad policies remain installed.
+- **CONFIRMED IN PRODUCTION (Release 10 audit):** Effective policies, grants, security-definer routines, and browser-table boundaries were inventoried. Maintained administrative routines revalidate `auth.uid()` and APS authorization.
+- **FIXED IN RELEASE 10:** The misleading support-ticket policy allowed every authenticated user to manage tickets; it is replaced by `public.is_admin()` authorization.
+- **FIXED IN RELEASE 10:** Anonymous/public access to four superseded order/quote tables and direct browser execution of the canonical intake RPC are revoked without deleting historical rows.
 
 ## Realtime
 
@@ -99,6 +99,8 @@ All are **CONFIRMED IN CODE**.
 The ledger is **CONFIRMED IN CODE**. Several migrations overlap intentionally through `IF NOT EXISTS` compatibility changes.
 
 ## Known schema issues
+
+Release 10 reclassified this historical list against current production. Items already resolved by later migrations are retained below as historical context; the Release 10 certification report is authoritative for current release status.
 
 - **CONFIRMED IN CODE:** The note-history trigger archives on any invoice paid transition, not all required invoices paid.
 - **CONFIRMED IN CODE:** Note history lacks author and original note timestamp.

@@ -16,8 +16,8 @@
 | Admin authentication | `admin-login.html`, Supabase Auth, and `assets/js/admin.js` | **CONFIRMED IN CODE** |
 | Admin application | `admin-dashboard.html`, `admin.js`, and `admin-v3.js` | **CONFIRMED IN CODE** |
 | Database | Supabase Postgres accessed through supabase-js and REST from Edge Functions | **CONFIRMED IN CODE** |
-| Object storage | Supabase Storage bucket `service-request-files` | **CONFIRMED IN CODE** |
-| Server operations | 15 Supabase Edge Function directories under `supabase/functions/` | **CONFIRMED IN CODE** |
+| Object storage | Four private Supabase Storage buckets: `service-request-files`, `request-files`, `order_files`, and `proof-assets` | **CONFIRMED IN PRODUCTION (Release 10 audit)** |
+| Server operations | 33 deployed Supabase Edge Functions, matching 33 maintained function directories | **CONFIRMED IN CODE AND PRODUCTION (Release 10 audit)** |
 | Payments | Stripe Embedded Checkout and webhook processing | **CONFIRMED IN CODE** |
 | Email | Resend called only from Edge Functions | **CONFIRMED IN CODE** |
 | Hosting/deployment | Owner-controlled Vercel deployment connected to GitHub branch `main` | **CONFIRMED IN DOCUMENTATION**; live project settings are **PRODUCTION VERIFICATION REQUIRED** |
@@ -37,13 +37,13 @@ All are **CONFIRMED IN CODE**.
 ## Public data flow
 
 1. `pricing.html` gathers identity, service details, documents/add-ons, schedule, and acknowledgments.
-2. `submitRequestToSupabase()` in `assets/js/script.js` inserts `customers`, `service_requests`, and one service-specific row.
-3. Files are uploaded to `service-request-files`, with metadata inserted into `request_files`.
-4. A `request_status_updates` row is inserted.
-5. `send-request-email` is invoked; an email failure is treated as secondary to saving the request.
+2. The active submit handler invokes `public-request-submit`; the older browser multi-table helper remains unreachable compatibility code.
+3. The Edge Function validates the request and files, uses the transactional `aps_create_request_with_customer` service-role RPC, and rolls back failed request assembly.
+4. Documents are stored in the private request-document path with request-scoped metadata and authoritative PDF page-count handling.
+5. The function invokes maintained notification delivery; customer success remains independent of a secondary administrator-alert failure.
 6. The browser redirects to `success.html` with request ID, service, and APS reference.
 
-**CONFIRMED IN CODE.** These browser-side inserts rely on RLS policies that are only partially represented by local migrations.
+**CONFIRMED IN CODE.** Release 10 removes browser execution of the transactional intake RPC and retires anonymous access to superseded order/quote intake tables while preserving their history.
 
 ## Customer-status flow
 
@@ -68,12 +68,12 @@ All are **CONFIRMED IN CODE**.
 
 ## Architectural risks
 
-- **CONFIRMED IN CODE:** Browser-side multi-table intake and admin order creation are not atomic.
-- **CONFIRMED IN CODE:** Public status reads use an unauthenticated Edge Function and a request identifier; authorization is not customer-account based.
-- **CONFIRMED IN CODE:** Public reads exist in migration history for invoices, invoice items, and status updates. Their production necessity and exposure require review.
+- **CONFIRMED IN CODE:** Public intake is transactional; some administrator workflows remain multi-step but use server authorization and durable history.
+- **INTENTIONAL ARCHITECTURE:** Version 1 Customer Portal access is request/reference scoped rather than a retail customer account. The server returns a customer-safe projection and filters unreleased/internal documents.
+- **FIXED IN RELEASE 10:** Superseded `orders`, `order_files`, `quote_requests`, and `quote_request_files` retained historical data behind anonymous/public read policies. Release 10 removes browser access without deleting records.
 - **CONFIRMED IN CODE:** Edge Functions repeat raw REST helper logic and status calculations, increasing drift risk.
 - **CONFIRMED IN CODE:** Status values are free text, not a shared enum.
-- **PRODUCTION VERIFICATION REQUIRED:** Whether remote Supabase policies differ from local migrations.
+- **CONFIRMED IN PRODUCTION (Release 10 audit):** 85 public tables have RLS enabled. Advisor findings and effective browser policies were reviewed; the Release 10 hardening migration addresses the release-blocking policy/function findings.
 
 ## Historical reconciliation
 

@@ -48,6 +48,9 @@ export async function routeCacheKey(origin, destination, profile = "driving-car"
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** @typedef {{ apiKey?: string, fetchImpl?: typeof fetch, baseUrl?: string, signal?: AbortSignal }} RouteRequestOptions */
+
+/** @param {Record<string, unknown>} address @param {RouteRequestOptions} [options] */
 export async function geocodeAddress(address, { apiKey, fetchImpl = fetch, baseUrl = "https://api.openrouteservice.org", signal } = {}) {
   if (!apiKey) throw new Error("Automatic travel calculation is not configured. Enter the mileage/travel charge manually or try again later.");
   const url = new URL(`${baseUrl}/geocode/search`);
@@ -65,6 +68,7 @@ export async function geocodeAddress(address, { apiKey, fetchImpl = fetch, baseU
   return coordinates;
 }
 
+/** @param {number[]} start @param {number[]} end @param {RouteRequestOptions} [options] */
 export async function drivingRoute(start, end, { apiKey, fetchImpl = fetch, baseUrl = "https://api.openrouteservice.org", signal } = {}) {
   const response = await fetchImpl(`${baseUrl}/v2/directions/driving-car`, {
     method: "POST",
