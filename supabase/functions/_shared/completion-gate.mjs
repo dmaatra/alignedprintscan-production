@@ -70,12 +70,19 @@ export function evaluateCompletion(input) {
     if (facts.proof_of_delivery_required === true && !truthy(facts.proof_of_delivery_present)) add("PROOF_OF_DELIVERY", "Required proof of delivery is missing", "documents");
   }
   if (components.has("loan_signing")) {
-    add(
-      "LOAN_SIGNING_RELEASE_7_REQUIREMENTS_PENDING",
-      "Loan Signing completion remains restricted until package, signing, scanback, and return requirements are verified in Release 7.",
-      "fulfillment",
-    );
+    const lsa = loanSigningCompletion({
+      assignment: input.detail || {},
+      requirements: input.loanSigningRequirements || [],
+      packages: input.loanSigningPackages || [],
+      stipulations: input.loanSigningStipulations || [],
+      scanbacks: input.loanSigningScanbacks || [],
+      returns: input.loanSigningReturns || [],
+      payment_terms: input.detail?.payment_terms || "prepaid",
+      prepaid_balance: prepaidOutstanding,
+    });
+    lsa.blockers.forEach((item) => add(item.code, item.message, "fulfillment"));
   }
   if (facts.aps_deliverable_required === true && !released) add("CUSTOMER_DELIVERABLE", "Required customer deliverable not released", "documents");
   return { allowed: blockers.length === 0, blockers, outstanding_balance: outstanding, components: [...components] };
 }
+import { loanSigningCompletion } from "./loan-signing-fulfillment.mjs";

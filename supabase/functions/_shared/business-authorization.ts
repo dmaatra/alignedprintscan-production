@@ -52,7 +52,7 @@ export function documentMayBeReleased(document: Record<string, unknown>) {
     "proof_admin",
     "provider_payload",
     "stipulation",
-  ].includes(classification);
+  ].includes(classification) || classification.endsWith("_private") || classification.startsWith("lsa_stipulation_proof") || classification.startsWith("lsa_dropoff_proof");
   return document.is_active === true && document.customer_visible === true &&
     document.eligible_for_delivery === true && !internal;
 }

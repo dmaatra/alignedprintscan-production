@@ -62,10 +62,10 @@ test("admin exposes a dedicated Loan Signings module and New Order service", asy
   assert.match(admin, /data-service-fields="loan_signing"/);
 });
 
-test("Release 6 intentionally blocks Loan Signing completion pending Release 7", async () => {
+test("Release 6 completion placeholder is replaced by the Release 7 requirements engine", async () => {
   const gate = await read("supabase/functions/_shared/completion-gate.mjs");
-  assert.match(gate, /LOAN_SIGNING_RELEASE_7_REQUIREMENTS_PENDING/);
-  assert.match(gate, /Release 7/);
+  assert.match(gate, /loanSigningCompletion/);
+  assert.doesNotMatch(gate, /LOAN_SIGNING_RELEASE_7_REQUIREMENTS_PENDING/);
 });
 
 test("public page gives scope and advice disclaimers without deep fulfillment promises", async () => {
