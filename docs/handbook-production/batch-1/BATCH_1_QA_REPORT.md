@@ -7,7 +7,7 @@ QA date: 2026-08-20
 ## Build inventory
 
 - 54 US Letter pages
-- 7,300 words in the Word master
+- 7,522 words in the Word master
 - 14 chapters
 - 14 original diagrams with editable SVG masters and publication PNGs
 - 8 governed synthetic screenshots; no live customer or production data
@@ -16,7 +16,7 @@ QA date: 2026-08-20
 - 15 numbered operator procedures
 - 4 indexed checklist assets
 - 2 decision trees
-- 12 Quick References
+- 16 Quick References
 
 ## Chapter QA
 
@@ -28,7 +28,7 @@ Chapters 1–14: **PASS**. Every approved Batch 1 chapter is present, substantiv
 
 ## Visual and navigation QA
 
-**PASS**: all 54 rendered pages were visually inspected. No clipping, overlap, broken glyphs, unintended blank pages, or spill pages were found. The static contents list contains 14 working internal chapter links. The PDF contains 76 hierarchical bookmarks and 14 link annotations. Tables repeat header rows. Page numbers and running furniture render consistently.
+**PASS**: every rendered page was visually inspected. No clipping, overlap, broken glyphs, unintended blank pages, or spill pages were found. The static contents list contains 14 working internal chapter links. The PDF preserves hierarchical bookmarks and link annotations. Tables repeat header rows and carry explicit table numbers. Page numbers and running furniture render consistently.
 
 ## Safety and publication boundary
 
@@ -40,4 +40,3 @@ Chapters 1–14: **PASS**. Every approved Batch 1 chapter is present, substantiv
 - `git diff --check`: passed
 - Forbidden operator-facing developer terminology scan: passed
 - DOCX/PDF structural audit: passed
-
