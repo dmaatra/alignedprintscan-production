@@ -50,6 +50,10 @@ test("professional profile keeps explicit credentials and reusable vCard data", 
   assert.match(vcard, /EMAIL;TYPE=INTERNET,WORK:doneisha@alignedprintscan\.com/);
   assert.match(vcard, /END:VCARD\n$/);
   assert.doesNotMatch(doneisha, />Owner<|>Founder<|>CEO<|>President</);
+  assert.match(script, /supportingCredentials\.join\(" \| "\)/);
+  assert.match(doneisha, /class="card-button card-button-secondary" data-save-contact/);
+  assert.match(doneisha, /class="card-signature-footer"/);
+  assert.doesNotMatch(doneisha, /class="aps-company-name"/);
 });
 
 test("both cards use approved APS positioning without retired copy or emoji icons", () => {

@@ -81,7 +81,7 @@
     document.querySelector("[data-professional-name]").textContent = profile.displayName;
     textList(document.querySelector("[data-professional-credentials]"), profile.credentials);
     const supporting = document.querySelector("[data-professional-supporting]");
-    if (supporting) supporting.textContent = profile.supportingCredentials.join(" • ");
+    if (supporting) supporting.textContent = profile.supportingCredentials.join(" | ");
 
     const portrait = document.querySelector("[data-professional-portrait]");
     const placeholder = document.querySelector("[data-portrait-placeholder]");

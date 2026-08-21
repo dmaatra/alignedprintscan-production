@@ -20,36 +20,31 @@
       <article class="digital-card professional-card" aria-labelledby="professionalName">
         <header class="card-brand professional-brand">
           <img class="professional-logo" src="assets/images/logo-full.webp" alt="Aligned Print &amp; Scan" width="1536" height="1024" />
-          <div class="professional-identity">
-            <div class="portrait-frame" data-portrait-frame>
-              <img data-professional-portrait hidden alt="" />
-              <div class="portrait-placeholder" data-portrait-placeholder role="img" aria-label="Approved professional portrait pending">
-                <img src="assets/images/logo-symbol.webp" alt="" width="96" height="96" />
-                <span>Portrait unavailable</span>
-              </div>
+        </header>
+
+        <div class="card-body professional-profile">
+          <div class="portrait-frame" data-portrait-frame>
+            <img data-professional-portrait hidden alt="" />
+            <div class="portrait-placeholder" data-portrait-placeholder role="img" aria-label="Approved professional portrait pending">
+              <img src="assets/images/logo-symbol.webp" alt="" width="96" height="96" />
+              <span>Portrait unavailable</span>
             </div>
-            <div class="professional-name-block">
-              <h1 id="professionalName" data-professional-name>Doneisha Maat Ra</h1>
-            </div>
+          </div>
+
+          <div class="professional-name-block">
+            <h1 id="professionalName" data-professional-name>Doneisha Maat Ra</h1>
           </div>
           <ul class="credential-list" data-professional-credentials aria-label="Primary professional credentials"></ul>
           <p class="supporting-credentials" data-professional-supporting aria-label="Supporting professional credentials"></p>
-          <div class="professional-aps-connection">
-            <p class="aps-company-name">Aligned Print &amp; Scan</p>
-            <p class="card-tagline">Online when you can. Mobile when you need it.</p>
-            <p class="card-service-line">Online &amp; Mobile Notary and Document Services</p>
-          </div>
-        </header>
 
-        <div class="card-body">
           <nav class="quick-actions" aria-label="Contact Doneisha Maat Ra">
             <a data-card-action="call" data-contact-call href="tel:+14693838879"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92z"/></svg><span>Call</span></a>
             <a data-card-action="text" data-contact-text href="sms:+14693838879"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg><span>Text</span></a>
             <a data-card-action="email" data-contact-email href="mailto:doneisha@alignedprintscan.com"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="m22 6-10 7L2 6"/></svg><span>Email</span></a>
-            <a data-save-contact href="assets/vcards/doneisha.vcf" download="doneisha-maat-ra.vcf"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span>Save Contact</span></a>
             <a data-card-action="visit_website" href="index.html"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg><span>Website</span></a>
           </nav>
 
+          <a class="card-button card-button-secondary" data-save-contact href="assets/vcards/doneisha.vcf" download="doneisha-maat-ra.vcf">Save Contact</a>
           <a class="card-button card-button-primary" data-card-action="request_service" data-request-service href="pricing.html#request">Request Service</a>
 
           <div class="card-contact-lines">
@@ -58,6 +53,11 @@
           </div>
           <p class="card-status" data-card-status role="status" aria-live="polite"></p>
         </div>
+
+        <footer class="card-signature-footer">
+          <p class="card-tagline">Online when you can. Mobile when you need it.</p>
+          <p class="card-service-line">Online &amp; Mobile Notary and Document Services</p>
+        </footer>
       </article>
     </main>
     <script src="assets/js/aps-growth-config.js"></script>
