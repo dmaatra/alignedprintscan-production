@@ -10,7 +10,11 @@
       credentials: Object.freeze([
         "Texas Notary Public",
         "Online Notary Public",
-        "Notary Signing Agent",
+        "Loan Signing Agent",
+      ]),
+      supportingCredentials: Object.freeze([
+        "NNA Certified Loan Signing Agent",
+        "Bonded & Insured",
       ]),
       organization: "Aligned Print & Scan",
       professionalEmail: "doneisha@alignedprintscan.com",
@@ -46,7 +50,7 @@
   }
 
   function vCardFor(profile) {
-    const credentials = profile.credentials.join(", ");
+    const credentials = [...profile.credentials, ...profile.supportingCredentials].join(", ");
     return [
       "BEGIN:VCARD",
       "VERSION:3.0",
@@ -76,7 +80,8 @@
   function renderProfessional(profile) {
     document.querySelector("[data-professional-name]").textContent = profile.displayName;
     textList(document.querySelector("[data-professional-credentials]"), profile.credentials);
-    textList(document.querySelector("[data-professional-services]"), profile.services);
+    const supporting = document.querySelector("[data-professional-supporting]");
+    if (supporting) supporting.textContent = profile.supportingCredentials.join(" • ");
 
     const portrait = document.querySelector("[data-professional-portrait]");
     const placeholder = document.querySelector("[data-portrait-placeholder]");
