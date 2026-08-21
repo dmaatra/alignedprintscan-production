@@ -30,6 +30,7 @@ def table(doc,rows):
     t=doc.add_table(rows=0,cols=len(rows[0])); t.autofit=False
     for ri,row in enumerate(rows):
         cells=t.add_row().cells
+        row_pr=t.rows[-1]._tr.get_or_add_trPr(); no_split=OxmlElement("w:cantSplit"); row_pr.append(no_split)
         for ci,value in enumerate(row):
             c=cells[ci]; c.vertical_alignment=WD_CELL_VERTICAL_ALIGNMENT.CENTER
             pr=c._tc.get_or_add_tcPr(); sh=OxmlElement("w:shd"); sh.set(qn("w:fill"),NAVY if ri==0 else (WHITE if ri%2 else IVORY)); pr.append(sh)
@@ -101,6 +102,9 @@ def parse_markdown(doc,lines,figure_map=None,chapter_hook=None):
     while i<len(lines):
         line=lines[i].rstrip()
         if not line: i+=1; continue
+        if line in ("{{TEMPLATE_DIRECTORY}}","{{SCRIPT_DIRECTORY}}"):
+            if chapter_hook: chapter_hook(doc,line.strip("{}"))
+            i+=1; continue
         if line.startswith("# PART "):
             p=doc.add_heading(line[2:],0); hi+=1; bookmark(p,f"toc_{hi}",bid); bid+=1; i+=1; continue
         if line.startswith("## Chapter "):
