@@ -2,7 +2,7 @@
 
 :root {
   --aps-navy: #161c4d;
-  --aps-navy-deep: #10062e;
+  --aps-logo-navy: #12073b;
   --aps-gold: #c8a96b;
   --aps-light-gold: #e8d28d;
   --aps-ivory: #f6f3ee;
@@ -43,11 +43,12 @@ img { display: block; max-width: 100%; }
 }
 
 .card-brand {
-  padding: clamp(20px, 4.5vw, 38px) clamp(20px, 5vw, 42px) clamp(24px, 5vw, 40px);
-  background: var(--aps-navy-deep);
+  padding: 16px clamp(20px, 5vw, 42px) 24px;
+  background: var(--aps-logo-navy);
   color: var(--aps-white);
   text-align: center;
 }
+.logo-heading { margin: 0; }
 .company-logo, .professional-logo {
   width: min(100%, 288px);
   height: auto;
@@ -55,11 +56,11 @@ img { display: block; max-width: 100%; }
   margin: 0 auto;
   object-fit: contain;
 }
-.brand-copy { margin-top: -10px; }
+.brand-copy { margin-top: -14px; }
 h1, h2 { margin: 0; font-family: var(--aps-display); line-height: 1.1; }
-h1 { color: var(--aps-white); font-size: clamp(1.85rem, 6vw, 3rem); }
+h1 { font-size: clamp(1.95rem, 5vw, 2.75rem); }
 h2 { color: var(--aps-navy); font-size: 1.35rem; }
-.card-tagline { margin: 12px 0 0; color: var(--aps-light-gold); font-family: var(--aps-display); font-size: clamp(1.05rem, 3vw, 1.25rem); font-weight: 600; }
+.card-tagline { margin: 0; color: var(--aps-light-gold); font-family: var(--aps-display); font-size: clamp(1.05rem, 3vw, 1.25rem); font-weight: 600; }
 .card-service-line { margin: 7px 0 0; color: var(--aps-soft-grey); font-size: 0.76rem; font-weight: 600; letter-spacing: 0.045em; }
 .card-body { padding: clamp(22px, 5vw, 38px); }
 
@@ -68,64 +69,77 @@ h2 { color: var(--aps-navy); font-size: 1.35rem; }
 .company-service-grid li { display: grid; min-height: 64px; place-items: center; padding: 10px; border: 1px solid var(--aps-border); border-radius: 12px; background: var(--aps-white); color: var(--aps-navy); font-size: 0.82rem; font-weight: 700; }
 .business-account-note { margin: 14px 0 0; color: var(--aps-muted); font-size: 0.76rem; font-weight: 600; letter-spacing: 0.04em; }
 
-.quick-actions { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 24px 0 18px; }
-.company-card .quick-actions { grid-template-columns: repeat(4, 1fr); }
+.quick-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 24px 0 18px; }
 .quick-actions a { display: flex; min-width: 0; min-height: 62px; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 7px 4px; border: 1px solid var(--aps-border); border-radius: 12px; background: var(--aps-white); color: var(--aps-navy); font-size: 0.7rem; font-weight: 700; text-decoration: none; }
 .quick-actions svg { width: 19px; height: 19px; fill: none; stroke: #8c7138; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .quick-actions a:hover { border-color: var(--aps-gold); background: #fbfaf7; }
 
-.card-button { display: inline-flex; min-height: 52px; align-items: center; justify-content: center; border: 1px solid var(--aps-gold); border-radius: 999px; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-decoration: none; text-transform: uppercase; transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease; }
+.card-button { display: inline-flex; width: 100%; min-height: 52px; align-items: center; justify-content: center; border: 1px solid var(--aps-gold); border-radius: 999px; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-decoration: none; text-transform: uppercase; transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease; }
+.card-button + .card-button { margin-top: 10px; }
 .card-button:hover { transform: translateY(-2px); box-shadow: 0 9px 22px rgba(13, 19, 60, 0.17); }
-.card-button-primary { width: 100%; background: var(--aps-navy); color: var(--aps-white); }
-.card-contact-lines { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; color: var(--aps-navy); font-size: 0.78rem; font-weight: 600; text-align: center; }
+.card-button-primary { background: var(--aps-navy); color: var(--aps-white); }
+.card-button-secondary { background: transparent; color: var(--aps-navy); }
+.card-contact-lines { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; margin-top: 14px; color: var(--aps-navy); font-size: 0.76rem; font-weight: 600; text-align: center; }
 .card-contact-lines a { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; overflow-wrap: anywhere; text-underline-offset: 3px; }
-.card-socials { display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--aps-border); color: var(--aps-muted); font-size: 0.74rem; }
-.card-socials a { min-height: 44px; display: inline-flex; align-items: center; text-underline-offset: 3px; }
+.card-status { min-height: 1.3em; margin: 4px 0 0; color: var(--aps-muted); font-size: 0.74rem; text-align: center; }
 
-.professional-brand { padding-bottom: 26px; }
-.professional-logo { width: min(100%, 210px); }
-.professional-identity { display: grid; grid-template-columns: 180px minmax(0, 1fr); align-items: center; justify-content: center; gap: clamp(18px, 4vw, 32px); width: min(100%, 500px); margin: -4px auto 0; text-align: left; }
-.portrait-frame { width: 180px; aspect-ratio: 1; overflow: hidden; border: 3px solid var(--aps-gold); border-radius: 50%; background: var(--aps-navy-deep); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24); }
+.company-signature-footer, .card-signature-footer { background: var(--aps-logo-navy); color: var(--aps-white); text-align: center; }
+.company-signature-footer { padding: 10px clamp(22px, 5vw, 38px); }
+.card-socials { display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; color: var(--aps-soft-grey); font-size: 0.74rem; }
+.card-socials a { display: inline-flex; min-height: 44px; align-items: center; text-underline-offset: 3px; }
+.card-signature-footer { padding: 22px clamp(22px, 5vw, 38px) 24px; }
+.card-signature-footer .card-tagline { font-size: 1.05rem; }
+.card-signature-footer .card-service-line { margin-top: 6px; }
+
+.professional-brand { min-height: 256px; padding-top: 12px; padding-bottom: 66px; }
+.professional-logo { width: min(100%, 250px); }
+.professional-profile { position: relative; padding-top: 1px; text-align: center; }
+.portrait-frame {
+  width: 166px;
+  aspect-ratio: 1;
+  margin: -84px auto 0;
+  overflow: hidden;
+  border: 3px solid var(--aps-gold);
+  border-radius: 50%;
+  background: var(--aps-logo-navy);
+  box-shadow: 0 10px 24px rgba(13, 19, 60, 0.2);
+}
 .portrait-frame > img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 42%; }
 .portrait-placeholder { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 18px; color: var(--aps-soft-grey); text-align: center; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; }
 .portrait-placeholder img { width: 58px; }
-.professional-name-block h1 { font-size: clamp(1.8rem, 5vw, 2.6rem); }
-.credential-list { display: grid; grid-template-columns: repeat(3, 104px); justify-content: center; gap: 12px; margin: 20px auto 12px; padding: 0; list-style: none; }
-.credential-list li { display: grid; width: 104px; min-height: 104px; place-items: center; padding: 10px; border: 1px solid var(--aps-light-gold); border-radius: 50%; background: linear-gradient(145deg, #ead18a, var(--aps-gold)); color: var(--aps-navy-deep); font-size: 0.66rem; font-weight: 700; line-height: 1.24; text-align: center; }
-.supporting-credentials { margin: 0; color: var(--aps-soft-grey); font-size: 0.68rem; font-weight: 600; line-height: 1.5; }
-.professional-aps-connection { margin-top: 20px; padding-top: 18px; border-top: 1px solid rgba(232, 210, 141, 0.35); text-align: center; }
-.aps-company-name { margin: 0; color: var(--aps-white); font-family: var(--aps-display); font-size: 1.2rem; font-weight: 700; }
-.professional-aps-connection .card-tagline { margin-top: 6px; font-size: 1rem; }
-.professional-aps-connection .card-service-line { margin-top: 5px; }
-.card-status { min-height: 1.3em; margin: 12px 0 0; color: var(--aps-muted); font-size: 0.76rem; text-align: center; }
+.professional-name-block { margin-top: 18px; }
+.professional-name-block h1 { color: var(--aps-navy); }
+.credential-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 18px auto 12px; padding: 0; list-style: none; }
+.credential-list li { display: grid; min-height: 48px; place-items: center; padding: 8px 10px; border: 1px solid rgba(200, 169, 107, 0.72); border-radius: 999px; background: rgba(255, 255, 255, 0.66); color: var(--aps-navy); font-size: 0.72rem; font-weight: 700; line-height: 1.28; text-align: center; }
+.supporting-credentials { margin: 0 auto; color: var(--aps-muted); font-size: 0.76rem; font-weight: 600; line-height: 1.55; text-wrap: balance; }
+.professional-profile .quick-actions { margin-top: 22px; }
 
 @media (max-width: 600px) {
   .digital-card-shell { padding: 0; }
   .digital-card { min-height: 100vh; border: 0; border-radius: 0; box-shadow: none; }
-  .card-brand { padding: 16px 18px 22px; }
+  .card-brand { padding: 12px 18px 20px; }
   .company-logo { width: 220px; }
-  .brand-copy { margin-top: -14px; }
-  .company-card h1 { font-size: 1.8rem; }
-  .card-body { padding: 20px 18px 26px; }
-  .professional-logo { width: 144px; }
-  .professional-identity { grid-template-columns: 124px minmax(0, 1fr); gap: 14px; margin-top: -10px; }
-  .portrait-frame { width: 124px; }
-  .professional-name-block h1 { font-size: clamp(1.5rem, 7vw, 1.95rem); }
-  .credential-list { grid-template-columns: repeat(3, 88px); gap: 8px; margin-top: 16px; }
-  .credential-list li { width: 88px; min-height: 88px; padding: 7px; font-size: 0.58rem; }
-  .supporting-credentials { font-size: 0.61rem; }
-  .professional-aps-connection { margin-top: 16px; padding-top: 14px; }
-  .professional-aps-connection .card-tagline { font-size: 0.92rem; }
+  .brand-copy { margin-top: -12px; }
+  .card-body { padding: 20px 18px 22px; }
+  .professional-brand { min-height: 194px; padding-bottom: 54px; }
+  .professional-logo { width: 210px; }
+  .portrait-frame { width: 144px; margin-top: -73px; }
+  .professional-name-block { margin-top: 16px; }
+  .professional-name-block h1 { font-size: 2rem; }
+  .credential-list { gap: 6px; margin-top: 16px; }
+  .credential-list li { min-height: 50px; padding: 7px 6px; font-size: 0.68rem; }
+  .supporting-credentials { max-width: 330px; font-size: 0.73rem; }
   .quick-actions { gap: 5px; margin-top: 18px; }
-  .quick-actions a { min-height: 58px; font-size: 0.6rem; }
+  .quick-actions a { min-height: 60px; font-size: 0.64rem; }
   .quick-actions svg { width: 17px; height: 17px; }
+  .card-signature-footer { padding: 19px 18px 21px; }
+  .card-signature-footer .card-tagline { font-size: 1rem; }
 }
 
 @media (max-width: 350px) {
-  .professional-identity { grid-template-columns: 106px minmax(0, 1fr); gap: 10px; }
-  .portrait-frame { width: 106px; }
-  .credential-list { grid-template-columns: repeat(3, 78px); }
-  .credential-list li { width: 78px; min-height: 78px; font-size: 0.52rem; }
+  .credential-list { grid-template-columns: 1fr; }
+  .credential-list li { min-height: 44px; }
+  .quick-actions { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (prefers-reduced-motion: reduce) {
