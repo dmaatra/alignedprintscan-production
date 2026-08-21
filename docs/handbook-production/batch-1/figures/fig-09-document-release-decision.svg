@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#C8A96B"/></marker></defs>
+<rect width="1600" height="900" fill="#F6F3EE"/><rect x="55" y="45" width="1490" height="810" rx="30" fill="white" stroke="#161C4D" stroke-width="5"/><rect x="55" y="45" width="1490" height="110" fill="#161C4D"/><text x="95" y="115" font-family="Montserrat,Arial" font-size="38" font-weight="700" fill="white">Document Release Decision</text>
+<rect x="95" y="335" width="256" height="230" rx="24" fill="#E9E9ED" stroke="#161C4D" stroke-width="3"/>
+<text x="223.0" y="455" text-anchor="middle" font-family="Montserrat,Arial" font-size="20" font-weight="700" fill="#161C4D">External visibility intended?</text>
+<rect x="383" y="335" width="256" height="230" rx="24" fill="#161C4D" stroke="#161C4D" stroke-width="3"/>
+<text x="511.0" y="455" text-anchor="middle" font-family="Montserrat,Arial" font-size="20" font-weight="700" fill="#FFFFFF">Correct completed version?</text>
+<path d="M 356 450 L 375 450" stroke="#C8A96B" stroke-width="8" marker-end="url(#a)"/>
+<rect x="671" y="335" width="256" height="230" rx="24" fill="#161C4D" stroke="#161C4D" stroke-width="3"/>
+<text x="799.0" y="455" text-anchor="middle" font-family="Montserrat,Arial" font-size="20" font-weight="700" fill="#FFFFFF">Review / gates complete?</text>
+<path d="M 644 450 L 663 450" stroke="#C8A96B" stroke-width="8" marker-end="url(#a)"/>
+<rect x="959" y="335" width="256" height="230" rx="24" fill="#161C4D" stroke="#161C4D" stroke-width="3"/>
+<text x="1087.0" y="455" text-anchor="middle" font-family="Montserrat,Arial" font-size="20" font-weight="700" fill="#FFFFFF">Correct recipient?</text>
+<path d="M 932 450 L 951 450" stroke="#C8A96B" stroke-width="8" marker-end="url(#a)"/>
+<rect x="1247" y="335" width="256" height="230" rx="24" fill="#E9E9ED" stroke="#161C4D" stroke-width="3"/>
+<text x="1375.0" y="455" text-anchor="middle" font-family="Montserrat,Arial" font-size="20" font-weight="700" fill="#161C4D">Release + verify</text>
+<path d="M 1220 450 L 1239 450" stroke="#C8A96B" stroke-width="8" marker-end="url(#a)"/>
+</svg>
