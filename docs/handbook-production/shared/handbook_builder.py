@@ -82,7 +82,9 @@ def headings(lines):
     result=[]
     for line in lines:
         if line.startswith("# PART "): result.append((1,line[2:]))
+        elif line == "# APPENDICES": result.append((1,line[2:]))
         elif line.startswith("## Chapter "): result.append((2,line[3:]))
+        elif line.startswith("## Appendix "): result.append((2,line[3:]))
         elif line.startswith("### "): result.append((3,line[4:]))
     return result
 
@@ -107,6 +109,8 @@ def parse_markdown(doc,lines,figure_map=None,chapter_hook=None):
             i+=1; continue
         if line.startswith("# PART "):
             p=doc.add_heading(line[2:],0); hi+=1; bookmark(p,f"toc_{hi}",bid); bid+=1; i+=1; continue
+        if line == "# APPENDICES":
+            p=doc.add_heading(line[2:],0); p.paragraph_format.page_break_before=True; hi+=1; bookmark(p,f"toc_{hi}",bid); bid+=1; i+=1; continue
         if line.startswith("## Chapter "):
             current=int(re.search(r"Chapter (\d+)",line).group(1)); p=doc.add_heading(line[3:],1); p.paragraph_format.page_break_before=True; hi+=1; bookmark(p,f"toc_{hi}",bid); bid+=1
             para(doc,"Purpose: perform this workflow from verified APS and assignment evidence while preserving legal, notarial, financial, privacy, and ordering-party boundaries.")
@@ -114,6 +118,8 @@ def parse_markdown(doc,lines,figure_map=None,chapter_hook=None):
             if current in figure_map: add_figure(doc,*figure_map[current])
             if chapter_hook: chapter_hook(doc,current)
             i+=1; continue
+        if line.startswith("## Appendix "):
+            p=doc.add_heading(line[3:],1); hi+=1; bookmark(p,f"toc_{hi}",bid); bid+=1; i+=1; continue
         if line.startswith("### "):
             p=doc.add_heading(line[4:],2); hi+=1; bookmark(p,f"toc_{hi}",bid); bid+=1; i+=1; continue
         if line.startswith("|"):
