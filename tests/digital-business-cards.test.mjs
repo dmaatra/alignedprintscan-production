@@ -1,0 +1,48 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const card = read("card.html");
+const doneisha = read("doneisha.html");
+const script = read("assets/js/digital-card.js");
+const vcard = read("assets/vcards/doneisha.vcf");
+const robots = read("robots.txt");
+const sitemap = read("sitemap.xml");
+const vercel = JSON.parse(read("vercel.json"));
+
+test("digital card routes remain unlisted and noindex", () => {
+  for (const html of [card, doneisha]) assert.match(html, /name="robots" content="noindex, nofollow, noarchive"/);
+  assert.doesNotMatch(sitemap, /\/card|\/doneisha/);
+  assert.match(robots, /Disallow: \/card/);
+  assert.match(robots, /Disallow: \/doneisha/);
+  assert.ok(vercel.rewrites.some(({ source, destination }) => source === "/card" && destination === "/card.html"));
+  assert.ok(vercel.rewrites.some(({ source, destination }) => source === "/doneisha" && destination === "/doneisha.html"));
+});
+
+test("company card uses canonical APS assets, contacts, and intake", () => {
+  assert.match(card, /assets\/images\/logo-full\.webp/);
+  assert.match(card, /pricing\.html\?utm_source=aps_company_card&amp;utm_medium=digital_card#request/);
+  assert.match(card, /tel:\+14693838879/);
+  assert.match(card, /mailto:hello@alignedprintscan\.com/);
+  assert.doesNotMatch(card, /Doneisha|Owner|Founder|CEO|President/);
+});
+
+test("professional profile keeps explicit credentials and reusable vCard data", () => {
+  assert.match(script, /const PROFESSIONALS/);
+  assert.match(script, /Texas Notary Public/);
+  assert.match(script, /Online Notary Public/);
+  assert.match(script, /Notary Signing Agent/);
+  assert.match(script, /BEGIN:VCARD/);
+  assert.match(script, /VERSION:3\.0/);
+  assert.match(script, /doneisha@alignedprintscan\.com/);
+  assert.match(script, /assets\/images\/professionals\/doneisha-approved-portrait\.png/);
+  assert.match(doneisha, /href="assets\/vcards\/doneisha\.vcf"/);
+  assert.match(vcard, /^BEGIN:VCARD\nVERSION:3\.0\n/);
+  assert.match(vcard, /FN:Doneisha Maat Ra/);
+  assert.match(vcard, /ORG:Aligned Print & Scan/);
+  assert.match(vcard, /TEL;TYPE=CELL,VOICE:\+14693838879/);
+  assert.match(vcard, /EMAIL;TYPE=INTERNET,WORK:doneisha@alignedprintscan\.com/);
+  assert.match(vcard, /END:VCARD\n$/);
+  assert.doesNotMatch(doneisha, />Owner<|>Founder<|>CEO<|>President</);
+});

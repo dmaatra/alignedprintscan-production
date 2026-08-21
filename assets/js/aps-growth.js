@@ -5,7 +5,7 @@
   const SESSION_KEY = "aps_request_touch_v1";
   const SENT_KEY = "aps_analytics_events_v1";
   const SAFE = /^[a-z0-9._-]{1,100}$/i;
-  const PUBLIC_PATHS = new Set(["/", "/index.html", "/pricing.html", "/remote-online-notary.html", "/mobile-notary.html", "/print-scan.html", "/loan-signing.html", "/business-accounts.html", "/resources/", "/faq.html", "/terms.html", "/privacy.html", "/accessibility.html", "/support.html"]);
+  const PUBLIC_PATHS = new Set(["/", "/index.html", "/pricing.html", "/remote-online-notary.html", "/mobile-notary.html", "/print-scan.html", "/loan-signing.html", "/business-accounts.html", "/resources/", "/faq.html", "/terms.html", "/privacy.html", "/accessibility.html", "/support.html", "/card", "/card.html", "/doneisha", "/doneisha.html"]);
   const ANALYTICS_PATHS = new Set([...PUBLIC_PATHS, "/success.html"]);
 
   function clean(value) {
@@ -57,13 +57,15 @@
     return true;
   }
   function event(name, params = {}, onceKey = "") {
-    if (!/^(request_service_view|request_started|service_selected|request_submitted|quote_viewed|quote_approved|payment_checkout_started|customer_portal_opened|resource_search|resource_article_view|resource_helpful_submitted|resource_question_submitted)$/.test(name)) return false;
+    if (!/^(request_service_view|request_started|service_selected|request_submitted|quote_viewed|quote_approved|payment_checkout_started|customer_portal_opened|resource_search|resource_article_view|resource_helpful_submitted|resource_question_submitted|digital_card_view|digital_card_action)$/.test(name)) return false;
     const sent = new Set(JSON.parse(sessionStorage.getItem(SENT_KEY) || "[]"));
     const key = onceKey || name;
     if (sent.has(key)) return false;
-    const payload = {};
-    if (params.service_category && ["RON", "Mobile Notary", "Print & Scan"].includes(params.service_category)) payload.service_category = params.service_category;
-    if (typeof global.gtag === "function") global.gtag("event", name, payload);
+    const eventData = {};
+    if (params.service_category && ["RON", "Mobile Notary", "Print & Scan"].includes(params.service_category)) eventData.service_category = params.service_category;
+    if (params.card_type && ["company", "professional"].includes(params.card_type)) eventData.card_type = params.card_type;
+    if (params.action && ["request_service", "save_contact", "call", "text", "email", "visit_website"].includes(params.action)) eventData.action = params.action;
+    if (typeof global.gtag === "function") global.gtag("event", name, eventData);
     sent.add(key); sessionStorage.setItem(SENT_KEY, JSON.stringify([...sent]));
     return true;
   }
