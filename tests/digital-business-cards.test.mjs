@@ -26,13 +26,18 @@ test("company card uses canonical APS assets, contacts, and intake", () => {
   assert.match(card, /tel:\+14693838879/);
   assert.match(card, /mailto:hello@alignedprintscan\.com/);
   assert.doesNotMatch(card, /Doneisha|Owner|Founder|CEO|President/);
+  for (const service of ["Remote Online Notary", "Mobile Notary", "Print &amp; Scan", "Loan Signing"]) {
+    assert.match(card, new RegExp(service));
+  }
 });
 
 test("professional profile keeps explicit credentials and reusable vCard data", () => {
   assert.match(script, /const PROFESSIONALS/);
   assert.match(script, /Texas Notary Public/);
   assert.match(script, /Online Notary Public/);
-  assert.match(script, /Notary Signing Agent/);
+  assert.match(script, /Loan Signing Agent/);
+  assert.match(script, /NNA Certified Loan Signing Agent/);
+  assert.match(script, /Bonded & Insured/);
   assert.match(script, /BEGIN:VCARD/);
   assert.match(script, /VERSION:3\.0/);
   assert.match(script, /doneisha@alignedprintscan\.com/);
@@ -45,4 +50,17 @@ test("professional profile keeps explicit credentials and reusable vCard data", 
   assert.match(vcard, /EMAIL;TYPE=INTERNET,WORK:doneisha@alignedprintscan\.com/);
   assert.match(vcard, /END:VCARD\n$/);
   assert.doesNotMatch(doneisha, />Owner<|>Founder<|>CEO<|>President</);
+});
+
+test("both cards use approved APS positioning without retired copy or emoji icons", () => {
+  for (const html of [card, doneisha]) {
+    assert.match(html, /Online when you can\. Mobile when you need it\./);
+    assert.match(html, /Online &amp; Mobile Notary and Document Services/);
+    assert.doesNotMatch(html, /Professional Digital Card/i);
+    assert.doesNotMatch(html, /Services through Aligned Print &amp; Scan/i);
+    assert.doesNotMatch(html, /Professional service, backed by APS/i);
+    assert.doesNotMatch(html, /Professional service, thoughtfully coordinated/i);
+    assert.doesNotMatch(html, /Secure, precise support online and by appointment/i);
+    assert.doesNotMatch(html, /[☎✦✉◆]/u);
+  }
 });
