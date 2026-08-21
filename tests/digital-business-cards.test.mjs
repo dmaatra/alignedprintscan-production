@@ -29,6 +29,12 @@ test("company card uses canonical APS assets, contacts, and intake", () => {
   for (const service of ["Remote Online Notary", "Mobile Notary", "Print &amp; Scan", "Loan Signing"]) {
     assert.match(card, new RegExp(service));
   }
+  assert.match(card, /class="card-button card-button-secondary business-account-button" href="business-accounts\.html"/);
+  assert.doesNotMatch(card, /Business Accounts Available/);
+  for (const social of ["Instagram", "Facebook", "YouTube"]) {
+    assert.match(card, new RegExp(`aria-label="${social}"`));
+  }
+  assert.doesNotMatch(card, /<footer class="card-signature-footer">[\s\S]*aria-label="Instagram"/);
 });
 
 test("professional profile keeps explicit credentials and reusable vCard data", () => {

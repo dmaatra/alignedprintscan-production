@@ -43,20 +43,24 @@ img { display: block; max-width: 100%; }
 }
 
 .card-brand {
-  padding: 16px clamp(20px, 5vw, 42px) 24px;
-  background: var(--aps-logo-navy);
+  position: relative;
+  height: 256px;
+  overflow: hidden;
+  padding: 0;
+  background: transparent;
   color: var(--aps-white);
   text-align: center;
 }
-.logo-heading { margin: 0; }
+.logo-heading { height: 100%; margin: 0; }
 .company-logo, .professional-logo {
-  width: min(100%, 288px);
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
   height: auto;
-  aspect-ratio: 3 / 2;
-  margin: 0 auto;
-  object-fit: contain;
+  max-width: none;
+  transform: translateY(-50%);
 }
-.brand-copy { margin-top: -14px; }
 h1, h2 { margin: 0; font-family: var(--aps-display); line-height: 1.1; }
 h1 { font-size: clamp(1.95rem, 5vw, 2.75rem); }
 h2 { color: var(--aps-navy); font-size: 1.35rem; }
@@ -67,7 +71,7 @@ h2 { color: var(--aps-navy); font-size: 1.35rem; }
 .company-services { text-align: center; }
 .company-service-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0 0; padding: 0; list-style: none; }
 .company-service-grid li { display: grid; min-height: 64px; place-items: center; padding: 10px; border: 1px solid var(--aps-border); border-radius: 12px; background: var(--aps-white); color: var(--aps-navy); font-size: 0.82rem; font-weight: 700; }
-.business-account-note { margin: 14px 0 0; color: var(--aps-muted); font-size: 0.76rem; font-weight: 600; letter-spacing: 0.04em; }
+.business-account-button { margin-top: 16px; }
 
 .quick-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 24px 0 18px; }
 .quick-actions a { display: flex; min-width: 0; min-height: 62px; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 7px 4px; border: 1px solid var(--aps-border); border-radius: 12px; background: var(--aps-white); color: var(--aps-navy); font-size: 0.7rem; font-weight: 700; text-decoration: none; }
@@ -83,16 +87,17 @@ h2 { color: var(--aps-navy); font-size: 1.35rem; }
 .card-contact-lines a { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; overflow-wrap: anywhere; text-underline-offset: 3px; }
 .card-status { min-height: 1.3em; margin: 4px 0 0; color: var(--aps-muted); font-size: 0.74rem; text-align: center; }
 
-.company-signature-footer, .card-signature-footer { background: var(--aps-logo-navy); color: var(--aps-white); text-align: center; }
-.company-signature-footer { padding: 10px clamp(22px, 5vw, 38px); }
-.card-socials { display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; color: var(--aps-soft-grey); font-size: 0.74rem; }
-.card-socials a { display: inline-flex; min-height: 44px; align-items: center; text-underline-offset: 3px; }
+.card-signature-footer { background: var(--aps-logo-navy); color: var(--aps-white); text-align: center; }
+.card-socials { display: flex; justify-content: center; gap: 12px; margin: 10px 0 -8px; }
+.card-socials a { display: inline-flex; width: 44px; min-height: 44px; align-items: center; justify-content: center; border: 1px solid rgba(200, 169, 107, 0.72); border-radius: 50%; color: var(--aps-navy); text-decoration: none; }
+.card-socials a:hover { background: var(--aps-white); }
+.card-socials svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+.card-socials .social-icon-fill { fill: currentColor; stroke: none; }
 .card-signature-footer { padding: 22px clamp(22px, 5vw, 38px) 24px; }
 .card-signature-footer .card-tagline { font-size: 1.05rem; }
 .card-signature-footer .card-service-line { margin-top: 6px; }
 
-.professional-brand { min-height: 256px; padding-top: 12px; padding-bottom: 66px; }
-.professional-logo { width: min(100%, 250px); }
+.professional-brand { height: 256px; }
 .professional-profile { position: relative; padding-top: 1px; text-align: center; }
 .portrait-frame {
   width: 166px;
@@ -117,12 +122,9 @@ h2 { color: var(--aps-navy); font-size: 1.35rem; }
 @media (max-width: 600px) {
   .digital-card-shell { padding: 0; }
   .digital-card { min-height: 100vh; border: 0; border-radius: 0; box-shadow: none; }
-  .card-brand { padding: 12px 18px 20px; }
-  .company-logo { width: 220px; }
-  .brand-copy { margin-top: -12px; }
+  .card-brand { height: 194px; }
   .card-body { padding: 20px 18px 22px; }
-  .professional-brand { min-height: 194px; padding-bottom: 54px; }
-  .professional-logo { width: 210px; }
+  .professional-brand { height: 194px; }
   .portrait-frame { width: 144px; margin-top: -73px; }
   .professional-name-block { margin-top: 16px; }
   .professional-name-block h1 { font-size: 2rem; }
