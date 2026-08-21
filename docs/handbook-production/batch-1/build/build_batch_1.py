@@ -52,7 +52,10 @@ def add_callout(doc,label,text):
     pPr=p._p.get_or_add_pPr(); shd=OxmlElement('w:shd'); shd.set(qn('w:fill'),'FFF8E6' if label not in ('STOP',) else 'FCE9E7'); pPr.append(shd)
     border=OxmlElement('w:pBdr'); left=OxmlElement('w:left'); left.set(qn('w:val'),'single'); left.set(qn('w:sz'),'22'); left.set(qn('w:color'),RED if label=='STOP' else GOLD); border.append(left); pPr.append(border)
     font(p.add_run(label+' — '),bold=True,color=RED if label=='STOP' else NAVY); font(p.add_run(text))
+TABLE_COUNTER=0
 def add_table(doc,rows):
+    global TABLE_COUNTER
+    TABLE_COUNTER += 1
     cols=len(rows[0]); widths=[Inches(6.5/cols)]*cols; t=doc.add_table(rows=0,cols=cols); t.alignment=WD_TABLE_ALIGNMENT.CENTER; t.autofit=False
     for ri,row in enumerate(rows):
         cells=t.add_row().cells
@@ -60,7 +63,7 @@ def add_table(doc,rows):
             cells[i].width=widths[i]; cells[i].vertical_alignment=WD_CELL_VERTICAL_ALIGNMENT.CENTER; set_cell_margins(cells[i]); shade(cells[i],NAVY if ri==0 else (WHITE if ri%2 else IVORY)); p=cells[i].paragraphs[0]; p.paragraph_format.space_after=Pt(0); font(p.add_run(val),size=8.5,color=WHITE if ri==0 else INK,bold=ri==0)
         if ri==0:
             trPr=t.rows[0]._tr.get_or_add_trPr(); hdr=OxmlElement('w:tblHeader'); hdr.set(qn('w:val'),'true'); trPr.append(hdr)
-    doc.add_paragraph().paragraph_format.space_after=Pt(2); return t
+    c=doc.add_paragraph(); c.alignment=WD_ALIGN_PARAGRAPH.CENTER; c.paragraph_format.space_after=Pt(8); font(c.add_run(f'Table {TABLE_COUNTER:02d}'),size=8.5,color=GREY,italic=True); return t
 def add_figure(doc,path,caption):
     with Image.open(path) as im: portrait=im.height>im.width*1.15
     p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER; p.paragraph_format.keep_with_next=True; p.add_run().add_picture(str(path),width=Inches(4.55 if portrait else 6.3))

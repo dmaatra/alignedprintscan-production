@@ -56,3 +56,18 @@ Stop distribution; verify exact file/version/recipient/time; preserve evidence; 
 
 Internal/working means Admin-only unless a maintained release workflow authorizes external visibility. Existence on a request never creates portal visibility. Customer-released means the exact eligible file crossed the controlled release boundary and was verified.
 
+## QR-13 — APS System Map
+
+Customer or Business → APS request and evidence → applicable provider/service path → verified customer outcome. At every handoff, confirm identity, authorization, document, money, recipient, and the next applicable gate. **STOP IF:** those facts conflict or cannot be verified.
+
+## QR-14 — Universal Request Lifecycle
+
+Requested → reviewed/quoted → approved/paid as applicable → scheduled/fulfilled → completed. Keep each state distinct: a request may be accepted without approval, paid without fulfillment, or fulfilled without all completion and release gates being satisfied.
+
+## QR-15 — Review Queue Decision Guide
+
+Open the exact request and identify the blocker, reason, waiting age, and supporting evidence. **YES — evidence now satisfies the gate:** perform the maintained next action and verify the result. **NO — evidence is missing:** keep the item on hold and request the exact fact through the maintained path. **CONFLICT:** preserve both sources and escalate. Never clear a queue item merely to reduce the count.
+
+## QR-16 — Document Classification
+
+Classify by purpose and visibility: customer upload; internal APS document; working document; completed/notarized; completed/customer-eligible; customer-released; Proof completed; loan package; borrower copy; scanback; return proof; invoice; or receipt. Classification does not itself release a file. **STOP IF:** purpose, version, request, recipient, or eligibility is uncertain.
