@@ -7,6 +7,10 @@ Disallow: /business.html
 Disallow: /business-login.html
 Disallow: /business-reset-password.html
 Disallow: /business-forgot-password.html
+Disallow: /card
+Disallow: /card.html
+Disallow: /doneisha
+Disallow: /doneisha.html
 
 Sitemap: https://alignedprintscan.com/sitemap.xml
 Sitemap: https://alignedprintscan.com/resources-sitemap.xml

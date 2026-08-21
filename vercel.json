@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/card",
+      "destination": "/card.html"
+    },
+    {
+      "source": "/doneisha",
+      "destination": "/doneisha.html"
+    },
+    {
       "source": "/resources-sitemap.xml",
       "destination": "https://sfsdniavqldgbiretply.supabase.co/functions/v1/resource-public?command=sitemap"
     }
@@ -13,6 +21,14 @@
     {
       "source": "/business.html",
       "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
+    },
+    {
+      "source": "/card",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }]
+    },
+    {
+      "source": "/doneisha",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }]
     }
   ]
 }
