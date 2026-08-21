@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#C8A96B"/></marker></defs>
+<rect width="1600" height="900" fill="#F6F3EE"/><rect x="55" y="45" width="1490" height="810" rx="30" fill="white" stroke="#161C4D" stroke-width="5"/><rect x="55" y="45" width="1490" height="110" fill="#161C4D"/><text x="95" y="115" font-family="Montserrat,Arial" font-size="38" font-weight="700" fill="white">State Mental Map</text>
+<rect x="95" y="335" width="174" height="230" rx="24" fill="#E9E9ED" stroke="#161C4D" stroke-width="3"/>
+<text x="182.0" y="455" text-anchor="middle" font-family="Montserrat,Arial" font-size="20" font-weight="700" fill="#161C4D">Request</text>
+<rect x="301" y="335" width="174" height="230" rx="24" fill="#161C4D" stroke="#161C4D" stroke-width="3"/>
+<text x="388.0" y="455" text-anchor="middle" font-family="Montserrat,Arial" font-size="20" font-weight="700" fill="#FFFFFF">Appointment</text>
+<path d="M 274 450 L 293 450" stroke="#C8A96B" stroke-width="8" marker-end="url(#a)"/>
+<rect x="507" y="335" width="174" height="230" rx="24" fill="#161C4D" stroke="#161C4D" stroke-width="3"/>
+<text x="594.0" y="455" text-anchor="middle" font-family="Montserrat,Arial" font-size="20" font-weight="700" fill="#FFFFFF">Money</text>
+<path d="M 480 450 L 499 450" stroke="#C8A96B" stroke-width="8" marker-end="url(#a)"/>
+<rect x="713" y="335" width="174" height="230" rx="24" fill="#161C4D" stroke="#161C4D" stroke-width="3"/>
+<text x="800.0" y="455" text-anchor="middle" font-family="Montserrat,Arial" font-size="20" font-weight="700" fill="#FFFFFF">Documents</text>
+<path d="M 686 450 L 705 450" stroke="#C8A96B" stroke-width="8" marker-end="url(#a)"/>
+<rect x="919" y="335" width="174" height="230" rx="24" fill="#161C4D" stroke="#161C4D" stroke-width="3"/>
+<text x="1006.0" y="455" text-anchor="middle" font-family="Montserrat,Arial" font-size="20" font-weight="700" fill="#FFFFFF">Participants</text>
+<path d="M 892 450 L 911 450" stroke="#C8A96B" stroke-width="8" marker-end="url(#a)"/>
+<rect x="1125" y="335" width="174" height="230" rx="24" fill="#161C4D" stroke="#161C4D" stroke-width="3"/>
+<text x="1212.0" y="455" text-anchor="middle" font-family="Montserrat,Arial" font-size="20" font-weight="700" fill="#FFFFFF">Provider</text>
+<path d="M 1098 450 L 1117 450" stroke="#C8A96B" stroke-width="8" marker-end="url(#a)"/>
+<rect x="1331" y="335" width="174" height="230" rx="24" fill="#E9E9ED" stroke="#161C4D" stroke-width="3"/>
+<text x="1418.0" y="455" text-anchor="middle" font-family="Montserrat,Arial" font-size="20" font-weight="700" fill="#161C4D">Fulfillment</text>
+<path d="M 1304 450 L 1323 450" stroke="#C8A96B" stroke-width="8" marker-end="url(#a)"/>
+</svg>
