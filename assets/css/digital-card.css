@@ -13,6 +13,9 @@
   --aps-border: #ded9cf;
   --aps-display: "Playfair Display", Georgia, serif;
   --aps-ui: Montserrat, Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --digital-card-max-width: 760px;
+  --digital-card-brand-height: 256px;
+  --digital-card-footer-padding: 22px clamp(22px, 5vw, 38px) 24px;
 }
 
 * { box-sizing: border-box; }
@@ -33,7 +36,7 @@ img { display: block; max-width: 100%; }
   line-height: 1.45;
 }
 
-.digital-card-shell { width: min(100%, 760px); margin: 0 auto; padding: clamp(12px, 3vw, 34px); }
+.digital-card-shell { width: min(100%, var(--digital-card-max-width)); margin: 0 auto; padding: clamp(12px, 3vw, 34px); }
 .digital-card {
   overflow: hidden;
   border: 1px solid rgba(200, 169, 107, 0.55);
@@ -44,7 +47,7 @@ img { display: block; max-width: 100%; }
 
 .card-brand {
   position: relative;
-  height: 256px;
+  height: var(--digital-card-brand-height);
   overflow: hidden;
   padding: 0;
   background: transparent;
@@ -71,8 +74,6 @@ h2 { color: var(--aps-navy); font-size: 1.35rem; }
 .company-services { text-align: center; }
 .company-service-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0 0; padding: 0; list-style: none; }
 .company-service-grid li { display: grid; min-height: 64px; place-items: center; padding: 10px; border: 1px solid var(--aps-border); border-radius: 12px; background: var(--aps-white); color: var(--aps-navy); font-size: 0.82rem; font-weight: 700; }
-.business-account-button { margin-top: 16px; }
-
 .quick-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 24px 0 18px; }
 .quick-actions a { display: flex; min-width: 0; min-height: 62px; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 7px 4px; border: 1px solid var(--aps-border); border-radius: 12px; background: var(--aps-white); color: var(--aps-navy); font-size: 0.7rem; font-weight: 700; text-decoration: none; }
 .quick-actions svg { width: 19px; height: 19px; fill: none; stroke: #8c7138; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
@@ -93,11 +94,10 @@ h2 { color: var(--aps-navy); font-size: 1.35rem; }
 .card-socials a:hover { background: var(--aps-white); }
 .card-socials svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
 .card-socials .social-icon-fill { fill: currentColor; stroke: none; }
-.card-signature-footer { padding: 22px clamp(22px, 5vw, 38px) 24px; }
+.card-signature-footer { padding: var(--digital-card-footer-padding); }
 .card-signature-footer .card-tagline { font-size: 1.05rem; }
 .card-signature-footer .card-service-line { margin-top: 6px; }
 
-.professional-brand { height: 256px; }
 .professional-profile { position: relative; padding-top: 1px; text-align: center; }
 .portrait-frame {
   width: 166px;
@@ -120,11 +120,13 @@ h2 { color: var(--aps-navy); font-size: 1.35rem; }
 .professional-profile .quick-actions { margin-top: 22px; }
 
 @media (max-width: 600px) {
+  :root {
+    --digital-card-brand-height: 194px;
+    --digital-card-footer-padding: 19px 18px 21px;
+  }
   .digital-card-shell { padding: 0; }
   .digital-card { min-height: 100vh; border: 0; border-radius: 0; box-shadow: none; }
-  .card-brand { height: 194px; }
   .card-body { padding: 20px 18px 22px; }
-  .professional-brand { height: 194px; }
   .portrait-frame { width: 144px; margin-top: -73px; }
   .professional-name-block { margin-top: 16px; }
   .professional-name-block h1 { font-size: 2rem; }
@@ -134,7 +136,6 @@ h2 { color: var(--aps-navy); font-size: 1.35rem; }
   .quick-actions { gap: 5px; margin-top: 18px; }
   .quick-actions a { min-height: 60px; font-size: 0.64rem; }
   .quick-actions svg { width: 17px; height: 17px; }
-  .card-signature-footer { padding: 19px 18px 21px; }
   .card-signature-footer .card-tagline { font-size: 1rem; }
 }
 

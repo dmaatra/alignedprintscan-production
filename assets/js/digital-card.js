@@ -1,8 +1,27 @@
 (function (global) {
   "use strict";
 
-  const PROFESSIONALS = Object.freeze({
+  const COMPANY_SOCIALS = Object.freeze([
+    "https://www.instagram.com/aligned.printscan",
+    "https://www.facebook.com/profile.php?id=61593146406891",
+    "https://www.youtube.com/@alignedprintscan",
+  ]);
+
+  const CARD_PROFILES = Object.freeze({
+    company: Object.freeze({
+      kind: "company",
+      displayName: "Aligned Print & Scan",
+      organization: "Aligned Print & Scan",
+      primaryTitles: Object.freeze(["Online & Mobile Notary and Document Services"]),
+      phoneDisplay: "469-383-8879",
+      phoneE164: "+14693838879",
+      email: "hello@alignedprintscan.com",
+      primaryUrl: "https://alignedprintscan.com/",
+      secondaryUrls: COMPANY_SOCIALS,
+      note: "Online when you can. Mobile when you need it.",
+    }),
     doneisha: Object.freeze({
+      kind: "professional",
       slug: "doneisha",
       displayName: "Doneisha Maat Ra",
       portrait: "assets/images/professionals/doneisha-approved-portrait.png",
@@ -20,7 +39,8 @@
       professionalEmail: "doneisha@alignedprintscan.com",
       phoneDisplay: "469-383-8879",
       phoneE164: "+14693838879",
-      website: "https://alignedprintscan.com/",
+      primaryUrl: "https://alignedprintscan.com/doneisha",
+      secondaryUrls: Object.freeze(["https://alignedprintscan.com/", ...COMPANY_SOCIALS]),
       services: Object.freeze([
         "Remote Online Notarization",
         "Mobile Notary Services",
@@ -28,9 +48,10 @@
         "Print / Scan / Document Services",
       ]),
       requestUrl: "pricing.html?utm_source=doneisha_professional_card&utm_medium=digital_card#request",
-      vcardTitle: "Texas Notary Public",
+      note: "NNA Certified Loan Signing Agent | Bonded & Insured",
     }),
   });
+  const PROFESSIONALS = Object.freeze({ doneisha: CARD_PROFILES.doneisha });
 
   function textList(element, values) {
     if (!element) return;
@@ -50,18 +71,21 @@
   }
 
   function vCardFor(profile) {
-    const credentials = [...profile.credentials, ...profile.supportingCredentials].join(", ");
+    const titles = profile.primaryTitles || profile.credentials || [];
+    const familyName = profile.kind === "professional" ? "Maat Ra" : "";
+    const givenName = profile.kind === "professional" ? "Doneisha" : profile.displayName;
     return [
       "BEGIN:VCARD",
       "VERSION:3.0",
-      `N:${escapeVCard("Maat Ra")};${escapeVCard("Doneisha")};;;`,
+      `N:${escapeVCard(familyName)};${escapeVCard(givenName)};;;`,
       `FN:${escapeVCard(profile.displayName)}`,
       `ORG:${escapeVCard(profile.organization)}`,
-      `TITLE:${escapeVCard(profile.vcardTitle)}`,
-      `ROLE:${escapeVCard(credentials)}`,
+      `TITLE:${escapeVCard(titles.join(" | "))}`,
       `TEL;TYPE=CELL,VOICE:${profile.phoneE164}`,
-      `EMAIL;TYPE=INTERNET,WORK:${escapeVCard(profile.professionalEmail)}`,
-      `URL:${profile.website}`,
+      `EMAIL;TYPE=INTERNET,WORK:${escapeVCard(profile.email || profile.professionalEmail)}`,
+      `URL;TYPE=WORK:${profile.primaryUrl}`,
+      ...(profile.secondaryUrls || []).map((url) => `URL:${url}`),
+      `NOTE:${escapeVCard(profile.note)}`,
       "END:VCARD",
       "",
     ].join("\r\n");
@@ -100,7 +124,6 @@
     document.querySelector("[data-request-service]").href = profile.requestUrl;
 
     document.querySelector("[data-save-contact]").addEventListener("click", () => {
-      analyticsEvent("save_contact", "professional");
       document.querySelector("[data-card-status]").textContent = "Contact card ready to open or save.";
     });
   }
@@ -113,5 +136,5 @@
   bindActionEvents(cardType);
   global.APSGrowth?.event("digital_card_view", { card_type: cardType }, `digital_card_view:${cardType}`);
 
-  global.APSDigitalCards = Object.freeze({ PROFESSIONALS, vCardFor });
+  global.APSDigitalCards = Object.freeze({ CARD_PROFILES, PROFESSIONALS, vCardFor });
 })(window);
