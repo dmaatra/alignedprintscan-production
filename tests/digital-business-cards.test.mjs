@@ -3,12 +3,14 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const readBuffer = (path) => readFileSync(new URL(`../${path}`, import.meta.url));
 const card = read("card.html");
 const doneisha = read("doneisha.html");
 const script = read("assets/js/digital-card.js");
 const vcard = read("assets/vcards/doneisha.vcf");
 const companyVcard = read("assets/vcards/aligned-print-scan.vcf");
 const styles = read("assets/css/digital-card.css");
+const qrReadme = read("assets/qr/digital-cards/README.md");
 const robots = read("robots.txt");
 const sitemap = read("sitemap.xml");
 const vercel = JSON.parse(read("vercel.json"));
@@ -48,6 +50,29 @@ test("shared card shell locks top and footer geometry for company and profession
   assert.match(styles, /\.card-brand[\s\S]*height: var\(--digital-card-brand-height\)/);
   assert.match(styles, /\.card-signature-footer \{ padding: var\(--digital-card-footer-padding\); \}/);
   for (const html of [card, doneisha]) assert.match(html, /<footer class="card-signature-footer">[\s\S]*Online when you can\. Mobile when you need it\.[\s\S]*Online &amp; Mobile Notary and Document Services[\s\S]*<\/footer>/);
+});
+
+test("governed QR assets preserve permanent card-route conventions", () => {
+  const assets = [
+    ["aps-company-card-qr", "https://alignedprintscan.com/card", 984],
+    ["doneisha-maat-ra-card-qr", "https://alignedprintscan.com/doneisha", 1080],
+  ];
+
+  for (const [name, route, expectedSize] of assets) {
+    const svg = read(`assets/qr/digital-cards/${name}.svg`);
+    const png = readBuffer(`assets/qr/digital-cards/${name}.png`);
+    assert.match(svg, /<svg[^>]+viewBox="0 0 [\d.]+ [\d.]+"/);
+    assert.match(svg, /<rect fill="white"/);
+    assert.match(svg, /<path[^>]+fill="#000000"/);
+    assert.equal(png.readUInt32BE(16), expectedSize);
+    assert.equal(png.readUInt32BE(20), expectedSize);
+    assert.match(qrReadme, new RegExp(route.replaceAll("/", "\\/")));
+  }
+
+  assert.match(qrReadme, /four-module quiet zone/);
+  assert.match(qrReadme, /professional route.*professional digital card.*professional vCard.*professional QR/s);
+  assert.doesNotMatch(qrReadme, /alignedprintscan\.com\/(?:card|doneisha)\.html/);
+  assert.doesNotMatch(qrReadme, /utm_(?:source|medium|campaign)=/i);
 });
 
 test("company vCard is company-specific and standards-compatible", () => {
