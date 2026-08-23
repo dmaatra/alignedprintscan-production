@@ -570,7 +570,7 @@ async function getDetailRows(table, requestId) {
     .select("*")
     .eq("service_request_id", requestId)
     .maybeSingle();
-  if (error) return null;
+  if (error) throw new Error(`Unable to load ${table} details: ${error.message}`);
   return data;
 }
 async function getInvoiceItems(requestId, invoices = []) {
@@ -1501,12 +1501,17 @@ async function selectRequest(id) {
   const customer = Array.isArray(selectedRequest.customers)
     ? selectedRequest.customers[0]
     : selectedRequest.customers;
-  const table =
-    selectedRequest.service_type === "ron"
-      ? "ron_requests"
-      : selectedRequest.service_type === "mobile"
-        ? "mobile_notary_requests"
-        : "print_scan_requests";
+  const detailTables = {
+    ron: "ron_requests",
+    mobile: "mobile_notary_requests",
+    print: "print_scan_requests",
+    loan_signing: "loan_signing_assignments",
+  };
+  const table = detailTables[selectedRequest.service_type];
+  if (!table) {
+    detail.innerHTML = '<section class="admin-detail-section"><h3>Unsupported service</h3><p class="admin-muted">APS cannot safely load service details for this request type.</p></section>';
+    return;
+  }
   const [files, serviceDetails, invoices, patch32Records, participantResult, actResult, templateResult, messageResult, completionResult, identityReviewResult] = await Promise.all([
     getFiles(id),
     getDetailRows(table, id),
@@ -1519,6 +1524,10 @@ async function selectRequest(id) {
     adminClient.from("request_completion_facts").select("*").eq("service_request_id", id).maybeSingle(),
     adminClient.from("review_queue_items").select("id,blocker_key,title,detail,state").eq("service_request_id", id).eq("blocker_key", "possible_existing_customer").eq("state", "open").maybeSingle(),
   ]);
+  if (!serviceDetails) {
+    detail.innerHTML = `<section class="admin-detail-section"><h3>${escapeHtml(serviceLabel(selectedRequest.service_type))} details unavailable</h3><p class="admin-muted">The request identity is preserved, but its service-specific detail record is missing. Review the request record before taking fulfillment action.</p></section>`;
+    return;
+  }
   const participants = participantResult.data || [];
   const notarialActs = actResult.data || [];
   const messageTemplates = templateResult.data || [];
@@ -1693,7 +1702,7 @@ async function selectRequest(id) {
       <p class="admin-muted">Record what was actually purchased and fulfilled. A zero balance alone does not complete an order.</p>
       <fieldset><legend>Purchased service components</legend>${({ron:["ron"],mobile:["mobile"],print:["print_copy","scan","courier"]}[selectedRequest.service_type] || []).map(component => `<label class="check"><input class="completion-component" type="checkbox" value="${component}" ${(completionFacts.components || []).includes(component) ? "checked" : ""}> ${escapeHtml(statusLabel(component))}</label>`).join("")}</fieldset>
       <div class="admin-detail-grid">
-        ${(selectedRequest.service_type === "ron" ? [["ron_session_completed","RON session completed"]] : selectedRequest.service_type === "mobile" ? [["mobile_service_completed","Mobile service performed"]] : [["production_completed","Print/Copy production completed"],["scan_completed","Scanning completed"],...(String(serviceDetails.fulfillment_type||"").toLowerCase()==="pickup"?[["pickup_completed","Legacy pickup/handoff completed"]]:[]),["delivery_completed","Delivery/handoff completed"],["proof_of_delivery_present","Proof of delivery present"]]).map(([key,label]) => `<label class="check"><input class="completion-fact" data-key="${key}" type="checkbox" ${completionFacts[key] ? "checked" : ""}> ${label}</label>`).join("")}
+        ${(selectedRequest.service_type === "ron" ? [["ron_session_completed","RON session completed"]] : selectedRequest.service_type === "mobile" ? [["mobile_service_completed","Mobile service performed"]] : selectedRequest.service_type === "loan_signing" ? [["signing_completed","Signing completed"],["post_signing_qc_completed","Post-signing quality check completed"],["return_completed","Authorized return completed"]] : [["production_completed","Print/Copy production completed"],["scan_completed","Scanning completed"],...(String(serviceDetails.fulfillment_type||"").toLowerCase()==="pickup"?[["pickup_completed","Legacy pickup/handoff completed"]]:[]),["delivery_completed","Delivery/handoff completed"],["proof_of_delivery_present","Proof of delivery present"]]).map(([key,label]) => `<label class="check"><input class="completion-fact" data-key="${key}" type="checkbox" ${completionFacts[key] ? "checked" : ""}> ${label}</label>`).join("")}
       </div>
       <div class="admin-detail-grid">
         <label>Document readiness<select id="completionDocumentState"><option value="pending" ${selectedRequest.document_state === "pending" ? "selected" : ""}>Pending / review required</option><option value="approved" ${selectedRequest.document_state === "approved" ? "selected" : ""}>Reviewed and ready</option><option value="not_applicable" ${selectedRequest.document_state === "not_applicable" ? "selected" : ""}>Not applicable</option></select></label>

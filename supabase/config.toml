@@ -165,3 +165,18 @@ entrypoint = "./functions/resource-public/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/admin-resource-center/index.ts"
+
+[functions.operator-correspondence]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/operator-correspondence/index.ts"
+
+[functions.resend-inbound]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/resend-inbound/index.ts"
+
+[functions.operator-card-public]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/operator-card-public/index.ts"

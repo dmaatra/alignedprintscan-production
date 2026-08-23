@@ -13,6 +13,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL") ||
   "Aligned Print & Scan <hello@alignedprintscan.com>";
+const RESEND_RECEIVING_DOMAIN = Deno.env.get("RESEND_RECEIVING_DOMAIN") || "";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -92,6 +93,13 @@ function base64(bytes: Uint8Array) {
     binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
   }
   return btoa(binary);
+}
+async function sha256(value: string) {
+  return Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
+    ),
+  ).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 function customerDate(value: unknown) {
   if (!value) return "";
@@ -428,10 +436,39 @@ Deno.serve(async (request) => {
     if (!recipient || !subject || !html) {
       throw new Error("Recipient, subject, and message body are required.");
     }
+    let conversationId: string | null = null;
+    let replyToken = "";
+    if (RESEND_RECEIVING_DOMAIN) {
+      replyToken = crypto.randomUUID().replaceAll("-", "") +
+        crypto.randomUUID().replaceAll("-", "");
+      const conversationResponse = await rest("message_conversations", {
+        method: "POST",
+        body: JSON.stringify({
+          service_request_id: requestId,
+          subject,
+          contact_email: recipient,
+          reply_token_hash: await sha256(replyToken),
+          created_by: adminId,
+        }),
+      });
+      if (!conversationResponse.ok) {
+        throw new Error(await conversationResponse.text());
+      }
+      conversationId = (await conversationResponse.json())[0].id;
+      const routeResponse = await rest("message_reply_routes", {
+        method: "POST",
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          token_hash: await sha256(replyToken),
+        }),
+      });
+      if (!routeResponse.ok) throw new Error(await routeResponse.text());
+    }
     const inserted = await rest("messages", {
       method: "POST",
       body: JSON.stringify({
         service_request_id: requestId,
+        conversation_id: conversationId,
         template_id: templateId,
         template_key: template.template_key || null,
         channel: "email",
@@ -534,6 +571,9 @@ Deno.serve(async (request) => {
         from: FROM_EMAIL,
         to: [recipient],
         cc,
+        ...(replyToken
+          ? { reply_to: `reply+${replyToken}@${RESEND_RECEIVING_DOMAIN}` }
+          : {}),
         subject,
         html,
         text,
