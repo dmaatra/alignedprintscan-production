@@ -1409,7 +1409,7 @@ function initWizard() {
     if (event.target?.name === "lsaSigningMethod") {
       const host = qs("#loanSigningSignerFields");
       if (host) host.dataset.count = "-1";
-      renderDynamicFields();
+      renderSignerAndActFields();
     }
     const match = String(event.target?.name || "").match(/^lsaSignerSameAddress(\d+)$/);
     if (match) {

@@ -18,6 +18,7 @@ test("Loan Signing uses canonical participant addresses and service-aware email"
 test("Loan Signing skips the empty shared options step",()=>{
   assert.match(publicJs,/activeService === "loan_signing" \? \[0, 1, 3, 4\]/);
   assert.match(publicJs,/availableSteps\.length/);
+  assert.doesNotMatch(publicJs,/renderDynamicFields\(\)/);
 });
 
 test("Admin detail loader has explicit Loan Signing mapping and no generic Print fallback",()=>{
