@@ -1,3 +1,60 @@
 import QRCode from "npm:qrcode@1.5.4";
-const URL=Deno.env.get("SUPABASE_URL")||"",KEY=Deno.env.get("SUPABASE_ANON_KEY")||"",SITE=Deno.env.get("SITE_URL")||"https://alignedprintscan.com";
-Deno.serve(async req=>{const query=new URL(req.url).searchParams,slug=String(query.get("slug")||"").toLowerCase();if(!/^[a-z][a-z0-9-]{1,31}$/.test(slug))return new Response("Not found",{status:404});const result=await fetch(`${URL}/rest/v1/rpc/public_operator_card`,{method:"POST",headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,"Content-Type":"application/json"},body:JSON.stringify({p_slug:slug})}),rows=await result.json(),profile=rows[0];if(!profile)return new Response("Not found",{status:404});const cardUrl=`${SITE}/professionals/${profile.card_slug}`;if(query.get("format")==="qr")return new Response(await QRCode.toString(cardUrl,{type:"svg",errorCorrectionLevel:"H",margin:4}),{headers:{"Content-Type":"image/svg+xml","Cache-Control":"public,max-age=3600"}});return Response.json({...profile,portrait_url:profile.portrait_path?.startsWith("http")?profile.portrait_path:`${SITE}/${String(profile.portrait_path||"assets/images/logo-symbol.webp").replace(/^\//,'')}`,company_phone_display:"469-383-8879",company_phone_e164:"+14693838879",company_website:SITE},{headers:{"Cache-Control":"public,max-age=300"}});});
+const URL = Deno.env.get("SUPABASE_URL") || "",
+  KEY = Deno.env.get("SUPABASE_ANON_KEY") || "",
+  SITE = Deno.env.get("SITE_URL") || "https://alignedprintscan.com";
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "content-type",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+};
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  const query = new URL(req.url).searchParams,
+    slug = String(query.get("slug") || "").toLowerCase();
+  if (!/^[a-z][a-z0-9-]{1,31}$/.test(slug)) {
+    return new Response("Not found", { status: 404, headers: cors });
+  }
+  const result = await fetch(`${URL}/rest/v1/rpc/public_operator_card`, {
+      method: "POST",
+      headers: {
+        apikey: KEY,
+        Authorization: `Bearer ${KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_slug: slug }),
+    }),
+    rows = await result.json(),
+    profile = rows[0];
+  if (!result.ok || !profile) {
+    return new Response("Not found", { status: 404, headers: cors });
+  }
+  const cardUrl = `${SITE}/professionals/${profile.card_slug}`;
+  if (query.get("format") === "qr") {
+    return new Response(
+      await QRCode.toString(cardUrl, {
+        type: "svg",
+        errorCorrectionLevel: "H",
+        margin: 4,
+      }),
+      {
+        headers: {
+          "Content-Type": "image/svg+xml",
+          "Cache-Control": "public,max-age=3600",
+          ...cors,
+        },
+      },
+    );
+  }
+  return Response.json({
+    ...profile,
+    portrait_url: profile.portrait_path?.startsWith("http")
+      ? profile.portrait_path
+      : `${SITE}/${
+        String(profile.portrait_path || "assets/images/logo-symbol.webp")
+          .replace(/^\//, "")
+      }`,
+    company_phone_display: "469-383-8879",
+    company_phone_e164: "+14693838879",
+    company_website: SITE,
+  }, { headers: { "Cache-Control": "public,max-age=300", ...cors } });
+});
