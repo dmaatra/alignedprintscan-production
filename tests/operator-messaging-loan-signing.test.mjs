@@ -13,6 +13,11 @@ test("Loan Signing uses canonical participant addresses and service-aware email"
   assert.doesNotMatch(submit,/Loan Signing signers with individual email addresses/);
   assert.match(adminV3,/adminLoanSigningSignerFields/);
   assert.match(adminV3,/lsa_signer_same_address_/);
+  assert.match(adminV3,/hiddenWithinService/);
+  assert.match(adminV3,/const retained=\{\}/);
+  assert.match(adminV3,/control\.value=prior\.value/);
+  assert.match(adminV3,/method==="ron"\?"required":""/);
+  assert.match(adminV3,/service === "loan_signing"\) details = `\$\{labelFromStatus\(wizardValue\(form,"lsa_signing_type"\)\)\}/);
 });
 
 test("Loan Signing skips the empty shared options step",()=>{
@@ -42,6 +47,13 @@ test("inbound replies require signed webhooks and scoped reply tokens",()=>{
   assert.match(inbound,/provider_event_id/);
   assert.match(inbound,/message_reply_routes/);
   assert.match(inbound,/unread_count/);
+  assert.match(inbound,/emailAddress\(event\.data\.from\)\s*!==\s*emailAddress\(conversation\.contact_email\)/);
+  assert.match(inbound,/rendered_html:\s*null/);
+  assert.match(inbound,/safeText\(content\.text,\s*content\.html\)/);
+  assert.match(inbound,/inbound_customer_reply/);
+  assert.match(read("supabase/functions/operator-correspondence/index.ts"),/"In-Reply-To"/);
+  assert.match(read("supabase/functions/operator-correspondence/index.ts"),/"References"/);
+  assert.match(read("supabase/functions/operator-correspondence/index.ts"),/requestId\s*=\s*text\(rows\[0\]\.service_request_id,\s*36\)\s*\|\|\s*null/);
 });
 
 test("operator card uses a narrow route and derives QR and vCard",()=>{

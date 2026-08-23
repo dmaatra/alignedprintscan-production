@@ -1095,7 +1095,13 @@
     $$('[data-service-fields]', form).forEach((section) => {
       const active = section.dataset.serviceFields === service;
       section.hidden = !active;
-      $$('input, select, textarea', section).forEach((control) => { control.disabled = !active || Boolean(control.closest('[hidden]')); });
+      $$('input, select, textarea', section).forEach((control) => {
+        let hiddenWithinService = false;
+        for (let parent = control.parentElement; parent && parent !== section; parent = parent.parentElement) {
+          if (parent.hidden) { hiddenWithinService = true; break; }
+        }
+        control.disabled = !active || hiddenWithinService;
+      });
     });
     $$(".admin-v3-ron-schedule", form).forEach((field) => { field.hidden = service !== "ron"; $$('input, select, textarea', field).forEach((control) => { control.disabled = service !== "ron"; }); });
     $$(".admin-v3-mobile-schedule", form).forEach((field) => { field.hidden = service !== "mobile"; $$('input, select, textarea', field).forEach((control) => { control.disabled = service !== "mobile"; }); });
@@ -1134,8 +1140,15 @@
     const host=$("#adminLoanSigningSignerFields",form);if(!host)return;
     const count=Math.min(10,Math.max(1,wizardNumber(form,"lsa_signer_count",1))),method=wizardValue(form,"lsa_signing_method");
     if(host.dataset.signature===`${count}:${method}`)return;
+    const retained={};
+    $$('input, select, textarea',host).forEach(control=>{retained[control.name]={value:control.value,checked:control.checked};});
     host.dataset.signature=`${count}:${method}`;
     host.innerHTML=`<h3>Structured signers</h3>${Array.from({length:count},(_,index)=>`<fieldset><legend>Signer ${index+1}</legend><div class="admin-v3-form-grid"><label>First name<input name="lsa_signer_first_${index}" required></label><label>Middle name (optional)<input name="lsa_signer_middle_${index}"></label><label>Last name<input name="lsa_signer_last_${index}" required></label><label>Individual email${method==="ron"?"":" (optional)"}<input name="lsa_signer_email_${index}" type="email" ${method==="ron"?"required":""}></label><label>Phone (optional)<input name="lsa_signer_phone_${index}" type="tel"></label></div>${index?`<label class="check"><input name="lsa_signer_same_address_${index}" type="checkbox"> Same address as Signer 1</label>`:""}<div class="admin-v3-form-grid" data-admin-lsa-address="${index}"><label>Signer address<input name="lsa_signer_street_${index}" required></label><label>City<input name="lsa_signer_city_${index}" required></label><label>State<input name="lsa_signer_state_${index}" value="TX" maxlength="2" required></label><label>ZIP<input name="lsa_signer_zip_${index}" required></label></div></fieldset>`).join("")}`;
+    $$('input, select, textarea',host).forEach(control=>{const prior=retained[control.name];if(!prior)return;if(control.type==="checkbox")control.checked=prior.checked;else control.value=prior.value;});
+    for(let index=1;index<count;index++){
+      const shared=wizardChecked(form,`lsa_signer_same_address_${index}`),group=$(`[data-admin-lsa-address="${index}"]`,host);
+      if(group){group.hidden=shared;$$('input, select, textarea',group).forEach(control=>{control.disabled=shared;});}
+    }
   }
   function reviewItem(label, value) { return `<div><dt>${safe(label)}</dt><dd>${safe(value || "Not provided")}</dd></div>`; }
   function renderWizardReview(form) {
@@ -1147,12 +1160,14 @@
     if (service === "ron") details = `${wizardValue(form, "document_type") || "Document type not provided"}; ${wizardNumber(form, "ron_signer_count", 1)} signer(s); ${wizardNumber(form, "ron_notarization_count", 1)} notarial act(s)`;
     if (service === "mobile") details = `${wizardValue(form, "mobile_street")}, ${wizardValue(form, "mobile_city")}, ${wizardValue(form, "mobile_state")} ${wizardValue(form, "mobile_zip")}; ${wizardNumber(form, "mobile_notarization_count", 1)} notarial act(s)`;
     if (service === "print") details = `${wizardNumber(form, "print_pages")} page(s) × ${wizardNumber(form, "print_copies", 1)} copy/copies; ${wizardNumber(form, "print_scan_pages")} scan page(s)`;
-    const signerPrefix=service==="ron"?"ron":service==="mobile"?"mobile":null;
+    if (service === "loan_signing") details = `${labelFromStatus(wizardValue(form,"lsa_signing_type"))}; ${labelFromStatus(wizardValue(form,"lsa_signing_method"))}; ${wizardNumber(form,"lsa_signer_count",1)} signer(s)`;
+    const signerPrefix=service==="ron"?"ron":service==="mobile"?"mobile":service==="loan_signing"?"lsa":null;
     const signerCount=signerPrefix?Math.max(1,wizardNumber(form,`${signerPrefix}_signer_count`,1)):0;
     const signerReview=signerPrefix?Array.from({length:signerCount},(_,index)=>[wizardValue(form,`${signerPrefix}_signer_first_${index}`),wizardValue(form,`${signerPrefix}_signer_middle_${index}`),wizardValue(form,`${signerPrefix}_signer_last_${index}`)].filter(Boolean).join(" ")).join("; "):"Not applicable";
-    const actCount=signerPrefix?Math.max(1,wizardNumber(form,`${signerPrefix}_notarization_count`,1)):0;
-    const actReview=signerPrefix?Array.from({length:actCount},(_,index)=>labelFromStatus(wizardValue(form,`${signerPrefix}_act_type_${index}`)||"unsure")).join("; "):"Not applicable";
-    const witnessReview=signerPrefix?labelFromStatus(wizardValue(form,`${signerPrefix}_witness_need`)||"no"):"Not applicable";
+    const actPrefix=service==="ron"?"ron":service==="mobile"?"mobile":null;
+    const actCount=actPrefix?Math.max(1,wizardNumber(form,`${actPrefix}_notarization_count`,1)):0;
+    const actReview=actPrefix?Array.from({length:actCount},(_,index)=>labelFromStatus(wizardValue(form,`${actPrefix}_act_type_${index}`)||"unsure")).join("; "):"Not applicable";
+    const witnessReview=actPrefix?labelFromStatus(wizardValue(form,`${actPrefix}_witness_need`)||"no"):"Not applicable";
     const mobileOptions=service==="mobile"?[wizardChecked(form,"mobile_print_addon")?"Print preparation":null,wizardChecked(form,"mobile_scan_addon")?"Scan to PDF":null].filter(Boolean).join("; ")||"None":"Not applicable";
     const appointment = [wizardValue(form, "appointment_date") || wizardValue(form, "preferred_date"), wizardValue(form, "appointment_time") || wizardValue(form, "preferred_time_window")].filter(Boolean).join(" · ") || "Not scheduled";
     $("#adminWizardReview", form).innerHTML = `
