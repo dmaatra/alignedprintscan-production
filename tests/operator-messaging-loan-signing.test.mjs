@@ -18,6 +18,7 @@ test("Loan Signing uses canonical participant addresses and service-aware email"
   assert.match(adminV3,/control\.value=prior\.value/);
   assert.match(adminV3,/method==="ron"\?"required":""/);
   assert.match(adminV3,/service === "loan_signing"\) details = `\$\{labelFromStatus\(wizardValue\(form,"lsa_signing_type"\)\)\}/);
+  assert.match(adminV3,/service === "loan_signing" \? labelFromStatus\(wizardValue\(form, "lsa_signing_method"\)\)/);
 });
 
 test("Loan Signing skips the empty shared options step",()=>{
