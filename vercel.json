@@ -9,6 +9,10 @@
       "destination": "/doneisha.html"
     },
     {
+      "source": "/professionals/:slug",
+      "destination": "/operator-card.html?slug=:slug"
+    },
+    {
       "source": "/resources-sitemap.xml",
       "destination": "https://sfsdniavqldgbiretply.supabase.co/functions/v1/resource-public?command=sitemap"
     }
@@ -28,6 +32,10 @@
     },
     {
       "source": "/doneisha",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }]
+    },
+    {
+      "source": "/professionals/:slug",
       "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }]
     }
   ]

@@ -577,7 +577,7 @@ function renderSignerAndActFields() {
     loanSignerHost.dataset.count = String(loanSignerCount);
     loanSignerHost.innerHTML = Array.from(
       { length: loanSignerCount },
-      (_, index) => `<fieldset class="signer-identity"><legend>Signer ${index + 1} legal ID name</legend><div class="form-grid"><div><label>First name *</label><input name="lsaSignerFirstName${index}" required autocomplete="given-name"></div><div><label>Middle name (optional)</label><input name="lsaSignerMiddleName${index}" autocomplete="additional-name"></div><div><label>Last name *</label><input name="lsaSignerLastName${index}" required autocomplete="family-name"></div><div><label>Individual email *</label><input name="lsaSignerEmail${index}" type="email" required></div></div></fieldset>`,
+      (_, index) => `<fieldset class="signer-identity"><legend>Signer ${index + 1}</legend><div class="form-grid"><div><label>First name *</label><input name="lsaSignerFirstName${index}" required autocomplete="given-name"></div><div><label>Middle name (optional)</label><input name="lsaSignerMiddleName${index}" autocomplete="additional-name"></div><div><label>Last name *</label><input name="lsaSignerLastName${index}" required autocomplete="family-name"></div><div><label>Individual email${wizard.elements.lsaSigningMethod?.value === "ron" ? " *" : " (optional)"}</label><input name="lsaSignerEmail${index}" type="email" ${wizard.elements.lsaSigningMethod?.value === "ron" ? "required" : ""}></div></div>${index ? `<label class="check"><input name="lsaSignerSameAddress${index}" type="checkbox"> Same address as Signer 1</label>` : ""}<div class="form-grid" data-lsa-signer-address="${index}"><div><label>Signer address *</label><input name="lsaSignerStreet${index}" required autocomplete="street-address"></div><div><label>City *</label><input name="lsaSignerCity${index}" required autocomplete="address-level2"></div><div><label>State *</label><input name="lsaSignerState${index}" value="TX" maxlength="2" required autocomplete="address-level1"></div><div><label>ZIP *</label><input name="lsaSignerZip${index}" required autocomplete="postal-code"></div></div></fieldset>`,
     ).join("");
   }
   if (actHost && Number(actHost.dataset.count || 0) !== actCount) {
@@ -587,22 +587,25 @@ function renderSignerAndActFields() {
 }
 
 function showStep(n) {
-  currentStep = Math.max(0, Math.min(4, n));
+  const availableSteps = activeService === "loan_signing" ? [0, 1, 3, 4] : [0, 1, 2, 3, 4];
+  const requestedIndex = availableSteps.indexOf(n);
+  currentStep = requestedIndex >= 0 ? n : availableSteps[Math.max(0, Math.min(availableSteps.length - 1, n > currentStep ? availableSteps.indexOf(currentStep) + 1 : availableSteps.indexOf(currentStep) - 1))];
+  const progressIndex = availableSteps.indexOf(currentStep);
   clearErrors();
   qsa(".wizard-step").forEach((el, i) => {
     const isActive = i === currentStep;
     el.classList.toggle("active", isActive);
     el.setAttribute("aria-hidden", String(!isActive));
   });
-  qs("#stepLabel").textContent = `Step ${currentStep + 1} of 5`;
+  qs("#stepLabel").textContent = `Step ${progressIndex + 1} of ${availableSteps.length}`;
   qs("#stepName").textContent = stepNames[currentStep];
-  qs("#progressBar").style.width = `${((currentStep + 1) / 5) * 100}%`;
+  qs("#progressBar").style.width = `${((progressIndex + 1) / availableSteps.length) * 100}%`;
   qs(".progress-track")?.setAttribute(
     "aria-valuenow",
-    String(currentStep + 1),
+    String(progressIndex + 1),
   );
-  qs("#prevStep").style.visibility = currentStep === 0 ? "hidden" : "visible";
-  qs("#nextStep").style.display = currentStep === 4 ? "none" : "inline-flex";
+  qs("#prevStep").style.visibility = progressIndex === 0 ? "hidden" : "visible";
+  qs("#nextStep").style.display = progressIndex === availableSteps.length - 1 ? "none" : "inline-flex";
   syncActiveValidationControls();
   updateContinueState();
 }
@@ -721,8 +724,9 @@ function validateStep(showErrors = false) {
         need([
           `lsaSignerFirstName${index}`,
           `lsaSignerLastName${index}`,
-          `lsaSignerEmail${index}`,
         ]);
+        if (wizard.elements.lsaSigningMethod?.value === "ron") need([`lsaSignerEmail${index}`]);
+        if (!wizard.elements[`lsaSignerSameAddress${index}`]?.checked) need([`lsaSignerStreet${index}`, `lsaSignerCity${index}`, `lsaSignerState${index}`, `lsaSignerZip${index}`]);
       }
     }
     if (["ron", "mobile"].includes(activeService)) {
@@ -1291,6 +1295,14 @@ async function submitPublicRequestSecurely(event) {
             f[`lsaSignerLastName${index}`]?.value,
           ].map((value) => value?.trim()).filter(Boolean).join(" ") || null,
           email: normalizeEmail(f[`lsaSignerEmail${index}`]?.value) || null,
+          address: f[`lsaSignerSameAddress${index}`]?.checked && index > 0 ? {
+            line1: f.lsaSignerStreet0?.value?.trim() || null, city: f.lsaSignerCity0?.value?.trim() || null,
+            state: f.lsaSignerState0?.value?.trim() || null, zip: f.lsaSignerZip0?.value?.trim() || null,
+            shared_from_signer: 1,
+          } : {
+            line1: f[`lsaSignerStreet${index}`]?.value?.trim() || null, city: f[`lsaSignerCity${index}`]?.value?.trim() || null,
+            state: f[`lsaSignerState${index}`]?.value?.trim() || null, zip: f[`lsaSignerZip${index}`]?.value?.trim() || null,
+          },
           identity_name_confirmed: true,
           sort_order: index,
         });
@@ -1393,6 +1405,21 @@ function initWizard() {
     else updateContinueState();
   });
   qs("#prevStep").addEventListener("click", () => showStep(currentStep - 1));
+  wizard.addEventListener("change", (event) => {
+    if (event.target?.name === "lsaSigningMethod") {
+      const host = qs("#loanSigningSignerFields");
+      if (host) host.dataset.count = "-1";
+      renderDynamicFields();
+    }
+    const match = String(event.target?.name || "").match(/^lsaSignerSameAddress(\d+)$/);
+    if (match) {
+      const index = Number(match[1]);
+      const group = wizard.querySelector(`[data-lsa-signer-address="${index}"]`);
+      if (group) group.hidden = event.target.checked;
+      syncActiveValidationControls();
+      updateContinueState();
+    }
+  });
   wizard.addEventListener("input", (event) => {
     if (!event.target.matches("input,select,textarea")) return;
     updateConditional();

@@ -27,6 +27,27 @@ const allowed = (body: Record<string, unknown>, keys: string[]) =>
     ) => [key, body[key] === "" ? null : body[key]]),
   );
 const origin = Deno.env.get("SITE_URL") || "https://alignedprintscan.com";
+const OPERATOR_TITLES = ["Owner", "Co-Owner", "Managing Member", "Notary Public"];
+const OPERATOR_CREDENTIALS = ["Texas Notary Public", "Online Notary Public", "Loan Signing Agent", "NNA Certified Loan Signing Agent"];
+const OPERATOR_ASSURANCES = ["Bonded", "Insured"];
+const OPERATOR_PERMISSIONS = Object.fromEntries([
+  "view_manage_requests", "create_admin_orders", "edit_participants", "communications", "documents",
+  "quotes_invoices", "appointments_fulfillment", "loan_signing_workflows", "ron_workflows", "business_accounts",
+].map((permission) => [permission, true]));
+function approvedList(value: unknown, catalog: string[], label: string) {
+  if (!Array.isArray(value) || value.some((item) => !catalog.includes(String(item)))) throw new Error(`${label} must use the approved APS catalog.`);
+  return [...new Set(value.map(String))];
+}
+function operatorProfileFields(body: Record<string, unknown>) {
+  const title = text(body.public_title, 80), professionalEmail = text(body.professional_email, 254).toLowerCase();
+  const slug = text(body.card_slug, 32).toLowerCase(), portrait = text(body.portrait_path, 300);
+  if (title && !OPERATOR_TITLES.includes(title)) throw new Error("Public title must use the approved APS catalog.");
+  if (professionalEmail && (!professionalEmail.includes("@") || !professionalEmail.endsWith("@alignedprintscan.com"))) throw new Error("Professional email must use the alignedprintscan.com domain.");
+  if (slug && !/^[a-z][a-z0-9-]{1,31}$/.test(slug)) throw new Error("Card slug is invalid.");
+  if (body.card_enabled === true && (!slug || !professionalEmail)) throw new Error("An enabled card requires a permanent slug and professional APS email.");
+  if (portrait && !/^assets\/images\/professionals\/[a-z0-9][a-z0-9._-]*$/i.test(portrait)) throw new Error("Portrait must be an approved professional asset path.");
+  return { first_name: text(body.first_name, 80) || null, middle_name: text(body.middle_name, 80) || null, last_name: text(body.last_name, 80) || null, public_title: title || null, professional_email: professionalEmail || null, credentials: approvedList(body.credentials ?? [], OPERATOR_CREDENTIALS, "Credentials"), assurance_indicators: approvedList(body.assurance_indicators ?? [], OPERATOR_ASSURANCES, "Assurance indicators"), portrait_path: portrait || null, portrait_approved_at: portrait ? new Date().toISOString() : null, card_enabled: body.card_enabled === true, card_slug: slug || null };
+}
 
 async function activity(
   organizationId: string,
@@ -643,6 +664,8 @@ Deno.serve(async (req) => {
 
     if (command === "invite_staff") {
       const email = text(body.email, 254).toLowerCase(), role = text(body.role);
+      const isOperator = body.account_classification === "operator";
+      const operator = isOperator ? operatorProfileFields(body) : null;
       if (
         !email.includes("@") ||
         ![
@@ -664,11 +687,13 @@ Deno.serve(async (req) => {
         method: "POST",
         body: JSON.stringify({
           user_id: auth.id || null,
-          full_name: text(body.full_name, 180),
+          full_name: isOperator ? [operator?.first_name, operator?.middle_name, operator?.last_name].filter(Boolean).join(" ") : text(body.full_name, 180),
           email,
           role,
           status: "invited",
-          permissions: body.permissions || {},
+          permissions: isOperator ? OPERATOR_PERMISSIONS : body.permissions || {},
+          account_classification: isOperator ? "operator" : "legacy_staff",
+          ...(operator || {}),
           invited_at: new Date().toISOString(),
           invited_by: staff.id,
         }),
@@ -689,6 +714,12 @@ Deno.serve(async (req) => {
       const target =
         (await serviceRows(`aps_staff_profiles?id=eq.${profileId}&limit=1`))[0];
       if (!target) throw new Error("Staff profile not found.");
+      if (target.role === "owner" && staff.profile.role !== "owner") {
+        throw new Error("Only a protected Owner may modify an Owner account.");
+      }
+      if (target.user_id === staff.id && staff.profile.role !== "owner" && (body.role !== undefined || body.permissions !== undefined)) {
+        throw new Error("Operators cannot change their own role or permissions.");
+      }
       if (
         target.role === "owner" &&
         (body.role && body.role !== "owner" ||
@@ -702,8 +733,13 @@ Deno.serve(async (req) => {
         target.user_id === staff.id &&
         ["suspended", "removed"].includes(String(body.status))
       ) throw new Error("You cannot lock out your own active staff account.");
+      const profileKeys = ["first_name", "middle_name", "last_name", "public_title", "professional_email", "credentials", "assurance_indicators", "portrait_path", "card_enabled", "card_slug"];
+      const changesProfile = profileKeys.some((key) => body[key] !== undefined);
+      const normalizedProfile = changesProfile ? operatorProfileFields({ ...target, ...Object.fromEntries(profileKeys.filter((key) => body[key] !== undefined).map((key) => [key, body[key]])) }) : {};
       const payload = {
         ...allowed(body, ["role", "status", "permissions"]),
+        ...normalizedProfile,
+        ...(changesProfile ? { full_name: [normalizedProfile.first_name, normalizedProfile.middle_name, normalizedProfile.last_name].filter(Boolean).join(" ") } : {}),
         updated_at: new Date().toISOString(),
       } as Record<string, unknown>;
       if (body.status === "suspended") {

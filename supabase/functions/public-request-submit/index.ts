@@ -135,13 +135,22 @@ function validate(body: Record<string, unknown>, adminRequest = false) {
       !signers.length || signers.length > 10 ||
       signers.some((person) =>
         !String(person.first_name || person.full_legal_name || "").trim() ||
-        !String(person.email || "").includes("@")
+        !String(person.last_name || person.full_legal_name || "").trim() ||
+        !person.address || typeof person.address !== "object" ||
+        !String((person.address as Record<string, unknown>).line1 || "").trim() ||
+        !String((person.address as Record<string, unknown>).city || "").trim() ||
+        !String((person.address as Record<string, unknown>).state || "").trim() ||
+        !String((person.address as Record<string, unknown>).zip || "").trim()
       )
     ) {
       throw new Error(
-        "Provide between 1 and 10 structured Loan Signing signers with individual email addresses.",
+        "Provide between 1 and 10 structured Loan Signing signers with an explicit address for each signer.",
       );
     }
+    if (
+      String(detail.signing_method || "") === "ron" &&
+      signers.some((person) => !String(person.email || "").includes("@"))
+    ) throw new Error("Every remote online Loan Signing signer requires an individual email address.");
   }
   return { customer, request, detail, participants, acts, files, service };
 }
@@ -386,6 +395,7 @@ Deno.serve(async (req) => {
               "last_name",
               "full_legal_name",
               "email",
+              "address",
               "identity_name_confirmed",
               "witness_source",
               "quantity",
