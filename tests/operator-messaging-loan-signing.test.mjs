@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const read=(path)=>fs.readFileSync(path,"utf8");
-const publicJs=read("assets/js/script.js"),admin=read("assets/js/admin.js"),adminV3=read("assets/js/admin-v3.js"),submit=read("supabase/functions/public-request-submit/index.ts"),migration=read("supabase/migrations/20260822140000_operator_profiles_and_scoped_conversations.sql"),inbound=read("supabase/functions/resend-inbound/index.ts"),card=read("assets/js/operator-card.js"),vercel=JSON.parse(read("vercel.json"));
+const publicJs=read("assets/js/script.js"),admin=read("assets/js/admin.js"),adminV3=read("assets/js/admin-v3.js"),submit=read("supabase/functions/public-request-submit/index.ts"),migration=read("supabase/migrations/20260822140000_operator_profiles_and_scoped_conversations.sql"),inbound=read("supabase/functions/resend-inbound/index.ts"),cardEndpoint=read("supabase/functions/operator-card-public/index.ts"),card=read("assets/js/operator-card.js"),vercel=JSON.parse(read("vercel.json"));
 
 test("Loan Signing uses canonical participant addresses and service-aware email",()=>{
   assert.match(publicJs,/lsaSignerSameAddress/);
@@ -50,5 +50,6 @@ test("operator card uses a narrow route and derives QR and vCard",()=>{
   assert.match(card,/BEGIN:VCARD/);
   assert.match(card,/`N:\$\{escV\(profile\.last_name\)\};/);
   assert.match(card,/format=qr/);
+  assert.match(cardEndpoint,/Access-Control-Allow-Origin/);
   assert.match(read("operator-card.html"),/digital-card professional-card/);
 });
