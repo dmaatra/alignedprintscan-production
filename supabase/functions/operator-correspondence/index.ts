@@ -26,19 +26,19 @@ Deno.serve(async req=>{
     if(command!=="send")throw new Error("Unsupported correspondence command.");
     const recipient=text(body.to,254).toLowerCase(),subject=text(body.subject,300),message=text(body.message,20000),requestId=text(body.request_id,36)||null;
     if(!recipient.includes("@")||!subject||!message)throw new Error("Recipient, subject, and message are required.");
-    if(!RESEND||!INBOUND)throw new Error("Correspondence provider configuration is incomplete.");
-    let conversationId=text(body.conversation_id,36),token=crypto.randomUUID().replaceAll("-","")+crypto.randomUUID().replaceAll("-","");
+    if(!RESEND)throw new Error("Correspondence provider configuration is incomplete.");
+    let conversationId=text(body.conversation_id,36),token=INBOUND?crypto.randomUUID().replaceAll("-","")+crypto.randomUUID().replaceAll("-",""):"";
     if(!conversationId){
-      const rows=await serviceRows("message_conversations",{method:"POST",body:JSON.stringify({service_request_id:requestId,subject,contact_email:recipient,contact_name:text(body.contact_name,180)||null,reply_token_hash:await hash(token),created_by:staff.id})});
+      const rows=await serviceRows("message_conversations",{method:"POST",body:JSON.stringify({service_request_id:requestId,subject,contact_email:recipient,contact_name:text(body.contact_name,180)||null,reply_token_hash:await hash(token||crypto.randomUUID()),created_by:staff.id})});
       conversationId=rows[0].id;
     } else {
       const rows=await serviceRows(`message_conversations?id=eq.${conversationId}&status=eq.open&limit=1`);if(!rows[0])throw new Error("Open conversation not found.");
     }
-    await serviceRows("message_reply_routes",{method:"POST",body:JSON.stringify({conversation_id:conversationId,token_hash:await hash(token)})});
+    if(token)await serviceRows("message_reply_routes",{method:"POST",body:JSON.stringify({conversation_id:conversationId,token_hash:await hash(token)})});
     const displayName=text(staff.profile.full_name,180),title=text(staff.profile.public_title,100),credentials=Array.isArray(staff.profile.credentials)?staff.profile.credentials.map((x:unknown)=>text(x,100)).filter(Boolean):[];
     const bodyHtml=`<p>${escape(message).replace(/\n/g,"<br>")}</p><hr><table role="presentation" style="font-family:Arial,sans-serif;color:#0c1930"><tr><td><img src="${SITE}/assets/images/logo-symbol.webp" width="56" height="56" alt="Aligned Print &amp; Scan" style="display:block;width:56px;height:56px;border-radius:50%"></td><td style="padding-left:12px"><strong>${escape(displayName)}</strong><br>${escape(title)}${credentials.length?`<br>${escape(credentials.join(" | "))}`:""}<br>Aligned Print &amp; Scan · 469-383-8879 · <a href="${SITE}">alignedprintscan.com</a></td></tr></table>`;
     const html=renderCustomerEmailShell({title:subject,preheader:subject,body:bodyHtml,siteUrl:SITE});
-    const sent=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${RESEND}`,"Content-Type":"application/json"},body:JSON.stringify({from:FROM,to:[recipient],reply_to:`reply+${token}@${INBOUND}`,subject,html,text:message})});
+    const sent=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${RESEND}`,"Content-Type":"application/json"},body:JSON.stringify({from:FROM,to:[recipient],...(token?{reply_to:`reply+${token}@${INBOUND}`}:{ }),subject,html,text:message})});
     const data=await sent.json().catch(()=>({})),now=new Date().toISOString();
     await serviceRows("messages",{method:"POST",body:JSON.stringify({service_request_id:requestId,conversation_id:conversationId,direction:"outbound",visibility:"customer",sender:staff.profile.professional_email||staff.profile.email,recipient,subject,rendered_html:html,rendered_text:message,delivery_state:sent.ok?"sent":"failed",provider_message_id:data.id||null,error_message:sent.ok?null:text(data.message,500),sent_at:sent.ok?now:null,created_by:staff.id,source_type:"operator",source_event:"operator_correspondence",attempted_at:now,failed_at:sent.ok?null:now,metadata:{operator_profile_id:staff.profile.id,signature_snapshot:{full_name:displayName,public_title:title,credentials}}})});
     await serviceRows(`message_conversations?id=eq.${conversationId}`,{method:"PATCH",body:JSON.stringify({last_message_at:now,updated_at:now})});
