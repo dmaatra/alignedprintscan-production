@@ -439,8 +439,7 @@ Deno.serve(async (request) => {
     let conversationId: string | null = null;
     let replyToken = "";
     if (RESEND_RECEIVING_DOMAIN) {
-      replyToken = crypto.randomUUID().replaceAll("-", "") +
-        crypto.randomUUID().replaceAll("-", "");
+      replyToken = crypto.randomUUID().replaceAll("-", "");
       const conversationResponse = await rest("message_conversations", {
         method: "POST",
         body: JSON.stringify({

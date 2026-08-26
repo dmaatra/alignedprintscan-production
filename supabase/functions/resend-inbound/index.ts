@@ -1,6 +1,8 @@
 import { serviceRows } from "../_shared/release2-auth.ts";
 const secret = Deno.env.get("RESEND_WEBHOOK_SECRET") || "",
-  apiKey = Deno.env.get("RESEND_API_KEY") || "";
+  apiKey = Deno.env.get("RESEND_API_KEY") || "",
+  receivingDomain = (Deno.env.get("RESEND_RECEIVING_DOMAIN") || "").trim()
+    .toLowerCase().replace(/^\.+|\.+$/g, "");
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -81,11 +83,16 @@ Deno.serve(async (req) => {
     }
     const eventId = req.headers.get("svix-id") || "",
       to = Array.isArray(event.data?.to) ? event.data.to : [],
-      match = to.map((v: unknown) => String(v)).join(" ").match(
-        /reply\+([a-f0-9]{64})@/i,
-      );
-    if (!match) return json({ ok: true, ignored: true });
-    const tokenHash = await hash(match[1]),
+      replyRecipient = receivingDomain
+        ? to.map(emailAddress).find((address: string) => {
+          const separator = address.lastIndexOf("@");
+          if (separator < 0) return false;
+          return address.slice(separator + 1) === receivingDomain &&
+            /^reply\+[a-f0-9]{32}$/i.test(address.slice(0, separator));
+        })
+        : undefined;
+    if (!replyRecipient) return json({ ok: true, ignored: true });
+    const tokenHash = await hash(replyRecipient.slice(6, 38)),
       routes = await serviceRows(
         `message_reply_routes?select=conversation_id&token_hash=eq.${tokenHash}&limit=1`,
       );

@@ -44,7 +44,9 @@ test("operator and conversation migration is additive and protected",()=>{
 
 test("inbound replies require signed webhooks and scoped reply tokens",()=>{
   assert.match(inbound,/svix-signature/);
-  assert.match(inbound,/reply\\\+\(\[a-f0-9\]\{64\}\)@/);
+  assert.match(inbound,/Deno\.env\.get\("RESEND_RECEIVING_DOMAIN"\)/);
+  assert.match(inbound,/address\.slice\(separator \+ 1\) === receivingDomain/);
+  assert.match(inbound,/\^reply\\\+\[a-f0-9\]\{32\}\$/);
   assert.match(inbound,/provider_event_id/);
   assert.match(inbound,/message_reply_routes/);
   assert.match(inbound,/unread_count/);
@@ -54,6 +56,9 @@ test("inbound replies require signed webhooks and scoped reply tokens",()=>{
   assert.match(inbound,/inbound_customer_reply/);
   assert.match(read("supabase/functions/operator-correspondence/index.ts"),/"In-Reply-To"/);
   assert.match(read("supabase/functions/operator-correspondence/index.ts"),/"References"/);
+  assert.match(read("supabase/functions/operator-correspondence/index.ts"),/sent\.ok && replying[\s\S]*read_at: now[\s\S]*unread_count: 0/);
+  assert.doesNotMatch(read("supabase/functions/operator-correspondence/index.ts"),/randomUUID\(\).*\+\s*crypto\.randomUUID\(\)/s);
+  assert.doesNotMatch(read("supabase/functions/send-message/index.ts"),/randomUUID\(\).*\+\s*crypto\.randomUUID\(\)/s);
   assert.match(read("supabase/functions/operator-correspondence/index.ts"),/requestId\s*=\s*text\(rows\[0\]\.service_request_id,\s*36\)\s*\|\|\s*null/);
 });
 

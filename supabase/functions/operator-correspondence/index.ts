@@ -88,10 +88,7 @@ Deno.serve(async (req) => {
       throw new Error("Correspondence provider configuration is incomplete.");
     }
     let conversationId = text(body.conversation_id, 36),
-      token = INBOUND
-        ? crypto.randomUUID().replaceAll("-", "") +
-          crypto.randomUUID().replaceAll("-", "")
-        : "";
+      token = INBOUND ? crypto.randomUUID().replaceAll("-", "") : "";
     const replying = Boolean(conversationId);
     if (!conversationId) {
       const rows = await serviceRows("message_conversations", {
@@ -225,9 +222,22 @@ Deno.serve(async (req) => {
         },
       }),
     });
+    if (sent.ok && replying) {
+      await serviceRows(
+        `messages?conversation_id=eq.${conversationId}&direction=eq.inbound&read_at=is.null`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ read_at: now }),
+        },
+      );
+    }
     await serviceRows(`message_conversations?id=eq.${conversationId}`, {
       method: "PATCH",
-      body: JSON.stringify({ last_message_at: now, updated_at: now }),
+      body: JSON.stringify({
+        last_message_at: now,
+        updated_at: now,
+        ...(sent.ok && replying ? { unread_count: 0 } : {}),
+      }),
     });
     if (!sent.ok) throw new Error("Email delivery was not accepted.");
     return json({
