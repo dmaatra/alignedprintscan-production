@@ -215,7 +215,9 @@ export class ProofService {
       middle_name: signer.middleName || undefined,
       last_name: signer.lastName || undefined,
       external_id: signer.externalId,
-      order: signer.order,
+      // Proof's signer object defines signing order as a string even though
+      // APS keeps it as an integer for stable local sorting.
+      order: String(signer.order),
       entity: signer.entity || undefined,
       capacity: signer.capacity || undefined,
       ...(signer.phone
