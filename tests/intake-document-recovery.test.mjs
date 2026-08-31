@@ -23,12 +23,24 @@ test("public intake uses one server-authorized submission boundary", async () =>
 
 test("intake accepts documents xor a valid upload exception and rolls back failed requests", async () => {
   const edge = await read("supabase/functions/public-request-submit/index.ts");
+  const rollback = await read(
+    "supabase/migrations/20260831132500_atomic_failed_intake_rollback.sql",
+  );
   assert.match(edge, /!files\.length && !exceptionReason/);
   assert.match(edge, /files\.length && exceptionReason/);
   assert.match(edge, /MAX_FILES = 12/);
   assert.match(edge, /signers\.length > 10/);
   assert.match(edge, /removeStored\(storedPaths\)/);
-  assert.match(edge, /service_requests\?id=eq/);
+  assert.match(edge, /rpc\/aps_rollback_failed_intake/);
+  assert.match(edge, /rollbackError/);
+  assert.doesNotMatch(edge, /service_requests\?id=eq\.\$\{encodeURIComponent\(requestId\)\}[\s\S]{0,80}method: "DELETE"/);
+  assert.match(rollback, /created_at < now\(\) - interval '30 minutes'/);
+  assert.match(rollback, /business_financial_events/);
+  assert.match(rollback, /proof_transactions/);
+  assert.match(rollback, /request_completion_facts/);
+  assert.match(rollback, /delete from public\.customer_link_audits/);
+  assert.match(rollback, /delete from public\.service_requests/);
+  assert.match(rollback, /grant execute[\s\S]*to service_role/);
 });
 
 test("selected files accumulate and can be removed independently", async () => {
