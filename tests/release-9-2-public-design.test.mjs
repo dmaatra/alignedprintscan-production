@@ -26,7 +26,7 @@ test("all public pages use the same static navigation hierarchy and five-column 
     assert.match(footer, /<h3>Secure Document &amp; Notary Solutions<\/h3>/);
     assert.match(footer, />Resource Center<\/a>/);
     assert.match(footer, /class="footer-business-login">Business Portal Sign In<\/a>/);
-    assert.match(html, /styles\.css\?v=20260820-release-9-2-1-production/);
+    assert.match(html, /styles\.css\?v=20260831-nna-credentials/);
     assert.match(
       html,
       file === "pricing.html"

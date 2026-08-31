@@ -93,7 +93,7 @@ test("professional profile keeps explicit credentials and reusable vCard data", 
   assert.match(script, /Texas Notary Public/);
   assert.match(script, /Online Notary Public/);
   assert.match(script, /Loan Signing Agent/);
-  assert.match(script, /NNA Certified Loan Signing Agent/);
+  assert.match(script, /NNA Certified Notary Signing Agent/);
   assert.match(script, /Bonded & Insured/);
   assert.match(script, /BEGIN:VCARD/);
   assert.match(script, /VERSION:3\.0/);
@@ -108,7 +108,7 @@ test("professional profile keeps explicit credentials and reusable vCard data", 
   assert.match(vcard, /EMAIL;TYPE=INTERNET,WORK:doneisha@alignedprintscan\.com/);
   assert.match(vcard, /URL;TYPE=WORK:https:\/\/alignedprintscan\.com\/doneisha/);
   assert.match(vcard, /URL:https:\/\/alignedprintscan\.com\//);
-  assert.match(vcard, /NOTE:NNA Certified Loan Signing Agent \| Bonded & Insured/);
+  assert.match(vcard, /NOTE:NNA Certified Notary Signing Agent \| Bonded & Insured/);
   assert.match(vcard, /END:VCARD\n$/);
   assert.doesNotMatch(doneisha, />Owner<|>Founder<|>CEO<|>President</);
   assert.match(script, /supportingCredentials\.join\(" \| "\)/);
