@@ -203,6 +203,10 @@ function clearSelectedRequestFiles() {
   }
 }
 
+function hasSelectedRequestFiles() {
+  return [...requestFileInputs].some((inputName) => filesForInput(inputName).length > 0);
+}
+
 function printCost({
   pages = 0,
   color = "bw",
@@ -681,8 +685,7 @@ function validateStep(showErrors = false) {
   if (currentStep === 1) {
     const uploadException = wizard.elements.documentUploadException?.checked;
     if (uploadException) {
-      need(["documentUploadExceptionReason"]);
-      if (wizard.elements.documentUploadExceptionReason?.value === "other") need(["documentUploadExceptionDetail"]);
+      need(["documentUploadExceptionReason", "documentUploadExceptionDetail"]);
     }
     if (activeService === "ron") {
       need([
@@ -733,7 +736,7 @@ function validateStep(showErrors = false) {
       const signerCount = Math.max(1, numericValue("signerCount"));
       const actCount = Math.max(1, numericValue("notarizationCount"));
       for (let index = 0; index < signerCount; index += 1) {
-        need([`signerLegalName${index}`]);
+        need([`signerFirstName${index}`, `signerLastName${index}`]);
         if (activeService === "ron") need([`signerEmail${index}`]);
       }
       for (let index = 0; index < actCount; index += 1) need([`notarialActType${index}`]);
@@ -1238,8 +1241,7 @@ async function submitPublicRequestSecurely(event) {
     const { normalizePersonInput, normalizeEmail } = await import("./aps-data-standard.mjs");
     const customer = { ...normalizePersonInput({ first_name: f.firstName.value, last_name: f.lastName.value, email: f.email.value, phone: f.phone.value }), preferred_contact: f.contactMethod?.value || null };
     const files = await selectedFilesPayload();
-    const exception = f.documentUploadException?.checked;
-    if (files.length && exception) throw new Error("Remove the upload exception when documents are selected.");
+    const exception = Boolean(f.documentUploadException?.checked && !files.length);
     const urgency = appointmentUrgencyFlags(f.preferredDate.value || null);
     const acquisition = window.APSGrowth?.attribution?.() || {};
     const requestTouch = acquisition.request_touch || {};
@@ -1430,7 +1432,10 @@ function initWizard() {
     const el = event.target;
     if (!el.matches("input,select,textarea")) return;
     if (el.type === "file") accumulateRequestFiles(el);
-    if (el.name === "documentUploadException" && el.checked) clearSelectedRequestFiles();
+    if (el.name === "documentUploadException" && el.checked && hasSelectedRequestFiles()) {
+      el.checked = false;
+      alert("Your selected document is still attached. Remove it first only if you want to use the upload-later option instead.");
+    }
     if (el.name === "customerReportedSource") {
       const wrap = qs("#customerReportedSourceOtherWrap");
       if (wrap) wrap.hidden = el.value !== "other";

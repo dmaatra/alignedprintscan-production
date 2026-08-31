@@ -39,8 +39,9 @@ test("selected files accumulate and can be removed independently", async () => {
   assert.match(script, /filesForInput\(inputName\)/);
   assert.match(
     script,
-    /documentUploadException" && el\.checked\) clearSelectedRequestFiles/,
+    /documentUploadException" && el\.checked && hasSelectedRequestFiles\(\)/,
   );
+  assert.match(script, /Your selected document is still attached/);
 });
 
 test("print intake clears notary-only native signer requirements", async () => {
@@ -91,7 +92,7 @@ test("dynamic signer witness and file controls remain wired after rerendering", 
   );
   assert.match(
     script,
-    /documentUploadException" && el\.checked\) clearSelectedRequestFiles\(\)/,
+    /documentUploadException" && el\.checked && hasSelectedRequestFiles\(\)/,
   );
 });
 
