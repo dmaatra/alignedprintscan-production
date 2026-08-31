@@ -55,23 +55,26 @@ export class SupabaseActivationRepository implements ActivationRepository {
     ))[0] ?? null;
   }
   async context(tx: ActivationTransaction): Promise<ReadinessContext> {
-    const [request, ron, invoices, signers, assets, participants] =
+    const [request, ron, invoices, signers, assets, participants, files] =
       await Promise.all([
         this.rows<ReadinessContext["request"]>(
-          `service_requests?select=id,service_type,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_state&id=eq.${tx.service_request_id}&limit=1`,
+          `service_requests?select=id,service_type,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_state,notes,appointment_instructions,estimate_components&id=eq.${tx.service_request_id}&limit=1`,
         ),
         this.rows<NonNullable<ReadinessContext["ron"]>>(
-          `ron_requests?select=number_of_signers,witness_need,witness_count,witness_provider,client_witness_count,provided_witness_count,witness_review_required&service_request_id=eq.${tx.service_request_id}&limit=1`,
+          `ron_requests?select=number_of_signers,number_of_notarizations,witness_need,witness_count,witness_provider,client_witness_count,provided_witness_count,witness_review_required&service_request_id=eq.${tx.service_request_id}&limit=1`,
         ),
         this.rows<ReadinessContext["invoices"][number]>(
           `invoices?select=status,payment_status,balance_due,amount_due,amount_paid,paid_amount&service_request_id=eq.${tx.service_request_id}`,
         ),
         this.listSigners(tx.id),
         this.rows<ReadinessContext["assets"][number]>(
-          `proof_transaction_assets?select=proof_asset_id,upload_state,processing_state,requirement,manual_review_reason&proof_transaction_record_id=eq.${tx.id}&asset_type=eq.source_document`,
+          `proof_transaction_assets?select=proof_asset_id,source_request_file_id,file_name,upload_state,processing_state,requirement,witness_required,manual_review_reason&proof_transaction_record_id=eq.${tx.id}&asset_type=eq.source_document`,
         ),
         this.rows<ReadinessContext["participants"][number]>(
-          `request_participants?select=id,participant_type,full_legal_name,email,sort_order,identity_name_confirmed&service_request_id=eq.${tx.service_request_id}&participant_type=eq.signer&order=sort_order.asc`,
+          `request_participants?select=id,participant_type,first_name,middle_name,last_name,full_legal_name,email,mobile_phone,sort_order,identity_name_confirmed&service_request_id=eq.${tx.service_request_id}&participant_type=eq.signer&order=sort_order.asc`,
+        ),
+        this.rows<{ id: string; file_name: string | null; detected_page_count: number | null }>(
+          `request_files?select=id,file_name,detected_page_count&service_request_id=eq.${tx.service_request_id}&is_active=eq.true`,
         ),
       ]);
     if (!request[0]) {
@@ -96,7 +99,14 @@ export class SupabaseActivationRepository implements ActivationRepository {
       ron: ron[0] ?? null,
       invoices,
       signers,
-      assets,
+      assets: assets.map((asset) => {
+        const file = files.find((candidate) => candidate.id === asset.source_request_file_id);
+        return {
+          ...asset,
+          file_name: asset.file_name ?? file?.file_name ?? null,
+          detected_page_count: file?.detected_page_count ?? null,
+        };
+      }),
     };
   }
   async listSigners(id: string) {

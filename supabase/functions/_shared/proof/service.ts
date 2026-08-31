@@ -41,6 +41,14 @@ export interface ConfigureSignerInput {
   order: number;
   entity?: string | null;
   capacity?: string | null;
+  phone?: { countryCode: string; number: string } | null;
+}
+
+export interface DraftEnrichmentInput {
+  transactionName?: string | null;
+  notaryMeetingTime?: string | null;
+  notaryInstructions?: string | null;
+  messageToSigner?: string | null;
 }
 
 export interface CreateDraftInput {
@@ -197,6 +205,7 @@ export class ProofService {
   async configureTransactionSigners(
     transactionId: string,
     signers: ConfigureSignerInput[],
+    enrichment: DraftEnrichmentInput = {},
   ): Promise<ProofProviderTransaction> {
     assertProviderId(transactionId);
     const providerSigners = signers.map((signer) => ({
@@ -208,6 +217,14 @@ export class ProofService {
       order: signer.order,
       entity: signer.entity || undefined,
       capacity: signer.capacity || undefined,
+      ...(signer.phone
+        ? {
+          phone: {
+            country_code: signer.phone.countryCode,
+            number: signer.phone.number,
+          },
+        }
+        : {}),
     }));
     const data = await this.client.request<unknown>(
       `/v1/transactions/${encodeURIComponent(transactionId)}`,
@@ -216,6 +233,22 @@ export class ProofService {
         retry: false,
         json: {
           draft: true,
+          ...(enrichment.transactionName
+            ? { transaction_name: enrichment.transactionName }
+            : {}),
+          ...(enrichment.notaryMeetingTime
+            ? { notary_meeting_time: enrichment.notaryMeetingTime }
+            : {}),
+          ...(enrichment.notaryInstructions
+            ? {
+              notary_instructions: [{
+                notary_note: enrichment.notaryInstructions,
+              }],
+            }
+            : {}),
+          ...(enrichment.messageToSigner
+            ? { message_to_signer: enrichment.messageToSigner }
+            : {}),
           // Drafts created with Proof's primary `signer` field must continue
           // to use that field when APS enriches a single signer. Sending a
           // one-item `signers` array attempts to add a second signer instead.

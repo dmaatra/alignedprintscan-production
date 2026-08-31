@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1";
 import {
+  draftEnrichment,
   externalId,
   ProofActivationLifecycle,
   witnessPolicy,
@@ -255,6 +256,34 @@ Deno.test("approved current-request participants map in stable signer order", ()
     order: 2,
   }]);
 });
+Deno.test("confirmed APS appointment and operational facts enrich one Proof draft", () => {
+  const c = context();
+  c.request.notes = "Customer asks for a calm pace.";
+  c.request.appointment_instructions =
+    "Confirm the document title before the meeting.";
+  c.request.estimate_components = [{ label: "Acknowledgment", quantity: 2 }];
+  c.ron!.number_of_notarizations = 2;
+  c.assets[0].file_name = "Synthetic Affidavit.pdf";
+  c.assets[0].detected_page_count = 3;
+  const enrichment = draftEnrichment(tx(), c, approvedSignerInputs(c));
+  assertEquals(enrichment.transactionName, "APS-22222222 — RON — Signer");
+  assertEquals(enrichment.notaryMeetingTime, "2026-08-06T10:00:00-05:00");
+  assert(enrichment.notaryInstructions?.includes("Acknowledgment × 2"));
+  assert(
+    enrichment.notaryInstructions?.includes(
+      "Synthetic Affidavit.pdf (3 pages)",
+    ),
+  );
+  assert(enrichment.messageToSigner?.includes("America/Chicago"));
+});
+Deno.test("unconfirmed requested time is not represented as a Proof meeting", () => {
+  const c = context();
+  c.request.appointment_confirmed_at = null;
+  const enrichment = draftEnrichment(tx(), c, approvedSignerInputs(c));
+  assertEquals(enrichment.notaryMeetingTime, null);
+  assertEquals(enrichment.messageToSigner, null);
+  assert(enrichment.notaryInstructions?.includes("Not yet confirmed in APS"));
+});
 Deno.test("missing signer email blocked", () => {
   const x = setup();
   x.r.c.signers[0].email = "";
@@ -435,16 +464,22 @@ Deno.test("phone omitted by default", () =>
   assertEquals("phone" in signer(), false));
 Deno.test("no-witness request passes", () =>
   assertEquals(witnessPolicy(context()), null));
+Deno.test("Proof On-Demand witness passes when the Proof document flag agrees", () => {
+  const c = context();
+  c.ron = { ...c.ron!, witness_need: "yes", provided_witness_count: 1 };
+  c.assets[0].witness_required = true;
+  assertEquals(witnessPolicy(c), null);
+});
+Deno.test("Proof On-Demand witness mismatch blocks activation", () => {
+  const c = context();
+  c.ron = { ...c.ron!, witness_need: "yes", provided_witness_count: 1 };
+  c.assets[0].witness_required = false;
+  assertEquals(witnessPolicy(c), "WITNESS_REQUIREMENT_MISMATCH");
+});
 for (
-  const [name, ron] of [["APS-provided witness does not auto-map", {
-    witness_need: "yes",
-    provided_witness_count: 1,
-  }], ["customer-provided witness does not auto-map", {
+  const [name, ron] of [["customer-provided witness does not auto-map", {
     witness_need: "yes",
     client_witness_count: 1,
-  }], ["Proof witness mapping unresolved blocks readiness", {
-    witness_need: "yes",
-    witness_count: "1",
   }], ["witness_review_required blocks activation", {
     witness_review_required: true,
   }]] as const

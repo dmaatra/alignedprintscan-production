@@ -48,7 +48,9 @@ Deno.test("Proof multi-signer update uses the signers array", async () => {
   const transport: ProofTransport = {
     request<T>(path: string, options?: ProofRequestOptions) {
       request = { path, json: options?.json };
-      return Promise.resolve({ id: "ot_test", status: "started", signers: [] } as T);
+      return Promise.resolve(
+        { id: "ot_test", status: "started", signers: [] } as T,
+      );
     },
   };
   await new ProofService(transport).configureTransactionSigners("ot_test", [
@@ -82,5 +84,45 @@ Deno.test("Proof multi-signer update uses the signers array", async () => {
         },
       ],
     },
+  });
+});
+
+Deno.test("Proof draft signer update carries supported handoff enrichment", async () => {
+  let json: unknown;
+  const transport: ProofTransport = {
+    request<T>(_path: string, options?: ProofRequestOptions) {
+      json = options?.json;
+      return Promise.resolve(
+        { id: "ot_test", status: "started", signers: [] } as T,
+      );
+    },
+  };
+  await new ProofService(transport).configureTransactionSigners("ot_test", [{
+    email: "signer@example.invalid",
+    firstName: "Avery",
+    middleName: "Middle",
+    lastName: "Signer",
+    phone: { countryCode: "1", number: "4695550101" },
+    externalId: "aps:signer:1",
+    order: 1,
+  }], {
+    transactionName: "APS-12345678 — RON — Signer",
+    notaryMeetingTime: "2026-09-15T10:00:00-05:00",
+    notaryInstructions: "APS REQUEST: APS-12345678",
+    messageToSigner: "Your Remote Online Notarization is ready.",
+  });
+  const payload = json as Record<string, unknown>;
+  assertEquals(payload.transaction_name, "APS-12345678 — RON — Signer");
+  assertEquals(payload.notary_meeting_time, "2026-09-15T10:00:00-05:00");
+  assertEquals(payload.notary_instructions, [{
+    notary_note: "APS REQUEST: APS-12345678",
+  }]);
+  assertEquals(
+    payload.message_to_signer,
+    "Your Remote Online Notarization is ready.",
+  );
+  assertEquals((payload.signer as Record<string, unknown>).phone, {
+    country_code: "1",
+    number: "4695550101",
   });
 });

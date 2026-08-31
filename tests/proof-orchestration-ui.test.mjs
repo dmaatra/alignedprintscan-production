@@ -64,6 +64,15 @@ test("Proof witness requirement is passed only as an explicit selected document 
   assert.match(service, /form\.set\("witness_required", String\(input\.witnessRequired\)\)/);
 });
 
+test("RON provider witness is presented as a Proof On-Demand requirement, not an editable person", async () => {
+  const admin = await read("assets/js/admin.js");
+  assert.match(admin, /Proof On-Demand Witness/);
+  assert.match(admin, /Assigned through Proof during the live session/);
+  assert.match(admin, /No participant information required from APS/);
+  assert.match(admin, /proofWitness\?'<small>Proof will assign the live witness/);
+  assert.match(admin, /selectedRequest\.service_type==="ron"&&person\.participant_type==="witness"&&person\.witness_source==="aps"/);
+});
+
 test("customer RON projection excludes provider IDs and all access-link values", async () => {
   const status = await read("supabase/functions/get-request-status/index.ts");
   assert.match(status, /ron_session: ronSession/);
