@@ -1313,7 +1313,7 @@
         let message=resolution?.error||requestError?.message||"The request could not be created.";
         try {
           const detail=await requestError?.context?.clone?.().json?.();
-          message=detail?.error?.message||detail?.error||detail?.message||message;
+          message=detail?.admin_detail||detail?.error?.message||detail?.error||detail?.message||message;
         } catch (_) { /* Keep the safe client fallback when the response body is unavailable. */ }
         throw new Error(message);
       }

@@ -66,8 +66,15 @@ test("conversion migration is backward-compatible and admin-authorized",async()=
 test("production pages load the post-release frontend asset version",async()=>{
   const admin=await read("admin-dashboard.html");
   assert.match(admin,/admin\.js\?v=20260820-release-9-2-1-production-3/);
-  assert.match(admin,/admin-v3\.js\?v=20260830-intake-edge-error-detail/);
+  assert.match(admin,/admin-v3\.js\?v=20260830-intake-admin-detail/);
   for(const page of ["index.html","mobile-notary.html","print-scan.html","remote-online-notary.html","pricing.html","success.html","support.html","accessibility.html","privacy.html","faq.html","terms.html"]){
     assert.match(await read(page),page==="pricing.html"?/script\.js\?v=20260830-intake-validation-repair/:/script\.js\?v=20260820-release-9-2-1-production/,page);
   }
+});
+
+test("authenticated Admin intake errors retain safe public messaging and expose diagnostic detail",async()=>{
+  const [admin,submit]=await Promise.all([read("assets/js/admin-v3.js"),read("supabase/functions/public-request-submit/index.ts")]);
+  assert.match(admin,/detail\?\.admin_detail/);
+  assert.match(submit,/adminRequest[\s\S]*admin_detail/);
+  assert.match(submit,/We could not submit your request\. Please try again or contact Aligned Print & Scan\./);
 });
