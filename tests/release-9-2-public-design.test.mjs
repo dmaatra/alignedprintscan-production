@@ -27,7 +27,12 @@ test("all public pages use the same static navigation hierarchy and five-column 
     assert.match(footer, />Resource Center<\/a>/);
     assert.match(footer, /class="footer-business-login">Business Portal Sign In<\/a>/);
     assert.match(html, /styles\.css\?v=20260820-release-9-2-1-production/);
-    assert.match(html, /script\.js\?v=20260820-release-9-2-1-production/);
+    assert.match(
+      html,
+      file === "pricing.html"
+        ? /script\.js\?v=20260830-intake-validation-repair/
+        : /script\.js\?v=20260820-release-9-2-1-production/,
+    );
   }
 });
 

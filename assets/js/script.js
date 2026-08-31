@@ -203,6 +203,10 @@ function clearSelectedRequestFiles() {
   }
 }
 
+function hasSelectedRequestFiles() {
+  return [...requestFileInputs].some((inputName) => filesForInput(inputName).length > 0);
+}
+
 function printCost({
   pages = 0,
   color = "bw",
@@ -538,6 +542,22 @@ function updateConditional() {
   syncActiveValidationControls();
 }
 
+function preserveDynamicValues(host, render) {
+  if (!host) return;
+  const values = new Map(
+    qsa("input[name], select[name], textarea[name]", host).map((control) => [
+      control.name,
+      control.type === "checkbox" ? control.checked : control.value,
+    ]),
+  );
+  render();
+  qsa("input[name], select[name], textarea[name]", host).forEach((control) => {
+    if (!values.has(control.name)) return;
+    if (control.type === "checkbox") control.checked = Boolean(values.get(control.name));
+    else control.value = values.get(control.name);
+  });
+}
+
 function renderWitnessIdentityFields() {
   ["ron", "mobile"].forEach((service) => {
     const host = qs(`#${service}WitnessFields`);
@@ -545,7 +565,9 @@ function renderWitnessIdentityFields() {
     const count = witnessAllocation(service).customerProvides;
     if (Number(host.dataset.count || 0) === count) return;
     host.dataset.count = String(count);
-    host.innerHTML = Array.from({ length: count }, (_, index) => `<div class="form-grid"><div><label>Witness ${index + 1} full legal ID name *</label><input name="${service}WitnessLegalName${index}" required></div><div><label>Witness ${index + 1} email (optional)</label><input name="${service}WitnessEmail${index}" type="email"></div></div>`).join("");
+    preserveDynamicValues(host, () => {
+      host.innerHTML = Array.from({ length: count }, (_, index) => `<div class="form-grid"><div><label>Witness ${index + 1} full legal ID name *</label><input name="${service}WitnessLegalName${index}" required></div><div><label>Witness ${index + 1} email (optional)</label><input name="${service}WitnessEmail${index}" type="email"></div></div>`).join("");
+    });
   });
 }
 
@@ -568,21 +590,27 @@ function renderSignerAndActFields() {
     signerHost.dataset.count = String(signerCount);
     signerHost.dataset.service = activeService;
     const signerRequired = ["ron", "mobile"].includes(activeService);
-    signerHost.innerHTML = Array.from({ length: signerCount }, (_, index) => `<fieldset class="signer-identity"><legend>Signer ${index + 1} legal ID name</legend><div class="form-grid"><div><label>First name *</label><input name="signerFirstName${index}" required autocomplete="given-name"></div><div><label>Middle name (optional)</label><input name="signerMiddleName${index}" autocomplete="additional-name"></div><div><label>Last name *</label><input name="signerLastName${index}" required autocomplete="family-name"></div><div><label>Individual email${activeService === "ron" ? " *" : " (optional)"}</label><input name="signerEmail${index}" type="email" ${activeService === "ron" ? "required" : ""}></div></div></fieldset>`).join("");
+    preserveDynamicValues(signerHost, () => {
+      signerHost.innerHTML = Array.from({ length: signerCount }, (_, index) => `<fieldset class="signer-identity"><legend>Signer ${index + 1} legal ID name</legend><div class="form-grid"><div><label>First name *</label><input name="signerFirstName${index}" required autocomplete="given-name"></div><div><label>Middle name (optional)</label><input name="signerMiddleName${index}" autocomplete="additional-name"></div><div><label>Last name *</label><input name="signerLastName${index}" required autocomplete="family-name"></div><div><label>Individual email${activeService === "ron" ? " *" : " (optional)"}</label><input name="signerEmail${index}" type="email" ${activeService === "ron" ? "required" : ""}></div></div></fieldset>`).join("");
+    });
   }
   if (
     loanSignerHost &&
     Number(loanSignerHost.dataset.count || 0) !== loanSignerCount
   ) {
     loanSignerHost.dataset.count = String(loanSignerCount);
-    loanSignerHost.innerHTML = Array.from(
-      { length: loanSignerCount },
-      (_, index) => `<fieldset class="signer-identity"><legend>Signer ${index + 1}</legend><div class="form-grid"><div><label>First name *</label><input name="lsaSignerFirstName${index}" required autocomplete="given-name"></div><div><label>Middle name (optional)</label><input name="lsaSignerMiddleName${index}" autocomplete="additional-name"></div><div><label>Last name *</label><input name="lsaSignerLastName${index}" required autocomplete="family-name"></div><div><label>Individual email${wizard.elements.lsaSigningMethod?.value === "ron" ? " *" : " (optional)"}</label><input name="lsaSignerEmail${index}" type="email" ${wizard.elements.lsaSigningMethod?.value === "ron" ? "required" : ""}></div></div>${index ? `<label class="check"><input name="lsaSignerSameAddress${index}" type="checkbox"> Same address as Signer 1</label>` : ""}<div class="form-grid" data-lsa-signer-address="${index}"><div><label>Signer address *</label><input name="lsaSignerStreet${index}" required autocomplete="street-address"></div><div><label>City *</label><input name="lsaSignerCity${index}" required autocomplete="address-level2"></div><div><label>State *</label><input name="lsaSignerState${index}" value="TX" maxlength="2" required autocomplete="address-level1"></div><div><label>ZIP *</label><input name="lsaSignerZip${index}" required autocomplete="postal-code"></div></div></fieldset>`,
-    ).join("");
+    preserveDynamicValues(loanSignerHost, () => {
+      loanSignerHost.innerHTML = Array.from(
+        { length: loanSignerCount },
+        (_, index) => `<fieldset class="signer-identity"><legend>Signer ${index + 1}</legend><div class="form-grid"><div><label>First name *</label><input name="lsaSignerFirstName${index}" required autocomplete="given-name"></div><div><label>Middle name (optional)</label><input name="lsaSignerMiddleName${index}" autocomplete="additional-name"></div><div><label>Last name *</label><input name="lsaSignerLastName${index}" required autocomplete="family-name"></div><div><label>Individual email${wizard.elements.lsaSigningMethod?.value === "ron" ? " *" : " (optional)"}</label><input name="lsaSignerEmail${index}" type="email" ${wizard.elements.lsaSigningMethod?.value === "ron" ? "required" : ""}></div></div>${index ? `<label class="check"><input name="lsaSignerSameAddress${index}" type="checkbox"> Same address as Signer 1</label>` : ""}<div class="form-grid" data-lsa-signer-address="${index}"><div><label>Signer address *</label><input name="lsaSignerStreet${index}" required autocomplete="street-address"></div><div><label>City *</label><input name="lsaSignerCity${index}" required autocomplete="address-level2"></div><div><label>State *</label><input name="lsaSignerState${index}" value="TX" maxlength="2" required autocomplete="address-level1"></div><div><label>ZIP *</label><input name="lsaSignerZip${index}" required autocomplete="postal-code"></div></div></fieldset>`,
+      ).join("");
+    });
   }
   if (actHost && Number(actHost.dataset.count || 0) !== actCount) {
     actHost.dataset.count = String(actCount);
-    actHost.innerHTML = Array.from({ length: actCount }, (_, index) => `<label>Act ${index + 1}</label><select name="notarialActType${index}" required><option value="acknowledgment">Acknowledgment</option><option value="jurat">Jurat / verification on oath</option><option value="signature_witnessing">Signature witnessing</option><option value="certified_copy">Certified copy (when permitted)</option><option value="unsure">I&rsquo;m not sure</option></select>`).join("");
+    preserveDynamicValues(actHost, () => {
+      actHost.innerHTML = Array.from({ length: actCount }, (_, index) => `<label>Act ${index + 1}</label><select name="notarialActType${index}" required><option value="acknowledgment">Acknowledgment</option><option value="jurat">Jurat / verification on oath</option><option value="signature_witnessing">Signature witnessing</option><option value="certified_copy">Certified copy (when permitted)</option><option value="unsure">I&rsquo;m not sure</option></select>`).join("");
+    });
   }
 }
 
@@ -681,8 +709,7 @@ function validateStep(showErrors = false) {
   if (currentStep === 1) {
     const uploadException = wizard.elements.documentUploadException?.checked;
     if (uploadException) {
-      need(["documentUploadExceptionReason"]);
-      if (wizard.elements.documentUploadExceptionReason?.value === "other") need(["documentUploadExceptionDetail"]);
+      need(["documentUploadExceptionReason", "documentUploadExceptionDetail"]);
     }
     if (activeService === "ron") {
       need([
@@ -733,7 +760,7 @@ function validateStep(showErrors = false) {
       const signerCount = Math.max(1, numericValue("signerCount"));
       const actCount = Math.max(1, numericValue("notarizationCount"));
       for (let index = 0; index < signerCount; index += 1) {
-        need([`signerLegalName${index}`]);
+        need([`signerFirstName${index}`, `signerLastName${index}`]);
         if (activeService === "ron") need([`signerEmail${index}`]);
       }
       for (let index = 0; index < actCount; index += 1) need([`notarialActType${index}`]);
@@ -803,6 +830,16 @@ function updateContinueState() {
   btn.disabled = !ok;
   btn.classList.toggle("disabled", !ok);
   btn.setAttribute("aria-disabled", String(!ok));
+  const guidance = qs("#wizardValidationGuidance");
+  if (guidance) {
+    const messages = {
+      0: "Complete your contact information to continue.",
+      1: "Complete the required service details and either add a document or complete the upload-later option.",
+      2: "Complete the required service options to continue.",
+      3: "Complete the requested scheduling and readiness details to continue.",
+    };
+    guidance.textContent = ok ? "This step is complete. You may continue." : messages[currentStep] || "Complete the required fields to continue.";
+  }
 }
 
 function numericValue(name) {
@@ -1238,8 +1275,7 @@ async function submitPublicRequestSecurely(event) {
     const { normalizePersonInput, normalizeEmail } = await import("./aps-data-standard.mjs");
     const customer = { ...normalizePersonInput({ first_name: f.firstName.value, last_name: f.lastName.value, email: f.email.value, phone: f.phone.value }), preferred_contact: f.contactMethod?.value || null };
     const files = await selectedFilesPayload();
-    const exception = f.documentUploadException?.checked;
-    if (files.length && exception) throw new Error("Remove the upload exception when documents are selected.");
+    const exception = Boolean(f.documentUploadException?.checked && !files.length);
     const urgency = appointmentUrgencyFlags(f.preferredDate.value || null);
     const acquisition = window.APSGrowth?.attribution?.() || {};
     const requestTouch = acquisition.request_touch || {};
@@ -1430,7 +1466,10 @@ function initWizard() {
     const el = event.target;
     if (!el.matches("input,select,textarea")) return;
     if (el.type === "file") accumulateRequestFiles(el);
-    if (el.name === "documentUploadException" && el.checked) clearSelectedRequestFiles();
+    if (el.name === "documentUploadException" && el.checked && hasSelectedRequestFiles()) {
+      el.checked = false;
+      alert("Your selected document is still attached. Remove it first only if you want to use the upload-later option instead.");
+    }
     if (el.name === "customerReportedSource") {
       const wrap = qs("#customerReportedSourceOtherWrap");
       if (wrap) wrap.hidden = el.value !== "other";
