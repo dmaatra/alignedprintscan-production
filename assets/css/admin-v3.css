@@ -898,6 +898,30 @@ button {
   resize: vertical;
 }
 
+.estimate-requirements-summary {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid rgba(200, 169, 107, 0.45);
+  border-radius: 12px;
+  background: #fffdf8;
+}
+.estimate-requirements-summary ul {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.estimate-requirements-summary li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--aps-line);
+}
+.estimate-requirements-summary li span { color: var(--aps-muted); text-align: right; }
+.invoice-preset-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+
 .admin-v3-workspace-content .invoice-total-line {
   color: var(--aps-white);
   background: var(--aps-navy);
@@ -1185,6 +1209,10 @@ button {
   .admin-v3-workspace-content .invoice-row {
     grid-template-columns: 1fr 1fr;
   }
+
+  .invoice-preset-row { grid-template-columns: 1fr; }
+  .estimate-requirements-summary li { display: grid; }
+  .estimate-requirements-summary li span { text-align: left; }
 
   .admin-v3-workspace-content .invoice-field--description {
     grid-column: 1 / -1;

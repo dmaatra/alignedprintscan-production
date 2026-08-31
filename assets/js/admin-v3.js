@@ -797,7 +797,7 @@
             ${field("Delivery address", "print_delivery_address", '<textarea name="print_delivery_address" rows="3" placeholder="Required for courier or mobile service"></textarea>', "wide")}
           </div></div>
           <div class="admin-v3-service-fields" data-service-fields="loan_signing" hidden><div class="admin-v3-form-grid">
-            ${field("Signing type", "lsa_signing_type", '<select name="lsa_signing_type" required><option value="buyer_purchase">Buyer / Purchase</option><option value="seller">Seller</option><option value="refinance">Refinance</option><option value="heloc">HELOC</option><option value="loan_modification">Loan Modification / Small Package</option><option value="reverse_mortgage">Reverse Mortgage</option><option value="commercial">Commercial / Complex</option><option value="other_custom">Other / Custom</option></select>')}
+            ${field("Signing type", "lsa_signing_type", '<select name="lsa_signing_type" required><option value="buyer_purchase">Buyer / Purchase — $150</option><option value="seller">Seller / Simple — $125</option><option value="refinance">Refinance — $150</option><option value="heloc">HELOC — $150</option><option value="loan_modification">Loan Modification — $125</option><option value="reverse_mortgage">Reverse Mortgage — $175</option><option value="commercial">Commercial / Complex — Review Required</option><option value="other_custom">Other / Custom — Review Required</option></select>')}
             ${field("Signing method", "lsa_signing_method", '<select name="lsa_signing_method" required><option value="in_person_mobile">Mobile / Physical Location</option><option value="ron">Remote Online (subject to eligibility)</option><option value="either_tbd">Either / To Be Determined</option></select>')}
             ${field("Ordering party", "lsa_ordering_party_name", '<input name="lsa_ordering_party_name">')}
             ${field("Company file / order number", "lsa_company_file_number", '<input name="lsa_company_file_number">')}
@@ -1076,34 +1076,22 @@
   function wizardEstimate(form) {
     const pricing = window.ALIGNED_PRICING || {};
     const service = wizardService(form);
-    const items = [];
-    const add = (label, amount) => { if (Number(amount) > 0) items.push([label, Number(amount)]); };
-    if (service === "ron") {
-      const acts = Math.max(1, wizardNumber(form, "ron_notarization_count", 1));
-      add("Online notarization service fee", pricing.ron?.onlineServiceFee || 25);
-      add(`${acts} notarial act${acts === 1 ? "" : "s"}`, (pricing.ron?.notarialAct || 10) * acts);
-      add("APS-provided witness coordination", (pricing.ron?.providedWitness || 25) * wizardWitnessAllocation(form, "ron").aps);
-    } else if (service === "mobile") {
-      const acts = Math.max(1, wizardNumber(form, "mobile_notarization_count", 1));
-      add("Mobile appointment base (0–15 miles)", pricing.mobile?.appointmentBase || 50);
-      add("Notarial act estimate", (pricing.mobile?.notarialAct || 10) * acts);
-      add("APS-provided witness coordination", (pricing.mobile?.providedWitness || 50) * wizardWitnessAllocation(form, "mobile").aps);
-      if (wizardChecked(form, "mobile_print_addon")) add("Print preparation estimate", wizardPrintCost(form, "mobile"));
-      if (wizardChecked(form, "mobile_scan_addon")) add("Scan to PDF estimate", wizardNumber(form, "mobile_scan_pages") * (pricing.documentServices?.scanPerPage || 1));
-    } else if (service === "loan_signing") {
-      add("Standard Loan Signing package", Number(pricing.loanSigning?.standardPackages?.[wizardValue(form, "lsa_signing_type")]) || 0);
-    } else {
-      add("Printing / copies estimate", wizardPrintCost(form));
-      add("Scan to PDF estimate", wizardNumber(form, "print_scan_pages") * (pricing.documentServices?.scanPerPage || 1));
-      const fulfillment = wizardValue(form, "print_fulfillment") || "courier";
-      if (fulfillment === "courier") add("Courier delivery estimate", pricing.documentServices?.courierBase || 20);
-      if (fulfillment === "mobile-service") add("Mobile document service base", pricing.documentServices?.mobileDocumentBase || 20);
-      if (fulfillment === "mobile-notary") {
-        add("Mobile appointment base add-on (0–15 miles)", pricing.mobile?.appointmentBase || 50);
-        add("Notarial act / signature add-on", pricing.mobile?.notarialAct || 10);
-      }
-    }
-    return { items, total: items.reduce((sum, item) => sum + item[1], 0) };
+    const acts = (prefix, countName) => Array.from(
+      { length: Math.max(1, wizardNumber(form, countName, 1)) },
+      (_, index) => ({ act_type: wizardValue(form, `${prefix}_act_type_${index}`) || "unsure" }),
+    );
+    let input;
+    if (service === "ron") input = { notarialActs: acts("ron", "ron_notarization_count"), providedWitnessCount: wizardWitnessAllocation(form, "ron").aps };
+    else if (service === "mobile") input = {
+      notarialActs: acts("mobile", "mobile_notarization_count"),
+      providedWitnessCount: wizardWitnessAllocation(form, "mobile").aps,
+      print: { enabled: wizardChecked(form, "mobile_print_addon"), pages: wizardNumber(form, "mobile_pages"), copies: 1, color: wizardValue(form, "mobile_color"), sides: wizardValue(form, "mobile_sides"), paperSize: wizardValue(form, "mobile_paper_size"), paperType: wizardValue(form, "mobile_paper_type") },
+      scanPages: wizardChecked(form, "mobile_scan_addon") ? wizardNumber(form, "mobile_scan_pages") : 0,
+    };
+    else if (service === "loan_signing") input = { signingType: wizardValue(form, "lsa_signing_type"), scanbacks: "unknown", borrowerCopy: "unknown", roundTripMiles: null, signerCount: wizardNumber(form, "lsa_signer_count", 1) };
+    else input = { print: { pages: wizardNumber(form, "print_pages"), copies: Math.max(1, wizardNumber(form, "print_copies", 1)), color: wizardValue(form, "print_color"), sides: wizardValue(form, "print_sides"), paperSize: wizardValue(form, "print_paper_size"), paperType: wizardValue(form, "print_paper_type") }, scanPages: wizardNumber(form, "print_scan_pages"), fulfillment: wizardValue(form, "print_fulfillment") || "courier", notarialActCount: 1 };
+    const snapshot = window.APSEstimateComponents.build(service, input, pricing);
+    return { snapshot, total: snapshot.total, items: snapshot.components.filter((item) => item.billable && item.line_amount > 0).map((item) => [item.label, item.line_amount]) };
   }
   function updateWizardEstimate(form) {
     const estimate = wizardEstimate(form);
@@ -1216,7 +1204,9 @@
     $("#adminWizardValidation", form).textContent = "";
     if (step === 4) updateWizardEstimate(form);
     if (step === 5) renderWizardReview(form);
-    form.querySelector(".admin-v3-wizard-step.is-current h2")?.focus?.({ preventScroll: true });
+    const heading = form.querySelector(".admin-v3-wizard-step.is-current h2");
+    heading?.focus?.({ preventScroll: true });
+    if (advancing) form.scrollIntoView?.({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ? "auto" : "smooth", block: "start" });
   }
   function validateWizardStep(form) {
     const panel = $(".admin-v3-wizard-step.is-current", form);
@@ -1264,7 +1254,7 @@
     });
     form.addEventListener("change", (event) => { if (event.target.name?.endsWith("_witness_need")) setWizardWitnessFields(form); const match=String(event.target.name||"").match(/^lsa_signer_same_address_(\d+)$/);if(match){const group=$(`[data-admin-lsa-address="${match[1]}"]`,form);if(group){group.hidden=event.target.checked;$$('input',group).forEach(input=>input.disabled=event.target.checked);}} setWizardRonStructuredFields(form); setWizardMobileAddonFields(form); setWizardService(form); setWizardLoanSigningFields(form); updateWizardEstimate(form); });
     $("#adminWizardNext", form).addEventListener("click", () => { if (validateWizardStep(form)) showWizardStep(form, moduleState.newOrderStep + 1, true); });
-    $("#adminWizardPrevious", form).addEventListener("click", () => showWizardStep(form, moduleState.newOrderStep - 1));
+    $("#adminWizardPrevious", form).addEventListener("click", () => showWizardStep(form, moduleState.newOrderStep - 1, true));
     $$('[data-wizard-jump]', form).forEach((button) => button.addEventListener("click", () => { const target = Number(button.dataset.wizardJump); if (target <= moduleState.newOrderMaxStep) showWizardStep(form, target); }));
   }
   async function adminFilePayload(file) {
@@ -1286,7 +1276,7 @@
       const appointmentDate = wizardValue(form, "appointment_date");
       const appointmentTime = wizardValue(form, "appointment_time");
       const mobileAddress=[collapseWhitespace(wizardValue(form,"mobile_street")),collapseWhitespace(wizardValue(form,"mobile_unit")),[collapseWhitespace(wizardValue(form,"mobile_city")),normalizeState(wizardValue(form,"mobile_state")||"TX")].filter(Boolean).join(", ")+` ${normalizeZip(wizardValue(form,"mobile_zip"))}`].filter(Boolean).join(", ");
-      const requestPayload={service_type:service,status:"under_review",workflow_status:"under_review",preferred_date:wizardValue(form,"preferred_date")||null,preferred_time_window:wizardValue(form,"preferred_time_window")||null,notes:wizardValue(form,"notes")||"Created by administrator.",estimated_total:estimate.total,request_source:"admin",request_completeness:"submitted",document_state:"pending",participant_state:service==="print"?"not_applicable":"submitted",fulfillment_state:"not_started",document_upload_exception_reason:wizardValue(form,"document_upload_exception_reason")||null,document_upload_exception_detail:wizardValue(form,"document_upload_exception_detail")||null,customer_reported_source:wizardValue(form,"customer_reported_source")||null,customer_reported_source_detail:wizardValue(form,"customer_reported_source_detail")||null,first_touch_source:wizardValue(form,"customer_reported_source")||"admin_entered",appointment_date:appointmentDate||null,appointment_time:appointmentTime||null,appointment_timezone:(appointmentDate||appointmentTime)?wizardValue(form,"appointment_timezone")||"America/Chicago":null,appointment_location:service==="mobile"?mobileAddress||collapseWhitespace(wizardValue(form,"appointment_location"))||null:null,appointment_link:service==="ron"?wizardValue(form,"appointment_link")||null:null,appointment_platform:service==="ron"?wizardValue(form,"ron_platform")||null:null,appointment_instructions:wizardValue(form,"appointment_instructions")||null};
+      const requestPayload={service_type:service,status:"under_review",workflow_status:"under_review",preferred_date:wizardValue(form,"preferred_date")||null,preferred_time_window:wizardValue(form,"preferred_time_window")||null,notes:wizardValue(form,"notes")||"Created by administrator.",estimated_total:estimate.total,estimate_components:estimate.snapshot,request_source:"admin",request_completeness:"submitted",document_state:"pending",participant_state:service==="print"?"not_applicable":"submitted",fulfillment_state:"not_started",document_upload_exception_reason:wizardValue(form,"document_upload_exception_reason")||null,document_upload_exception_detail:wizardValue(form,"document_upload_exception_detail")||null,customer_reported_source:wizardValue(form,"customer_reported_source")||null,customer_reported_source_detail:wizardValue(form,"customer_reported_source_detail")||null,first_touch_source:wizardValue(form,"customer_reported_source")||"admin_entered",appointment_date:appointmentDate||null,appointment_time:appointmentTime||null,appointment_timezone:(appointmentDate||appointmentTime)?wizardValue(form,"appointment_timezone")||"America/Chicago":null,appointment_location:service==="mobile"?mobileAddress||collapseWhitespace(wizardValue(form,"appointment_location"))||null:null,appointment_link:service==="ron"?wizardValue(form,"appointment_link")||null:null,appointment_platform:service==="ron"?wizardValue(form,"ron_platform")||null:null,appointment_instructions:wizardValue(form,"appointment_instructions")||null};
       let serviceDetail={},participants=[],notarialActs=[];
       if (service === "ron") {
         const witnesses = wizardWitnessAllocation(form, "ron");
@@ -1310,7 +1300,7 @@
         notarialActs=Array.from({length:actCount},(_,index)=>({act_type:wizardValue(form,`mobile_act_type_${index}`)||"unsure"}));
       }
       if (service === "loan_signing") {
-        serviceDetail={ordering_party_type:"individual",ordering_party_name:wizardValue(form,"lsa_ordering_party_name")||null,company_file_number:wizardValue(form,"lsa_company_file_number")||null,escrow_transaction_number:wizardValue(form,"lsa_escrow_number")||null,signing_type:wizardValue(form,"lsa_signing_type"),signing_method:wizardValue(form,"lsa_signing_method"),property_address_line1:wizardValue(form,"lsa_property_address")||null,signing_address_line1:wizardValue(form,"lsa_signing_address")||null,package_status:wizardValue(form,"lsa_package_status")||"not_provided",borrower_copy_required:"unknown",scanbacks_required:"unknown",approval_before_return_required:"unknown",physical_return_required:"unknown",return_method:wizardValue(form,"lsa_return_method")||null,stipulations:wizardValue(form,"lsa_stipulations")||null,lsa_stage:"assignment_received",pricing_source:"standard_aps",base_assignment_fee:estimate.total,agreed_fee:null,pricing_status:"draft",payment_terms:"prepaid"};
+        serviceDetail={ordering_party_type:"individual",ordering_party_name:wizardValue(form,"lsa_ordering_party_name")||null,company_file_number:wizardValue(form,"lsa_company_file_number")||null,escrow_transaction_number:wizardValue(form,"lsa_escrow_number")||null,signing_type:wizardValue(form,"lsa_signing_type"),signing_method:wizardValue(form,"lsa_signing_method"),property_address_line1:wizardValue(form,"lsa_property_address")||null,signing_address_line1:wizardValue(form,"lsa_signing_address")||null,package_status:wizardValue(form,"lsa_package_status")||"not_provided",borrower_copy_required:"unknown",scanbacks_required:"unknown",approval_before_return_required:"unknown",physical_return_required:"unknown",return_method:wizardValue(form,"lsa_return_method")||null,stipulations:wizardValue(form,"lsa_stipulations")||null,lsa_stage:"assignment_received",pricing_source:"standard_aps",base_assignment_fee:estimate.total,agreed_fee:null,pricing_status:"draft",payment_terms:"prepaid",round_trip_miles:null,pricing_review_required:estimate.snapshot.review_required,pricing_review_reason:estimate.snapshot.review_reasons.join(" ")||null};
         const count=Math.min(10,Math.max(1,wizardNumber(form,"lsa_signer_count",1)));
         participants=Array.from({length:count},(_,index)=>{const first=wizardValue(form,`lsa_signer_first_${index}`),middle=wizardValue(form,`lsa_signer_middle_${index}`),last=wizardValue(form,`lsa_signer_last_${index}`),shared=index>0&&wizardChecked(form,`lsa_signer_same_address_${index}`),source=shared?0:index;return {participant_type:"signer",first_name:first,middle_name:middle||null,last_name:last,full_legal_name:[first,middle,last].filter(Boolean).join(" "),email:wizardValue(form,`lsa_signer_email_${index}`).toLowerCase()||null,mobile_phone:wizardValue(form,`lsa_signer_phone_${index}`)||null,address:{line1:wizardValue(form,`lsa_signer_street_${source}`),city:wizardValue(form,`lsa_signer_city_${source}`),state:wizardValue(form,`lsa_signer_state_${source}`),zip:wizardValue(form,`lsa_signer_zip_${source}`),...(shared?{shared_from_signer:1}:{})},identity_name_confirmed:true,sort_order:index};});
       }

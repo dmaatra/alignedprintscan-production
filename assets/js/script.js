@@ -235,107 +235,75 @@ function addItem(items, label, amt) {
   if (amt > 0) items.push([label, amt]);
 }
 
-function calculateEstimate() {
-  if (!wizard) return;
-  let total = 0,
-    items = [];
+function publicEstimateInput() {
   const f = wizard.elements;
+  const publicActs = (prefix, countName) => Array.from(
+    { length: Math.max(1, Number(f[countName]?.value || 1)) },
+    (_, index) => ({ act_type: f[`${prefix}${index}`]?.value || "unsure" }),
+  );
   if (activeService === "ron") {
-    const notarialActCount = Math.max(
-      1,
-      Number(f.notarizationCount?.value || 1),
-    );
-
-    addItem(
-      items,
-      "Online notarization service fee",
-      PRICING.ron.onlineServiceFee,
-    );
-    addItem(
-      items,
-      `${notarialActCount} notarial act${notarialActCount === 1 ? "" : "s"}`,
-      PRICING.ron.notarialAct * notarialActCount,
-    );
-    addItem(
-      items,
-      "Witness coordination — Aligned Print & Scan provided",
-      PRICING.ron.providedWitness * providedWitnessCount("ron"),
-    );
+    return {
+      notarialActs: publicActs("notarialActType", "notarizationCount"),
+      notarialActCount: Number(f.notarizationCount?.value || 1),
+      providedWitnessCount: providedWitnessCount("ron"),
+    };
   }
   if (activeService === "mobile") {
-    addItem(
-      items,
-      "Mobile Appointment Base (0–15 miles)",
-      PRICING.mobile.appointmentBase,
-    );
-    addItem(
-      items,
-      "Notarial act estimate",
-      PRICING.mobile.notarialAct * (+f.notarizationCount?.value || 1),
-    );
-    addItem(
-      items,
-      "Mobile witness coordination — Aligned Print & Scan provided",
-      PRICING.mobile.providedWitness * providedWitnessCount("mobile"),
-    );
-    if (f.mobilePrintAddon?.checked)
-      addItem(
-        items,
-        "Print add-on estimate",
-        printCost({
-          pages: +f.mobilePrintPages?.value || 0,
-          color: f.mobileColor?.value,
-          sides: f.mobileSides?.value,
-          paperSize: f.mobilePaperSize?.value,
-          paperType: f.mobilePaperType?.value,
-        }),
-      );
-    if (f.mobileScanAddon?.checked)
-      addItem(
-        items,
-        "Scan-to-PDF estimate",
-        (+f.mobileScanPages?.value || 0) * 1,
-      );
+    return {
+      notarialActs: publicActs("notarialActType", "notarizationCount"),
+      notarialActCount: Number(f.notarizationCount?.value || 1),
+      providedWitnessCount: providedWitnessCount("mobile"),
+      print: {
+        enabled: Boolean(f.mobilePrintAddon?.checked),
+        pages: Number(f.mobilePrintPages?.value || 0),
+        copies: 1,
+        color: f.mobileColor?.value,
+        sides: f.mobileSides?.value,
+        paperSize: f.mobilePaperSize?.value,
+        paperType: f.mobilePaperType?.value,
+      },
+      scanPages: f.mobileScanAddon?.checked ? Number(f.mobileScanPages?.value || 0) : 0,
+    };
   }
   if (activeService === "print") {
-    addItem(
-      items,
-      "Printing / copies estimate",
-      printCost({
-        pages: +f.pages?.value || 0,
+    return {
+      print: {
+        pages: Number(f.pages?.value || 0),
+        copies: 1,
         color: f.color?.value,
         sides: f.sides?.value,
         paperSize: f.paperSize?.value,
         paperType: f.paperType?.value,
-      }),
-    );
-    addItem(items, "Scan to PDF estimate", (+f.scanPages?.value || 0) * 1);
-    if (f.fulfillment?.value === "courier")
-      addItem(items, "Courier delivery estimate", 20);
-    if (f.fulfillment?.value === "mobile-service")
-      addItem(items, "Mobile document service base", 20);
-    if (f.fulfillment?.value === "mobile-notary") {
-      addItem(items, "Mobile Appointment Base add-on (0–15 miles)", 50);
-      addItem(
-        items,
-        "Notarial act / signature add-on",
-        10 * (+f.printNotarizationCount?.value || 1),
-      );
-    }
+      },
+      scanPages: Number(f.scanPages?.value || 0),
+      fulfillment: f.fulfillment?.value,
+      notarialActCount: Number(f.printNotarizationCount?.value || 1),
+    };
   }
-  if (activeService === "loan_signing") {
-    const packagePrice =
-      PRICING.loanSigning?.standardPackages?.[f.lsaSigningType?.value];
-    addItem(
-      items,
-      "Standard Loan Signing package",
-      Number.isFinite(packagePrice) ? packagePrice : 0,
-    );
-  }
-  total = items.reduce((s, i) => s + i[1], 0);
-  qs("#estimateTotal").textContent = money(total);
+  return {
+    signingType: f.lsaSigningType?.value,
+    scanbacks: f.lsaScanbacks?.value || "unknown",
+    borrowerCopy: f.lsaBorrowerCopy?.value || "unknown",
+    roundTripMiles: null,
+    signerCount: Number(f.lsaSignerCount?.value || 1),
+  };
+}
+
+function currentEstimateSnapshot() {
+  return window.APSEstimateComponents.build(
+    activeService,
+    publicEstimateInput(),
+    PRICING,
+  );
+}
+
+function calculateEstimate() {
+  if (!wizard) return;
+  const estimate = currentEstimateSnapshot();
+  const items = estimate.components.filter((item) => item.billable && item.line_amount > 0);
+  qs("#estimateTotal").textContent = money(estimate.total);
   qs("#lineItems").innerHTML = items.length
-    ? items.map(([l, a]) => `${l}: ${money(a)}`).join("<br>")
+    ? items.map((item) => `${item.label}: ${money(item.line_amount)}`).join("<br>")
     : "Complete the applicable fields to view an estimate.";
 }
 
@@ -614,7 +582,7 @@ function renderSignerAndActFields() {
   }
 }
 
-function showStep(n) {
+function showStep(n, completedTransition = false) {
   const availableSteps = activeService === "loan_signing" ? [0, 1, 3, 4] : [0, 1, 2, 3, 4];
   const requestedIndex = availableSteps.indexOf(n);
   currentStep = requestedIndex >= 0 ? n : availableSteps[Math.max(0, Math.min(availableSteps.length - 1, n > currentStep ? availableSteps.indexOf(currentStep) + 1 : availableSteps.indexOf(currentStep) - 1))];
@@ -636,6 +604,18 @@ function showStep(n) {
   qs("#nextStep").style.display = progressIndex === availableSteps.length - 1 ? "none" : "inline-flex";
   syncActiveValidationControls();
   updateContinueState();
+  if (completedTransition) {
+    const heading = qs(".wizard-step.active h2") || qs("#stepName");
+    if (heading) {
+      if (!heading.hasAttribute("tabindex")) heading.setAttribute("tabindex", "-1");
+      heading.focus({ preventScroll: true });
+    }
+    const target = heading || qs("#smartRequestForm");
+    target?.scrollIntoView?.({
+      behavior: "instant",
+      block: "start",
+    });
+  }
 }
 
 function fieldValue(name) {
@@ -1303,6 +1283,7 @@ async function submitPublicRequestSecurely(event) {
       acquisition_utm_campaign: requestTouch.utm_campaign || null,
       acquisition_utm_content: requestTouch.utm_content || null,
       first_touch_source: firstTouch.utm_source || firstTouch.referrer_host || "direct",
+      estimate_components: currentEstimateSnapshot(),
       ...urgency,
     };
     const participants = [];
@@ -1388,6 +1369,9 @@ async function submitPublicRequestSecurely(event) {
         agreed_fee: null,
         pricing_status: "draft",
         payment_terms: "prepaid",
+        round_trip_miles: null,
+        pricing_review_required: currentEstimateSnapshot().review_required,
+        pricing_review_reason: currentEstimateSnapshot().review_reasons.join(" ") || null,
       };
     } else {
       const fulfillment = f.fulfillment?.value || "courier";
@@ -1437,10 +1421,10 @@ function initWizard() {
   );
   qs("#nextStep").addEventListener("click", () => {
     if (currentStep === 0) window.APSGrowth?.event?.("request_started", { service_category: window.APSGrowth.serviceCategory(activeService) });
-    if (validateStep(true)) showStep(currentStep + 1);
+    if (validateStep(true)) showStep(currentStep + 1, true);
     else updateContinueState();
   });
-  qs("#prevStep").addEventListener("click", () => showStep(currentStep - 1));
+  qs("#prevStep").addEventListener("click", () => showStep(currentStep - 1, true));
   wizard.addEventListener("change", (event) => {
     if (event.target?.name === "lsaSigningMethod") {
       const host = qs("#loanSigningSignerFields");

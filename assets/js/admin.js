@@ -347,6 +347,60 @@ function quoteBuilderPresets() {
       unitPrice: PRICING.mobile.afterHours.after9pm,
     },
     {
+      group: "Loan Signing",
+      label: "Seller / Simple Loan Signing Service",
+      quantity: 1,
+      unitPrice: PRICING.loanSigning.standardPackages.seller,
+    },
+    {
+      group: "Loan Signing",
+      label: "Loan Modification Signing Service",
+      quantity: 1,
+      unitPrice: PRICING.loanSigning.standardPackages.loan_modification,
+    },
+    {
+      group: "Loan Signing",
+      label: "Buyer / Purchase Loan Signing Service",
+      quantity: 1,
+      unitPrice: PRICING.loanSigning.standardPackages.buyer_purchase,
+    },
+    {
+      group: "Loan Signing",
+      label: "Refinance Loan Signing Service",
+      quantity: 1,
+      unitPrice: PRICING.loanSigning.standardPackages.refinance,
+    },
+    {
+      group: "Loan Signing",
+      label: "HELOC Loan Signing Service",
+      quantity: 1,
+      unitPrice: PRICING.loanSigning.standardPackages.heloc,
+    },
+    {
+      group: "Loan Signing",
+      label: "Reverse Mortgage Loan Signing Service",
+      quantity: 1,
+      unitPrice: PRICING.loanSigning.standardPackages.reverse_mortgage,
+    },
+    {
+      group: "Loan Signing",
+      label: "Extended Travel — 31–40 RT Miles",
+      quantity: 1,
+      unitPrice: PRICING.loanSigning.extendedTravel31To40,
+    },
+    {
+      group: "Loan Signing",
+      label: "Approved Additional Wait Time — Started 30 Minutes",
+      quantity: 1,
+      unitPrice: 25,
+    },
+    {
+      group: "Loan Signing",
+      label: "Other Approved Loan Signing Adjustment — Enter Reviewed Rate",
+      quantity: 1,
+      unitPrice: 0,
+    },
+    {
       group: "Print & Scan",
       label: "Printing / Copies — B&W Letter",
       quantity: 1,
@@ -1174,6 +1228,25 @@ function updateInvoiceTotalPreview() {
   setText("invoiceTotalPreview", money(invoiceTotal));
 }
 function defaultInvoiceRows(request = {}) {
+  const snapshot = request.estimate_components;
+  let snapshotRows = window.APSEstimateComponents?.quoteRows?.(
+    request.estimate_components,
+  ) || [];
+  if (snapshot?.snapshot_version === window.APSEstimateComponents?.SNAPSHOT_VERSION) {
+    const assignment = Array.isArray(request.loan_signing_assignments)
+      ? request.loan_signing_assignments[0]
+      : request.loan_signing_assignments;
+    if (request.service_type === "loan_signing" && assignment?.round_trip_miles !== null && assignment?.round_trip_miles !== undefined) {
+      const intakeTravelLabels = new Set((snapshot.components || []).filter((item) => String(item.key || "").startsWith("loan_signing:travel:")).map((item) => item.label));
+      snapshotRows = snapshotRows.filter((row) => !intakeTravelLabels.has(row.description));
+      const travel = window.APSEstimateComponents.loanSigningTravel(assignment.round_trip_miles);
+      if (travel.charge > 0) snapshotRows.push({ item_type: "service", description: travel.label, quantity: 1, unit_price: travel.charge, line_total: travel.charge });
+      if (travel.reviewRequired) snapshotRows.push({ item_type: "service", description: travel.label, quantity: 1, unit_price: 0, line_total: 0 });
+    }
+    if (snapshotRows.length) return snapshotRows;
+    const reviewLine = snapshot.components?.find((item) => item.billable && item.review_required);
+    if (reviewLine) return [{ item_type: "service", description: reviewLine.label, quantity: 1, unit_price: 0, line_total: 0 }];
+  }
   const service = String(request.service_type || "").toLowerCase();
   const amount =
     Number(request.quote_amount || request.estimated_total || 0) || 0;
@@ -1219,6 +1292,23 @@ function defaultInvoiceRows(request = {}) {
       line_total: 0,
     },
   ];
+}
+
+function estimateRequirementsSummary(request = {}) {
+  const snapshot = request.estimate_components;
+  if (!snapshot || !Array.isArray(snapshot.components)) return "";
+  const included = snapshot.components.filter((item) => !item.billable || item.included || item.review_required);
+  if (!included.length) return "";
+  const assignment = Array.isArray(request.loan_signing_assignments) ? request.loan_signing_assignments[0] : request.loan_signing_assignments;
+  const mileage = request.service_type === "loan_signing" && assignment?.round_trip_miles !== null && assignment?.round_trip_miles !== undefined
+    ? window.APSEstimateComponents.loanSigningTravel(assignment.round_trip_miles)
+    : null;
+  return `<aside class="estimate-requirements-summary" aria-label="Estimate and assignment requirements">
+    <div class="admin-v3-section-heading"><span class="small-label">Estimate Snapshot</span><h3>Included / Assignment Requirements</h3></div>
+    <ul>${included.map((item) => `<li><strong>${escapeHtml(item.label)}</strong><span>${item.review_required ? "Review Required" : item.included ? "Included" : "Operational"}${item.note ? ` · ${escapeHtml(item.note)}` : ""}</span></li>`).join("")}</ul>
+    ${mileage ? `<p><strong>Operator-reviewed round-trip mileage:</strong> ${escapeHtml(mileage.label)} · ${mileage.reviewRequired ? "Review Required" : mileage.charge ? money(mileage.charge) : "Included"}</p>` : ""}
+    ${snapshot.review_required ? '<p class="admin-muted"><strong>Operator review is required before the quote is sent.</strong></p>' : ""}
+  </aside>`;
 }
 
 
@@ -1658,7 +1748,8 @@ async function selectRequest(id) {
 
     <div class="admin-detail-section invoice-builder-card" data-v3-tab-target="quote" data-payment-group="quote">
       <div class="admin-v3-section-heading"><span class="small-label">Quote</span><h3>Full Service Quote Builder</h3></div>
-      <p class="admin-muted">Build the full estimated service quote here. Saving the quote updates the customer-facing quote; status buttons control when emails are sent.</p>
+      <p class="admin-muted">Review the proposed estimate-derived lines below. Saving updates the customer-facing quote; status buttons control when emails are sent.</p>
+      ${estimateRequirementsSummary(selectedRequest)}
       <div class="invoice-preset-row"><select id="invoicePresetSelect"><option value="">Add common line item…</option></select><button id="addPresetInvoiceRow" class="btn dark" type="button">Add Selected</button></div><div id="invoiceRows" class="invoice-rows"></div>
       <div class="invoice-total-line"><strong>Quote Total</strong><span id="invoiceTotalPreview">$0.00</span></div>
       <label>Invoice / client note</label>
@@ -1930,7 +2021,7 @@ async function invokeLoanSigningFulfillment(command,body={}){const{data,error}=a
 function lsaOptions(values,current){return values.map(value=>`<option value="${value}" ${String(current)===value?"selected":""}>${escapeHtml(statusLabel(value))}</option>`).join("")}
 async function loadLoanSigningFulfillmentPanel(){const panel=$("#loanSigningFulfillmentPanel");if(!panel||selectedRequest?.service_type!=="loan_signing")return;try{const data=await invokeLoanSigningFulfillment("snapshot"),a=data.assignment||{},active=(data.packages||[]).find(p=>p.status==="active"),blockers=data.completion?.blockers||[],exceptions=data.exceptions||[],charges=data.charges||[],visits=data.visits||[],resolutions=data.resolutions||[],financials=data.financials||{};panel.innerHTML=`
   <div class="admin-v3-section-heading"><span class="small-label">Current Stage · ${escapeHtml(statusLabel(a.lsa_stage))}</span><h3>Assignment Requirements &amp; Fulfillment</h3><p><strong>Next action:</strong> ${escapeHtml(blockers[0]?.message||"All applicable requirements pass; completion may be evaluated.")}</p></div>
-  <form id="lsaAssignmentForm" class="lsa-stage-workspace"><details open><summary>Instructions Review &amp; Signer Confirmation</summary><div class="admin-detail-grid"><label class="check"><input name="instructions_reviewed" type="checkbox" ${a.instructions_reviewed_at?"checked":""}> Instructions reviewed against authoritative sources</label><label>Signer Confirmation<select name="signer_confirmation_status">${lsaOptions(["not_required","required_pending","confirmed","unable_to_reach","reschedule_needed","other_review"],a.signer_confirmation_status)}</select></label><label>Contact Method<input name="signer_contact_method" value="${escapeHtml(a.signer_contact_method||"")}"></label><label>Neutral Note<textarea name="signer_confirmation_note">${escapeHtml(a.signer_confirmation_note||"")}</textarea></label></div></details>
+  <form id="lsaAssignmentForm" class="lsa-stage-workspace"><details open><summary>Instructions Review &amp; Signer Confirmation</summary><div class="admin-detail-grid"><label class="check"><input name="instructions_reviewed" type="checkbox" ${a.instructions_reviewed_at?"checked":""}> Instructions reviewed against authoritative sources</label><label>Signer Confirmation<select name="signer_confirmation_status">${lsaOptions(["not_required","required_pending","confirmed","unable_to_reach","reschedule_needed","other_review"],a.signer_confirmation_status)}</select></label><label>Contact Method<input name="signer_contact_method" value="${escapeHtml(a.signer_contact_method||"")}"></label><label>Round-Trip Mileage<input name="round_trip_miles" type="number" min="0" step="0.1" value="${a.round_trip_miles??""}" placeholder="APS origin to signing and back"></label><label>Neutral Note<textarea name="signer_confirmation_note">${escapeHtml(a.signer_confirmation_note||"")}</textarea></label></div><p class="admin-muted">0–30 RT miles are included; 31–40 adds the proposed $25 Extended Travel line; 41+ requires review. Ordinary Mobile Notary travel tiers do not apply.</p></details>
   <details><summary>Package &amp; Printing</summary><p>Active package: <strong>${active?`Version ${active.version_number} · ${active.authoritative_page_count} pages`:"Missing"}</strong></p><div class="admin-detail-grid"><label>Paper Size<select name="paper_size">${lsaOptions(["letter","legal","mixed_letter_legal","other"],a.paper_size)}</select></label><label>Sidedness<select name="sidedness">${lsaOptions(["single_sided","double_sided","mixed_per_instructions","unknown"],a.sidedness)}</select></label><label>Color<select name="print_color">${lsaOptions(["black_white","color","mixed","per_instructions"],a.print_color)}</select></label><label>Scaling<select name="print_scaling">${lsaOptions(["actual_size_100","fit_shrink","mixed_per_instructions","other_authorized"],a.print_scaling)}</select></label><label>Signing Sets<input name="signing_set_count" type="number" min="0" value="${Number(a.signing_set_count||0)}"></label><label>Borrower Copies<input name="borrower_copy_count" type="number" min="0" value="${Number(a.borrower_copy_count||0)}"></label><label>Additional Copies<input name="additional_copy_count" type="number" min="0" value="${Number(a.additional_copy_count||0)}"></label><label>Print Status<select name="print_status">${lsaOptions(["not_required","not_ready","ready_to_print","printing","printed","qc_required","qc_passed","reprint_required"],a.print_status)}</select></label><label>Print QC<select name="print_qc_status">${lsaOptions(["not_required","pending","passed","failed_reprint_required"],a.print_qc_status)}</select></label><label>Borrower Copy<select name="borrower_copy_status">${lsaOptions(["not_required","pending","prepared","digital_per_instructions","other_authorized"],a.borrower_copy_status)}</select></label></div></details>
   <details><summary>Signing &amp; Post-Signing QC</summary><div class="admin-detail-grid"><label>Signing Outcome<select name="signing_outcome"><option value="">Needs review</option>${lsaOptions(["completed","partially_completed_review","did_not_complete_review"],a.signing_outcome)}</select></label><label>Signing-Table QC<select name="post_signing_qc_status">${lsaOptions(["pending","passed","issue_review"],a.post_signing_qc_status)}</select></label><label>Stage<select name="lsa_stage">${lsaOptions(["assignment_received","instructions_review","package_preparation","ready_for_appointment","signing","post_signing_requirements","return","completed"],a.lsa_stage)}</select></label></div></details>
   <details><summary>Scanbacks &amp; Return</summary><div class="admin-detail-grid"><label>Scanbacks<select name="scanbacks_required">${lsaOptions(["unknown","yes","no"],a.scanbacks_required)}</select></label><label>Approval Before Return<select name="approval_before_return_required">${lsaOptions(["unknown","yes","no"],a.approval_before_return_required)}</select></label><label>Physical Return<select name="physical_return_required">${lsaOptions(["unknown","yes","no"],a.physical_return_required)}</select></label><label>Return Method<select name="return_method"><option value="">Needs review</option>${lsaOptions(["prepaid_carrier_label","fedex","ups","usps","direct_title_escrow","other_authorized","no_physical_return"],a.return_method)}</select></label></div></details>
@@ -1944,7 +2035,7 @@ async function loadLoanSigningFulfillmentPanel(){const panel=$("#loanSigningFulf
   <h4>Authorized Additional Charges</h4><button id="addLsaCharge" class="btn dark" type="button">Review Additional Charge</button>${charges.map(c=>`<p><strong>${escapeHtml(statusLabel(c.charge_type))}</strong> · suggested ${money(c.suggested_amount)} · ${escapeHtml(statusLabel(c.decision))}${c.authorized_amount!==null?` · authorized ${money(c.authorized_amount)}`:""}</p>`).join("")||"<p>No additional charges.</p>"}</section>
   <div class="lsa-package-actions"><h4>Package Versioning</h4><button id="addLsaPackage" class="btn dark" type="button">Record Package / Replacement</button><p>Replacement packages preserve prior versions, reopen dependent review, and never alter an accepted fee automatically.</p></div>
   <div class="lsa-requirements"><h4>Applicable Requirement Blockers</h4>${blockers.length?`<ul>${blockers.map(item=>`<li>${escapeHtml(item.message)}</li>`).join("")}</ul>`:"<p>No applicable blockers.</p>"}<p>${data.requirements.length} structured requirements · ${data.stipulations.length} stipulations · ${data.scanbacks.length} scanback records · ${data.returns.length} return records</p><div class="status-actions"><button id="addLsaRequirement" class="btn dark" type="button">Add Requirement</button><button id="addLsaStipulation" class="btn dark" type="button">Add Stipulation</button><button id="recordLsaScanback" class="btn dark" type="button">Record Scanback</button><button id="recordLsaReturn" class="btn dark" type="button">Record Return</button></div></div>`;
-  $("#lsaAssignmentForm",panel).addEventListener("submit",async event=>{event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));["signing_set_count","borrower_copy_count","additional_copy_count"].forEach(key=>values[key]=Number(values[key]||0));values.instructions_reviewed=event.currentTarget.elements.instructions_reviewed.checked;values.printing_required=values.print_status!=="not_required";try{await invokeLoanSigningFulfillment("save_assignment",values);showToast("Loan Signing fulfillment updated and audited.");await loadLoanSigningFulfillmentPanel()}catch(error){alert(error.message)}});
+  $("#lsaAssignmentForm",panel).addEventListener("submit",async event=>{event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));["signing_set_count","borrower_copy_count","additional_copy_count"].forEach(key=>values[key]=Number(values[key]||0));if(values.round_trip_miles!=="")values.round_trip_miles=Number(values.round_trip_miles);else delete values.round_trip_miles;values.instructions_reviewed=event.currentTarget.elements.instructions_reviewed.checked;values.printing_required=values.print_status!=="not_required";try{await invokeLoanSigningFulfillment("save_assignment",values);showToast("Loan Signing fulfillment updated and audited.");await refreshSelectedRequest(selectedRequest.id)}catch(error){alert(error.message)}});
   $("#addLsaPackage",panel).addEventListener("click",async()=>{const reason=prompt("Replacement reason or source note (leave blank for initial package):")||"";try{await invokeLoanSigningFulfillment("add_package",{replacement_reason:reason});showToast("The latest authoritative package source was versioned; prior history is preserved.");await loadLoanSigningFulfillmentPanel()}catch(error){alert(error.message)}})
   $("#addLsaRequirement",panel).addEventListener("click",async()=>{const title=prompt("Authoritative assignment requirement:");if(!title)return;const group=prompt("Requirement group: assignment, signers, appointment, printing, package, stipulations, signing, scanbacks, return, or completion","assignment")||"assignment";const source=prompt("Source: orderer_instructions, closing_instructions, shipping_label, email_message, title_escrow_instruction, signing_service_instruction, admin_verified, or other_authoritative_source","orderer_instructions")||"orderer_instructions";try{await invokeLoanSigningFulfillment("save_requirement",{requirement_key:`${group}_${Date.now()}`,title,requirement_group:group,applicability:"required",status:"pending",source_type:source});await loadLoanSigningFulfillmentPanel()}catch(error){alert(error.message)}});
   $("#addLsaStipulation",panel).addEventListener("click",async()=>{const title=prompt("Orderer-defined stipulation:");if(!title)return;try{await invokeLoanSigningFulfillment("save_stipulation",{title,required:true,status:"pending",proof_private:true});await loadLoanSigningFulfillmentPanel()}catch(error){alert(error.message)}});
@@ -2858,7 +2949,7 @@ async function loadRequests() {
   const { data, error } = await adminClient
     .from("service_requests")
     .select(
-      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,pdf_page_count_review_required,pdf_page_count_changed_after_quote,is_same_day_request,is_next_day_request,quote_expires_at,customer_reported_source,customer_reported_source_detail,acquisition_landing_page,acquisition_referrer_host,acquisition_utm_source,acquisition_utm_medium,acquisition_utm_campaign,first_touch_source,review_request_state,review_request_eligible_at,review_request_sent_at,customers(id,first_name,last_name,email,phone,preferred_contact,created_at,normalized_email,normalized_phone,normalized_name,merged_at,first_acquisition_source,first_acquisition_at),request_participants(participant_type,first_name,middle_name,last_name,full_legal_name,email),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
+      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,estimate_components,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,pdf_page_count_review_required,pdf_page_count_changed_after_quote,is_same_day_request,is_next_day_request,quote_expires_at,customer_reported_source,customer_reported_source_detail,acquisition_landing_page,acquisition_referrer_host,acquisition_utm_source,acquisition_utm_medium,acquisition_utm_campaign,first_touch_source,review_request_state,review_request_eligible_at,review_request_sent_at,customers(id,first_name,last_name,email,phone,preferred_contact,created_at,normalized_email,normalized_phone,normalized_name,merged_at,first_acquisition_source,first_acquisition_at),request_participants(participant_type,first_name,middle_name,last_name,full_legal_name,email),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
     )
     .order("created_at", {
       ascending: false,
