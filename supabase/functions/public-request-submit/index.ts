@@ -47,6 +47,16 @@ async function rows(response: Response) {
   return await response.json();
 }
 
+async function rollbackFailedIntake(requestId: string) {
+  const result = await rows(
+    await api("rpc/aps_rollback_failed_intake", {
+      method: "POST",
+      body: JSON.stringify({ p_request: requestId }),
+    }),
+  );
+  return Array.isArray(result) ? result[0] : result;
+}
+
 function safeName(value: unknown) {
   return String(value || "document")
     .replace(/[^a-z0-9._-]+/gi, "-")
@@ -611,14 +621,22 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     await removeStored(storedPaths);
+    let rollbackResult: unknown = null;
+    let rollbackError: string | null = null;
     if (requestId) {
-      await api(`service_requests?id=eq.${encodeURIComponent(requestId)}`, {
-        method: "DELETE",
-      }).catch(() => undefined);
+      try {
+        rollbackResult = await rollbackFailedIntake(requestId);
+      } catch (cleanupError) {
+        rollbackError = cleanupError instanceof Error
+          ? cleanupError.message
+          : String(cleanupError);
+      }
     }
     console.error("public_request_submit_failed", {
       requestId: requestId || null,
       message: error instanceof Error ? error.message : String(error),
+      rollbackResult,
+      rollbackError,
     });
     return json({
       ok: false,
