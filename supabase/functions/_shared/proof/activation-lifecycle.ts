@@ -139,6 +139,7 @@ export class ProofActivationLifecycle {
       configuration_state: "claimed",
       invitation_state: "not_invited",
       access_link_present: false,
+      access_link: null,
       aps_status: "not_started",
       created_by: admin,
       updated_by: admin,
@@ -497,6 +498,7 @@ export class ProofActivationLifecycle {
             : row.invited_at,
           access_link_present: row.access_link_present ||
             Boolean(match?.accessLinkPresent),
+          access_link: match?.accessLink ?? row.access_link,
           configured_at: match ? new Date().toISOString() : row.configured_at,
           last_synced_at: new Date().toISOString(),
           updated_by: admin,

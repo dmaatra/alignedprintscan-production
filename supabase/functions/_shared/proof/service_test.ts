@@ -1,6 +1,34 @@
 import { assertEquals } from "jsr:@std/assert";
 import type { ProofRequestOptions } from "./client.ts";
-import { ProofService, type ProofTransport } from "./service.ts";
+import {
+  ProofService,
+  type ProofTransport,
+  sanitizeTransaction,
+} from "./service.ts";
+
+Deno.test("Proof signer access links accept only the supported signer portal", () => {
+  const accepted = sanitizeTransaction({
+    id: "ot_test",
+    signer: {
+      email: "signer@example.test",
+      transaction_access_link:
+        "https://app.proof.com/activate-transaction?bundle_id=test&code=secret",
+    },
+  }, false);
+  assertEquals(
+    accepted.signers?.[0].accessLink,
+    "https://app.proof.com/activate-transaction?bundle_id=test&code=secret",
+  );
+  const rejected = sanitizeTransaction({
+    id: "ot_test",
+    signer: {
+      email: "signer@example.test",
+      transaction_access_link: "https://internal.example.test/secret",
+    },
+  }, false);
+  assertEquals(rejected.signers?.[0].accessLink, null);
+  assertEquals(rejected.signers?.[0].accessLinkPresent, false);
+});
 
 Deno.test("Proof primary signer update preserves the draft signer shape", async () => {
   let request: { path: string; json: unknown } | null = null;
@@ -88,10 +116,10 @@ Deno.test("Proof multi-signer update uses the signers array", async () => {
 });
 
 Deno.test("Proof draft signer update carries supported handoff enrichment", async () => {
-  let json: unknown;
+  const requests: unknown[] = [];
   const transport: ProofTransport = {
     request<T>(_path: string, options?: ProofRequestOptions) {
-      json = options?.json;
+      requests.push(options?.json);
       return Promise.resolve(
         { id: "ot_test", status: "started", signers: [] } as T,
       );
@@ -111,7 +139,8 @@ Deno.test("Proof draft signer update carries supported handoff enrichment", asyn
     notaryInstructions: "APS REQUEST: APS-12345678",
     messageToSigner: "Your Remote Online Notarization is ready.",
   });
-  const payload = json as Record<string, unknown>;
+  assertEquals(requests.length, 2);
+  const payload = requests[0] as Record<string, unknown>;
   assertEquals(payload.transaction_name, "APS-12345678 — RON — Signer");
   assertEquals(payload.notary_meeting_time, "2026-09-15T10:00:00-05:00");
   assertEquals(payload.notary_instructions, [{
@@ -121,7 +150,8 @@ Deno.test("Proof draft signer update carries supported handoff enrichment", asyn
     payload.message_to_signer,
     "Your Remote Online Notarization is ready.",
   );
-  assertEquals((payload.signer as Record<string, unknown>).phone, {
+  const signerPayload = requests[1] as Record<string, unknown>;
+  assertEquals((signerPayload.signer as Record<string, unknown>).phone, {
     country_code: "1",
     number: "4695550101",
   });

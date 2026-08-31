@@ -25,6 +25,17 @@ test("admin RON control panel reuses guarded server-side Proof commands", async 
   assert.match(admin, /confirm_proof_document_preparation/);
 });
 
+test("Admin exposes stored signer-scoped Proof access only in the operator control panel", async () => {
+  const admin = await read("assets/js/admin.js");
+  const controlPanel = await read(
+    "supabase/functions/_shared/proof/control-panel.ts",
+  );
+  assert.match(controlPanel, /access_link/);
+  assert.match(admin, /signer\.access_link/);
+  assert.match(admin, /Open secure signer access/);
+  assert.match(admin, /noopener noreferrer/);
+});
+
 test("appointment saves preserve a valid activation timezone", async () => {
   const admin = await read("assets/js/admin.js");
   assert.match(admin, /appointment_timezone:\s*selectedRequest\.appointment_timezone/);

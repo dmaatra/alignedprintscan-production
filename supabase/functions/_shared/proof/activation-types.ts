@@ -36,6 +36,7 @@ export interface SignerRecord {
   configuration_state: string;
   invitation_state: string;
   access_link_present: boolean;
+  access_link: string | null;
   aps_status: string;
   proof_status: string | null;
   manual_review_reason: string | null;

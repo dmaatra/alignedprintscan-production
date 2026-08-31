@@ -32,6 +32,7 @@ const signer = (n = 1): SignerRecord => ({
   configuration_state: "configured",
   invitation_state: "not_invited",
   access_link_present: false,
+  access_link: null,
   aps_status: "ready",
   proof_status: "ready",
   manual_review_reason: null,
@@ -158,9 +159,10 @@ class Repo {
     };
     return this.t;
   }
-  async updateSigner(_id: string, p: Record<string, unknown>) {
-    const x = { ...this.s[0], ...p };
-    this.s[0] = x;
+  async updateSigner(id: string, p: Record<string, unknown>) {
+    const index = this.s.findIndex((row) => row.id === id);
+    const x = { ...this.s[index], ...p };
+    this.s[index] = x;
     return x;
   }
   async updateTransaction(_id: string, p: Record<string, unknown>) {
@@ -193,6 +195,9 @@ class Service {
         email: null,
         status: "ready",
         accessLinkPresent: true,
+        accessLink: `https://app.proof.com/activate-transaction?code=signer-${
+          i + 1
+        }`,
       })),
     };
   }
@@ -413,6 +418,7 @@ Deno.test("rejected primary signer can reconcile by exact provider email", async
     email: "signer@example.test",
     status: "ready",
     accessLinkPresent: false,
+    accessLink: null,
   }];
   const result = await x.l.execute({
     command: "configure_signers",
@@ -445,7 +451,7 @@ Deno.test("ambiguous signer result retained", async () => {
 Deno.test("provider signer IDs persisted", async () => {
   const x = setup();
   x.r.s = [];
-  await x.l.execute({
+  const result = await x.l.execute({
     command: "configure_signers",
     integrationId: id,
     signers: [{
@@ -455,11 +461,41 @@ Deno.test("provider signer IDs persisted", async () => {
       lastName: "Signer",
       email: "signer@example.test",
     }],
-  }, admin);
+  }, admin) as { signers: Array<Record<string, unknown>> };
   assertEquals(x.r.s[0].proof_signer_id, "si_0");
+  assertEquals(x.r.s[0].access_link_present, true);
+  assertEquals(
+    x.r.s[0].access_link,
+    "https://app.proof.com/activate-transaction?code=signer-1",
+  );
+  assertEquals("accessLink" in result.signers[0], false);
 });
-Deno.test("signer access links redacted", () =>
-  assertEquals("transactionAccessLink" in ({}), false));
+Deno.test("multiple signer access links remain signer-scoped", async () => {
+  const x = setup();
+  x.r.s = [];
+  x.r.c.signers = [signer(1), signer(2)];
+  x.r.c.ron!.number_of_signers = 2;
+  await x.l.execute({
+    command: "configure_signers",
+    integrationId: id,
+    signers: [
+      {
+        apsSignerReference: "approved-signer-1",
+        order: 1,
+        email: "one@example.test",
+      },
+      {
+        apsSignerReference: "approved-signer-2",
+        order: 2,
+        email: "two@example.test",
+      },
+    ],
+  }, admin);
+  assertEquals(x.r.s.map((row) => row.access_link), [
+    "https://app.proof.com/activate-transaction?code=signer-1",
+    "https://app.proof.com/activate-transaction?code=signer-2",
+  ]);
+});
 Deno.test("phone omitted by default", () =>
   assertEquals("phone" in signer(), false));
 Deno.test("no-witness request passes", () =>
