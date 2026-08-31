@@ -6,7 +6,10 @@ import {
   witnessPolicy,
 } from "./activation-lifecycle.ts";
 import { ProofError } from "./errors.ts";
-import type { ProofProviderSigner } from "./service.ts";
+import type {
+  ProofProviderSigner,
+  ProofProviderTransaction,
+} from "./service.ts";
 import type {
   ActivationTransaction,
   ReadinessContext,
@@ -184,7 +187,7 @@ class Service {
   async configureTransactionSigners(
     _id: string,
     s: Array<{ externalId: string }>,
-  ) {
+  ): Promise<ProofProviderTransaction> {
     this.configureCalls++;
     if (this.error) throw this.error;
     return {
@@ -469,6 +472,39 @@ Deno.test("provider signer IDs persisted", async () => {
     "https://app.proof.com/activate-transaction?code=signer-1",
   );
   assertEquals("accessLink" in result.signers[0], false);
+});
+Deno.test("create-response access link transfers only to its matching signer", async () => {
+  const x = setup();
+  x.r.s = [];
+  x.r.t.pending_primary_signer_email = "signer@example.test";
+  x.r.t.pending_primary_signer_access_link =
+    "https://app.proof.com/activate-transaction?code=staged";
+  x.s.configureTransactionSigners = async (_id, signers) => ({
+    ...provider(),
+    signers: signers.map((candidate, index) => ({
+      id: `si_${index}`,
+      externalId: candidate.externalId,
+      email: "signer@example.test",
+      status: "ready",
+      accessLinkPresent: false,
+      accessLink: null,
+    })),
+  });
+  await x.l.execute({
+    command: "configure_signers",
+    integrationId: id,
+    signers: [{
+      apsSignerReference: "approved-signer-1",
+      order: 1,
+      email: "signer@example.test",
+    }],
+  }, admin);
+  assertEquals(
+    x.r.s[0].access_link,
+    "https://app.proof.com/activate-transaction?code=staged",
+  );
+  assertEquals(x.r.t.pending_primary_signer_access_link, null);
+  assertEquals(x.r.t.pending_primary_signer_email, null);
 });
 Deno.test("multiple signer access links remain signer-scoped", async () => {
   const x = setup();

@@ -212,8 +212,20 @@ export class ProofTransactionLifecycle {
           serviceRequestId.slice(0, 8).toUpperCase()
         } Remote Online Notary`,
       });
+      const primaryProviderSigner = provider.signers?.find((signer) =>
+        signer.email === signerEmail.toLowerCase()
+      );
       const updated = await this.syncProvider(existing, provider, adminUserId, {
         creation_state: "created",
+        // Proof returns this signer-scoped capability on the create response
+        // but does not retain it for a later transaction GET. Hold it only on
+        // the protected transaction row until approved signer mapping can move
+        // it to the matching proof_signers record.
+        pending_primary_signer_access_link: primaryProviderSigner?.accessLink ??
+          null,
+        pending_primary_signer_email: primaryProviderSigner?.accessLink
+          ? signerEmail.toLowerCase()
+          : null,
         last_error_code: null,
         last_error_message: null,
         manual_review_reason: null,

@@ -41,6 +41,8 @@ export interface ProofTransactionRecord {
   ambiguous_at: string | null;
   provider_created_at: string | null;
   provider_updated_at: string | null;
+  pending_primary_signer_access_link?: string | null;
+  pending_primary_signer_email?: string | null;
   last_synced_at: string | null;
   deleted_at: string | null;
   cancelled_at: string | null;

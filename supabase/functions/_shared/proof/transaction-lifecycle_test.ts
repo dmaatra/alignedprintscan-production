@@ -212,6 +212,37 @@ Deno.test("draft creation succeeds and stores provider identity", async () => {
   );
 });
 
+Deno.test("draft creation stages the one-time primary signer access link", async () => {
+  const { repo, sut } = lifecycle(
+    new MemoryRepository(),
+    fakeService({
+      createDraftTransaction: async () =>
+        provider({
+          signers: [{
+            id: "si_primary",
+            externalId: null,
+            email: "signer@example.test",
+            status: "ready",
+            accessLinkPresent: true,
+            accessLink:
+              "https://app.proof.com/activate-transaction?code=one-time",
+          }],
+        }),
+    }),
+  );
+  await sut.execute({
+    command: "create_draft",
+    serviceRequestId: requestId,
+    signerEmail: "SIGNER@EXAMPLE.TEST",
+  }, adminId);
+  const stored = [...repo.rows.values()][0];
+  assert(
+    stored.pending_primary_signer_access_link ===
+      "https://app.proof.com/activate-transaction?code=one-time",
+  );
+  assert(stored.pending_primary_signer_email === "signer@example.test");
+});
+
 Deno.test("duplicate click returns existing integration", async () => {
   const { repo, sut } = lifecycle();
   repo.rows.set(integrationId, record());
