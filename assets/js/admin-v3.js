@@ -91,7 +91,9 @@
         ? "Remote Online Notary"
         : request.service_type === "mobile"
           ? "Mobile Notary"
-          : "Print & Scan";
+          : request.service_type === "loan_signing"
+            ? "Loan Signing"
+            : "Print & Scan";
 
     $("#workspaceServiceLabel").textContent = service;
     $("#workspaceTitle").textContent = `${reference} · ${clientName}`;

@@ -13,6 +13,10 @@ const admin = await readFile(
   new URL("../assets/js/admin.js", import.meta.url),
   "utf8",
 );
+const adminV3 = await readFile(
+  new URL("../assets/js/admin-v3.js", import.meta.url),
+  "utf8",
+);
 
 test("Loan Signing workspace grants authenticated administrators read-only detail access", () => {
   assert.match(
@@ -32,4 +36,11 @@ test("Loan Signing overview uses its own workflow guide without Print fallback",
   assert.match(admin, /Loan Signing Workflow/);
   assert.match(admin, /\["under_review", "Assignment Received"\]/);
   assert.match(admin, /\["appointment_confirmed", "Signing Scheduled"\]/);
+});
+
+test("Loan Signing workspace header uses the Loan Signing service label", () => {
+  assert.match(
+    adminV3,
+    /request\.service_type === "loan_signing"\s*\? "Loan Signing"/,
+  );
 });
