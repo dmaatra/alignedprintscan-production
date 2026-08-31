@@ -609,16 +609,18 @@ Deno.serve(async (req) => {
           ].includes(signingType) ||
           !["in_person_mobile", "ron", "either_tbd"].includes(signingMethod)
         ) throw new Error("Signing type and signing method are required.");
-        const standard: Record<string, number> = {
-          loan_modification: 100,
+        const standard: Record<string, number | null> = {
+          loan_modification: 125,
           seller: 125,
-          heloc: 125,
+          heloc: 150,
           buyer_purchase: 150,
           refinance: 150,
           reverse_mortgage: 175,
-          commercial: 200,
-          other_custom: 200,
+          commercial: null,
+          other_custom: null,
         };
+        const standardFee = standard[signingType];
+        const pricingReviewRequired = standardFee === null;
         const supportedOrderingPartyTypes = [
           "title_escrow",
           "signing_service",
@@ -674,9 +676,13 @@ Deno.serve(async (req) => {
             stipulations: text(body.stipulations, 4000) || null,
             lsa_stage: "assignment_received",
             pricing_source: "standard_aps",
-            base_assignment_fee: standard[signingType],
-            agreed_fee: standard[signingType],
+            base_assignment_fee: standardFee,
+            agreed_fee: null,
             pricing_status: "draft",
+            pricing_review_required: pricingReviewRequired,
+            pricing_review_reason: pricingReviewRequired
+              ? "Commercial, custom, or unusual assignment pricing requires operator review."
+              : null,
             payment_terms: organization.payment_terms,
             appointment_instructions:
               text(body.appointment_instructions, 2000) || null,

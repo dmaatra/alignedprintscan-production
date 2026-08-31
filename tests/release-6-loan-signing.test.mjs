@@ -40,7 +40,9 @@ test("public intake submits structured loan signing data and signer rows", async
 
 test("standard pricing is centralized and marks custom packages for review", async () => {
   const pricing = await read("assets/js/pricing-config.js");
-  for (const amount of [100, 125, 150, 175, 200]) assert.match(pricing, new RegExp(`: ${amount}`));
+  for (const amount of [125, 150, 175]) assert.match(pricing, new RegExp(`: ${amount}`));
+  assert.match(pricing, /commercial: null/);
+  assert.match(pricing, /other_custom: null/);
   assert.match(pricing, /standardAssumption/);
   assert.match(pricing, /policyVersion/);
 });

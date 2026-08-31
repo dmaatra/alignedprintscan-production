@@ -67,6 +67,75 @@ function allowed(source: Record<string, unknown>, keys: string[]) {
   );
 }
 
+function validatedEstimateSnapshot(
+  value: unknown,
+  service: string,
+  estimatedTotal: unknown,
+) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("A structured estimate component snapshot is required.");
+  }
+  const snapshot = value as Record<string, unknown>;
+  if (
+    snapshot.snapshot_version !== "aps-estimate-components-v1" ||
+    snapshot.service !== service ||
+    !Array.isArray(snapshot.components) ||
+    snapshot.components.length < 1 ||
+    snapshot.components.length > 30
+  ) throw new Error("The estimate component snapshot is invalid.");
+  const components = snapshot.components.map((raw) => {
+    const line = cleanObject(raw);
+    const quantity = Number(line.quantity);
+    const unitAmount = Number(line.unit_amount);
+    const lineAmount = Number(line.line_amount);
+    if (
+      !String(line.key || "").slice(0, 100) ||
+      !String(line.label || "").slice(0, 160) ||
+      !Number.isFinite(quantity) || quantity < 0 ||
+      !Number.isFinite(unitAmount) || unitAmount < 0 ||
+      !Number.isFinite(lineAmount) || lineAmount < 0 ||
+      Math.abs(quantity * unitAmount - lineAmount) > 0.011
+    ) throw new Error("An estimate component is invalid.");
+    return {
+      key: String(line.key).slice(0, 100),
+      label: String(line.label).slice(0, 160),
+      quantity,
+      unit_amount: unitAmount,
+      line_amount: lineAmount,
+      billable: line.billable !== false,
+      included: line.included === true,
+      review_required: line.review_required === true,
+      note: line.note ? String(line.note).slice(0, 300) : null,
+    };
+  });
+  const total = Math.round(
+    components.filter((line) => line.billable).reduce(
+      (sum, line) => sum + line.line_amount,
+      0,
+    ) * 100,
+  ) / 100;
+  if (
+    Math.abs(total - Number(estimatedTotal || 0)) > 0.011 ||
+    Math.abs(total - Number(snapshot.total || 0)) > 0.011
+  ) {
+    throw new Error(
+      "The estimate total does not match its component snapshot.",
+    );
+  }
+  return {
+    snapshot_version: "aps-estimate-components-v1",
+    pricing_version: String(snapshot.pricing_version || "").slice(0, 80),
+    service,
+    components,
+    total,
+    review_required: components.some((line) => line.review_required),
+    review_reasons: Array.isArray(snapshot.review_reasons)
+      ? snapshot.review_reasons.map((reason) => String(reason).slice(0, 300))
+        .slice(0, 10)
+      : [],
+  };
+}
+
 function validate(body: Record<string, unknown>, adminRequest = false) {
   const customer = cleanObject(body.customer);
   const request = cleanObject(body.request);
@@ -97,6 +166,11 @@ function validate(body: Record<string, unknown>, adminRequest = false) {
       "Upload at least one document or select why it cannot be uploaded yet.",
     );
   }
+  request.estimate_components = validatedEstimateSnapshot(
+    request.estimate_components,
+    service,
+    request.estimated_total,
+  );
   if (files.length && exceptionReason) {
     throw new Error("Remove the upload exception when documents are selected.");
   }
@@ -243,6 +317,14 @@ Deno.serve(async (req) => {
     const result = Array.isArray(resolution) ? resolution[0] : resolution;
     requestId = String(result?.request_id || "");
     if (!requestId) throw new Error("The request record could not be created.");
+    await rows(
+      await api(`service_requests?id=eq.${encodeURIComponent(requestId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          estimate_components: input.request.estimate_components,
+        }),
+      }),
+    );
     const customerId = String(result?.customer_id || "");
     if (customerId && input.request.first_touch_source) {
       await api(
@@ -376,6 +458,9 @@ Deno.serve(async (req) => {
           "pricing_status",
           "payment_terms",
           "appointment_instructions",
+          "round_trip_miles",
+          "pricing_review_required",
+          "pricing_review_reason",
         ],
       },
     };

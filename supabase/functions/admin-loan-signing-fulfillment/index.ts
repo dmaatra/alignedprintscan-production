@@ -8,7 +8,7 @@ const uuid=(value:unknown)=>/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(String(value||""
 const allowedRoles=new Set(["owner","administrator","operations","billing","support_read_only"]);
 const tables={requirement:"loan_signing_requirements",package:"loan_signing_package_versions",stipulation:"loan_signing_stipulations",scanback:"loan_signing_scanbacks",return:"loan_signing_returns"} as const;
 const fields={
-  assignment:["instructions_reviewed_at","callback_confirmation_required","signer_confirmation_status","signer_contacted_at","signer_contact_method","signer_confirmation_note","printing_required","paper_size","sidedness","print_color","print_scaling","signing_set_count","borrower_copy_count","additional_copy_count","print_status","print_qc_status","borrower_copy_status","stacking_order_required","stacking_order_type","stacking_instructions","signing_outcome","post_signing_qc_status","arrival_at","signing_started_at","signing_ended_at","departure_at","resign_review_required","lsa_stage","scanbacks_required","approval_before_return_required","physical_return_required","return_method"],
+  assignment:["instructions_reviewed_at","callback_confirmation_required","signer_confirmation_status","signer_contacted_at","signer_contact_method","signer_confirmation_note","printing_required","paper_size","sidedness","print_color","print_scaling","signing_set_count","borrower_copy_count","additional_copy_count","print_status","print_qc_status","borrower_copy_status","stacking_order_required","stacking_order_type","stacking_instructions","signing_outcome","post_signing_qc_status","arrival_at","signing_started_at","signing_ended_at","departure_at","resign_review_required","lsa_stage","scanbacks_required","approval_before_return_required","physical_return_required","return_method","round_trip_miles"],
   requirement:["requirement_group","requirement_key","title","instructions","applicability","status","source_type","source_note","customer_visible","sort_order","satisfied_at"],
   stipulation:["title","instructions","required","status","source_type","waiver_source","proof_file_id","proof_private","resolved_at"],
   scanback:["package_version_id","content_scope","instructions","status","qc_status","submitted_at","submission_method","recipient_destination","confirmation_reference","approval_source","approved_at","correction_instructions","resolved_at"],
@@ -52,6 +52,13 @@ Deno.serve(async(req)=>{if(req.method==="OPTIONS")return new Response("ok",{head
   if(financialCommand&&!mayApproveFinancial(admin.profile))throw new Error("Loan Signing financial approval permission is required.");
   if(command==="save_assignment"){
     const update=pick(body,fields.assignment); if(body.instructions_reviewed===true){update.instructions_reviewed_at=new Date().toISOString();update.instructions_reviewed_by=admin.id;}
+    if(Object.hasOwn(update,"round_trip_miles")){
+      const miles=Number(update.round_trip_miles);if(!Number.isFinite(miles)||miles<0)throw new Error("Round-trip mileage must be zero or greater.");
+      update.round_trip_miles=miles;
+      update.travel_adjustment=miles>=31&&miles<=40?25:0;
+      update.pricing_review_required=miles>40||["commercial","other_custom"].includes(String(assignment.signing_type));
+      update.pricing_review_reason=miles>40?"Loan Signing travel above 40 round-trip miles requires operator review.":["commercial","other_custom"].includes(String(assignment.signing_type))?"Commercial, custom, or unusual assignment pricing requires operator review.":null;
+    }
     const active=(base.packages as any[]).find((p)=>p.status==="active"); Object.assign(update,expectedPrintVolume(active,{...assignment,...update}));
     await serviceRows(`loan_signing_assignments?id=eq.${assignment.id}`,{method:"PATCH",body:JSON.stringify({...update,updated_at:new Date().toISOString()})});
     await timeline(requestId,"lsa_assignment_requirements_updated","Loan Signing requirements updated","Assignment requirements and preparation state were updated.",admin.id); return json({ok:true,...await snapshot(requestId)});
