@@ -6,8 +6,9 @@ import {SYNTHETIC_TEMPLATE_CONTEXT,TEMPLATE_SPECIFICATIONS,renderFullTemplateEma
 const read=path=>readFile(new URL(`../${path}`,import.meta.url),"utf8");
 
 test("structured signer intake preserves optional middle name and requires first/last",async()=>{
-  const [publicUi,adminUi,submit]=await Promise.all([read("assets/js/script.js"),read("assets/js/admin-v3.js"),read("supabase/functions/public-request-submit/index.ts")]);
-  for(const source of [publicUi,adminUi,submit]){assert.match(source,/first_name/);assert.match(source,/middle_name/);assert.match(source,/last_name/);}
+  const [publicUi,adminUi,submit,contract]=await Promise.all([read("assets/js/script.js"),read("assets/js/admin-v3.js"),read("supabase/functions/public-request-submit/index.ts"),read("supabase/functions/_shared/intake-contract.ts")]);
+  for(const source of [publicUi,adminUi,contract]){assert.match(source,/first_name/);assert.match(source,/middle_name/);assert.match(source,/last_name/);}
+  assert.match(submit,/normalizedIntakeParticipants/);
   assert.match(submit,/first name and last name/i);
   assert.match(adminUi,/Signer information incomplete/);assert.match(adminUi,/first name/);assert.match(adminUi,/last name/);
   assert.match(adminUi,/\["ron","mobile"\]/);assert.match(adminUi,/terminal/);
