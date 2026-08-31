@@ -965,6 +965,7 @@ function workflowKind(service) {
   const s = String(service || "").toLowerCase();
   if (s === "ron" || s.includes("remote")) return "ron";
   if (s === "mobile" || s.includes("notary")) return "mobile";
+  if (s === "loan_signing" || s.includes("loan")) return "loan";
   return "document";
 }
 
@@ -975,6 +976,8 @@ function internalWorkflowGuide(request) {
       ? "Remote Online Notary Workflow"
       : kind === "mobile"
         ? "Mobile Notary Workflow"
+        : kind === "loan"
+          ? "Loan Signing Workflow"
         : "Print & Scan Workflow";
   const steps = {
     ron: [
@@ -995,6 +998,17 @@ function internalWorkflowGuide(request) {
       ["payment_received", "Payment Received"],
       ["appointment_confirmed", "Appointment Confirmed"],
       ["mobile_visit", "Mobile Visit Completed"],
+      ["final_balance_due", "Final Balance Due"],
+      ["final_payment_received", "Final Payment Received"],
+      ["completed", "Completed"],
+    ],
+    loan: [
+      ["under_review", "Assignment Received"],
+      ["awaiting_approval", "Scope & Pricing Review"],
+      ["awaiting_payment", "Payment Due"],
+      ["payment_received", "Payment Received"],
+      ["appointment_confirmed", "Signing Scheduled"],
+      ["signing_in_progress", "Signing In Progress"],
       ["final_balance_due", "Final Balance Due"],
       ["final_payment_received", "Final Payment Received"],
       ["completed", "Completed"],
