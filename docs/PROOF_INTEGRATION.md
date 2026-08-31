@@ -2,6 +2,18 @@
 
 ## Scope
 
+### 2026-08-31 handoff enrichment
+
+**CONFIRMED IN CODE:** APS now enriches the existing Proof draft during the administrator's `Map Approved Signers` action. The same single draft update carries canonical structured signer first/middle/last names, individual email, a valid optional phone, a customer-safe transaction name, the confirmed meeting time with its IANA-zone-derived UTC offset, transaction-level notary instructions, and the signer-facing Proof invitation message. Unconfirmed requested times are not sent as Proof meeting times or described as confirmed in the signer message.
+
+**CONFIRMED IN CODE:** The operational notary briefing is derived from the APS reference, Remote Online Notarization service, confirmed appointment facts, approved signer roster, requested-act estimate components, selected Proof source-document names and authoritative page counts, witness requirement, customer notes, and appointment instructions. It is length-bounded, strips control characters, and never reads payment credentials, API identifiers, authentication values, or unrestricted internal notes.
+
+**CONFIRMED IN CODE:** A RON placeholder with `witness_source=aps` is presented to the operator as `Proof On-Demand Witness`, assigned through Proof during the live session, with no APS participant identity required and no Edit Participant control. This presentation does not apply to customer-provided RON witnesses or APS-provided Mobile witnesses. Proof On-Demand activation readiness succeeds only when the selected notarization documents retain `witness_required=true`; a mismatch blocks activation. Customer-provided witnesses remain structured participants and retain the existing manual mapping/review requirement.
+
+**CONFIRMED IN DOCUMENTATION:** Proof's current Business API v1 create/update contracts document structured signer `first_name`, `middle_name`, `last_name`, `email`, and optional `phone`; `external_id`; `transaction_name`; `notary_meeting_time`; `notary_instructions`; `message_to_signer`; draft updates; document `witness_required`; and explicit `notarization_ready` activation. Supplying a signer phone may cause Proof to send an SMS when the transaction is activated; APS does not enable Proof SMS authentication or secondary-ID requirements.
+
+**PRODUCTION VERIFICATION REQUIRED:** Merged source, deployed `proof-admin-transaction` version, and the supported fields on APS's live Proof account must be certified after deployment. Draft preparation must not be described as activation or invitation delivery.
+
 **CONFIRMED IN CODE:** Phase 4.2 Increment 3 adds an administrator-only source-document lifecycle on top of the unapplied Increment 1 and 2 foundations. It selects and validates APS PDFs, retrieves private source bytes server-side, computes SHA-256, atomically claims uploads, uploads through the shared Proof transport, stores the APS-to-Proof mapping, refreshes processing metadata, and preserves ambiguous/manual-review states. It does not activate or invite signers, retrieve completed files, process webhooks, or alter APS payment/workflow state.
 
 **CONFIRMED IN DOCUMENTATION:** APS remains the system of record for customers, orders, invoices/payments, scheduling, workflow, communications, the customer portal, and the admin dashboard. Proof is the RON integration engine and signer experience.

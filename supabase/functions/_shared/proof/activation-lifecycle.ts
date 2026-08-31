@@ -29,8 +29,15 @@ export interface ActivationService {
         order: number;
         entity?: string | null;
         capacity?: string | null;
+        phone?: { countryCode: string; number: string } | null;
       }
     >,
+    enrichment?: {
+      transactionName?: string | null;
+      notaryMeetingTime?: string | null;
+      notaryInstructions?: string | null;
+      messageToSigner?: string | null;
+    },
   ): Promise<ProofProviderTransaction>;
   getTransaction(id: string): Promise<ProofProviderTransaction>;
   activateDraftTransaction(id: string): Promise<ProofProviderTransaction>;
@@ -202,7 +209,12 @@ export class ProofActivationLifecycle {
     try {
       const provider = await this.service.configureTransactionSigners(
         tx.proof_transaction_id!,
-        signers.map((s) => ({ ...s, externalId: externalId(tx.id, s.order) })),
+        signers.map((s) => ({
+          ...s,
+          externalId: externalId(tx.id, s.order),
+          phone: proofPhone(s.phone),
+        })),
+        draftEnrichment(tx, ctx, signers),
       );
       const updated = await this.persistProvider(
         claimed,
@@ -476,9 +488,10 @@ export class ProofActivationLifecycle {
           proof_signer_id: match?.id ?? row.proof_signer_id,
           proof_status: match?.status ?? row.proof_status,
           configuration_state: match ? "configured" : row.configuration_state,
-          invitation_state: invitationSent && row.invitation_state === "not_invited"
-            ? "invited"
-            : row.invitation_state,
+          invitation_state:
+            invitationSent && row.invitation_state === "not_invited"
+              ? "invited"
+              : row.invitation_state,
           invited_at: invitationSent
             ? row.invited_at ?? new Date().toISOString()
             : row.invited_at,
@@ -622,12 +635,174 @@ export function externalId(tx: string, order: number) {
 }
 export function witnessPolicy(c: ReadinessContext) {
   if (c.ron?.witness_review_required) return "WITNESS_MAPPING_REQUIRED";
-  const count = Number(c.ron?.witness_count ?? 0) +
-    Number(c.ron?.client_witness_count ?? 0) +
-    Number(c.ron?.provided_witness_count ?? 0);
-  return c.ron?.witness_need && c.ron.witness_need !== "no" && count > 0
-    ? "WITNESS_MAPPING_REQUIRED"
+  if (Number(c.ron?.client_witness_count ?? 0) > 0) {
+    return "WITNESS_MAPPING_REQUIRED";
+  }
+  if (Number(c.ron?.provided_witness_count ?? 0) > 0) {
+    return c.assets.length &&
+        c.assets.every((asset) =>
+          asset.requirement !== "notarization" ||
+          asset.witness_required === true
+        )
+      ? null
+      : "WITNESS_REQUIREMENT_MISMATCH";
+  }
+  return null;
+}
+
+export function draftEnrichment(
+  tx: ActivationTransaction,
+  context: ReadinessContext,
+  signers: SignerInput[],
+) {
+  const reference = `APS-${tx.service_request_id.slice(0, 8).toUpperCase()}`;
+  const confirmed = Boolean(
+    context.request.appointment_confirmed_at &&
+      context.request.appointment_date &&
+      context.request.appointment_time &&
+      validTimezone(context.request.appointment_timezone),
+  );
+  const appointment = confirmed
+    ? proofAppointment(
+      context.request.appointment_date!,
+      context.request.appointment_time!,
+      context.request.appointment_timezone!,
+    )
     : null;
+  const signerNames = signers.map((signer) =>
+    [signer.firstName, signer.middleName, signer.lastName].filter(Boolean).join(
+      " ",
+    )
+  ).filter(Boolean);
+  const acts = notarialActs(
+    context.request.estimate_components,
+    context.ron?.number_of_notarizations ?? 0,
+  );
+  const documents = context.assets.map((asset) => {
+    const pages = asset.detected_page_count
+      ? ` (${asset.detected_page_count} page${
+        asset.detected_page_count === 1 ? "" : "s"
+      })`
+      : "";
+    return `${asset.file_name || "Selected APS source document"}${pages}`;
+  });
+  const provided = Number(context.ron?.provided_witness_count ?? 0);
+  const customer = Number(context.ron?.client_witness_count ?? 0);
+  const witness = provided
+    ? `PROOF ON-DEMAND WITNESS REQUIRED × ${provided} — call the required witness through Proof during the live session.`
+    : customer
+    ? `Customer-provided witness × ${customer}`
+    : "None";
+  const customerNotes = safeNote(context.request.notes) || "None";
+  const operatorNotes = safeNote(context.request.appointment_instructions) ||
+    "None";
+  const appointmentText = confirmed && appointment
+    ? `${context.request.appointment_date}\n${context.request.appointment_time}\n${context.request.appointment_timezone}`
+    : "Not yet confirmed in APS";
+  const notaryInstructions = [
+    `APS REQUEST: ${reference}`,
+    "SERVICE: Remote Online Notarization",
+    `APPOINTMENT:\n${appointmentText}`,
+    `SIGNER(S):\n${signerNames.join("\n") || "Not provided"}`,
+    `REQUESTED NOTARIAL ACTS:\n${acts}`,
+    `DOCUMENT(S):\n${documents.join("\n") || "No APS document selected"}`,
+    `WITNESS:\n${witness}`,
+    `CUSTOMER NOTES:\n${customerNotes}`,
+    `APS OPERATOR NOTES:\n${operatorNotes}`,
+    `APS REFERENCE: ${reference}`,
+  ].join("\n\n").slice(0, 12_000);
+  const messageToSigner = confirmed
+    ? [
+      "Your Remote Online Notarization with Aligned Print & Scan is ready.",
+      `Appointment: ${context.request.appointment_date} · ${context.request.appointment_time} · ${context.request.appointment_timezone}`,
+      "Please use the secure Proof link in this message to complete the required identity-verification steps and access your online notarization.",
+      "Please have your acceptable government-issued identification available and join from a compatible device with a working camera, microphone, and stable internet connection.",
+      `For help with your APS appointment, contact Aligned Print & Scan and reference ${reference}.`,
+    ].join("\n\n")
+    : null;
+  return {
+    transactionName: `${reference} — RON — ${signers[0]?.lastName || "Signer"}`,
+    notaryMeetingTime: appointment,
+    notaryInstructions,
+    messageToSigner,
+  };
+}
+
+function proofPhone(value?: string) {
+  const digits = String(value || "").replace(/\D/g, "");
+  const national = digits.length === 11 && digits.startsWith("1")
+    ? digits.slice(1)
+    : digits;
+  return national.length === 10 ? { countryCode: "1", number: national } : null;
+}
+
+function proofAppointment(date: string, time: string, timezone: string) {
+  const match = time.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/i);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2] || 0);
+  const meridiem = match[3]?.toUpperCase();
+  if (meridiem === "PM" && hour < 12) hour += 12;
+  if (meridiem === "AM" && hour === 12) hour = 0;
+  const [year, month, day] = date.split("-").map(Number);
+  const guess = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(guess).map((part) => [part.type, part.value]),
+  );
+  const rendered = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+  );
+  const offsetMinutes = Math.round((rendered - guess.getTime()) / 60_000);
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const absolute = Math.abs(offsetMinutes);
+  const offset = `${sign}${
+    String(Math.floor(absolute / 60)).padStart(2, "0")
+  }:${String(absolute % 60).padStart(2, "0")}`;
+  return `${date}T${String(hour).padStart(2, "0")}:${
+    String(minute).padStart(2, "0")
+  }:00${offset}`;
+}
+
+function notarialActs(value: unknown, fallback: number) {
+  const labels: string[] = [];
+  const walk = (item: unknown) => {
+    if (Array.isArray(item)) return item.forEach(walk);
+    if (!item || typeof item !== "object") return;
+    const row = item as Record<string, unknown>;
+    const label = String(row.label || row.name || row.description || "").trim();
+    const quantity = Number(row.quantity || row.count || 0);
+    if (
+      label &&
+      /(acknowledg|jurat|notarial act|signature witness|certified copy)/i.test(
+        label,
+      )
+    ) {
+      labels.push(`${label}${quantity > 0 ? ` × ${quantity}` : ""}`);
+    }
+    Object.values(row).forEach(walk);
+  };
+  walk(value);
+  return [...new Set(labels)].join("\n") ||
+    `Notarial act${fallback === 1 ? "" : "s"} × ${fallback || 1}`;
+}
+
+function safeNote(value?: string | null) {
+  return String(value || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(
+    /\s+/g,
+    " ",
+  ).trim().slice(0, 1500);
 }
 function editable(tx: ActivationTransaction) {
   return tx.creation_state === "created" &&

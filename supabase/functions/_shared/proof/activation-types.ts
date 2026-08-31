@@ -18,6 +18,7 @@ export interface SignerInput {
   order: number;
   entity?: string;
   capacity?: string;
+  phone?: string;
 }
 export interface SignerRecord {
   id: string;
@@ -66,6 +67,10 @@ export interface ReadinessContext {
     email: string | null;
     sort_order: number | null;
     identity_name_confirmed: boolean | null;
+    first_name?: string | null;
+    middle_name?: string | null;
+    last_name?: string | null;
+    mobile_phone?: string | null;
   }>;
   request: {
     id: string;
@@ -75,9 +80,13 @@ export interface ReadinessContext {
     appointment_time: string | null;
     appointment_timezone: string | null;
     appointment_state: string | null;
+    notes?: string | null;
+    appointment_instructions?: string | null;
+    estimate_components?: unknown;
   };
   ron: {
     number_of_signers: number | null;
+    number_of_notarizations?: number | null;
     witness_need: string | null;
     witness_count: string | null;
     witness_provider: string | null;
@@ -103,6 +112,10 @@ export interface ReadinessContext {
       processing_state: string;
       requirement: string | null;
       manual_review_reason: string | null;
+      source_request_file_id?: string | null;
+      file_name?: string | null;
+      detected_page_count?: number | null;
+      witness_required?: boolean | null;
     }
   >;
 }
@@ -118,10 +131,15 @@ export function approvedSignerInputs(context: ReadinessContext): SignerInput[] {
       );
       return {
         apsSignerReference: participant.id,
-        firstName: names[0] || undefined,
-        middleName: names.length > 2 ? names.slice(1, -1).join(" ") : undefined,
-        lastName: names.length > 1 ? names.at(-1) : undefined,
+        firstName: participant.first_name?.trim() || names[0] || undefined,
+        middleName: participant.middle_name?.trim() ||
+          (names.length > 2 ? names.slice(1, -1).join(" ") : undefined),
+        lastName: participant.last_name?.trim() ||
+          (names.length > 1 ? names.at(-1) : undefined),
         email: String(participant.email || "").trim().toLowerCase(),
+        ...(participant.mobile_phone?.trim()
+          ? { phone: participant.mobile_phone.trim() }
+          : {}),
         order: index + 1,
       };
     });
