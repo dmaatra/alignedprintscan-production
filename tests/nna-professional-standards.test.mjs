@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -29,13 +29,13 @@ test("homepage adds the approved standard without a credential badge or new sect
   assert.equal((home.match(/id="about"/g) || []).length, 1);
 });
 
-test("About page distinguishes affiliation from individual credential", () => {
-  const about = read("about.html");
-  assert.match(about, /Professional Standards &amp; Affiliations/);
-  assert.match(about, /Professional Affiliation[\s\S]*National Notary Association Member/);
-  assert.match(about, /Loan Signing Credential[\s\S]*NNA Certified Notary Signing Agent/);
-  assert.match(about, /alt="National Notary Association Member"/);
-  assert.match(about, /alt="NNA Certified Notary Signing Agent"/);
+test("the approved About destination remains the existing homepage section", () => {
+  assert.equal(existsSync(path.join(root, "about.html")), false);
+  assert.doesNotMatch(read("sitemap.xml"), /about\.html/);
+  for (const { name, html } of publicHtml.filter(({ html }) => html.includes('<footer class="site-footer footer">'))) {
+    assert.match(html, /href="(?:\.\.\/){0,2}index\.html#about">About<\/a>/, name);
+    assert.doesNotMatch(html, /href="(?:\.\.\/){0,2}about\.html">About<\/a>/, name);
+  }
 });
 
 test("Loan Signing uses the official credential name and required badge", () => {
@@ -65,11 +65,7 @@ test("every maintained canonical website footer uses the LLC legal name", () => 
   }
 });
 
-test("obvious legal-entity references and About discovery are consistent", () => {
+test("obvious legal-entity references are consistent", () => {
   assert.match(read("terms.html"), /Company Information[\s\S]*Aligned Print &(?:amp;)? Scan LLC is based/);
   assert.match(read("privacy.html"), /Aligned Print &(?:amp;)? Scan LLC values client privacy/);
-  assert.match(read("sitemap.xml"), /https:\/\/alignedprintscan\.com\/about\.html/);
-  for (const { name, html } of publicHtml.filter(({ html }) => html.includes('<footer class="site-footer footer">'))) {
-    assert.match(html, /href="(?:\.\.\/){0,2}about\.html">About<\/a>/, name);
-  }
 });

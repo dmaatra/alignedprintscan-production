@@ -14,7 +14,7 @@ const shellPages = [
 ].filter((file) => fs.existsSync(path.join(root, file)) && read(file).includes('<header class="site-header"'));
 
 test("all public pages use the same static navigation hierarchy and five-column footer", () => {
-  assert.equal(shellPages.length, 27);
+  assert.equal(shellPages.length, 26);
   for (const file of shellPages) {
     const html = read(file);
     const header = html.match(/<header class="site-header">[\s\S]*?<\/header>/)?.[0] || "";
