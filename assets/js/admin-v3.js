@@ -1239,7 +1239,18 @@
     form.addEventListener("submit", createAdminRequest);
     form.elements.existing_customer_id?.addEventListener("change", () => selectExistingWizardCustomer(form));
     form.elements.service_type.forEach((control) => control.addEventListener("change", () => { setWizardService(form); setWizardWitnessFields(form); }));
-    form.addEventListener("input", () => { setWizardRonStructuredFields(form); setWizardMobileAddonFields(form); setWizardService(form); setWizardLoanSigningFields(form); updateWizardEstimate(form); });
+    form.addEventListener("input", (event) => {
+      const name = String(event.target?.name || "");
+      if (["ron_signer_count", "ron_notarization_count", "mobile_signer_count", "mobile_notarization_count"].includes(name)) {
+        setWizardRonStructuredFields(form);
+      }
+      if (["mobile_print_addon", "mobile_scan_addon"].includes(name)) {
+        setWizardMobileAddonFields(form);
+        setWizardService(form);
+      }
+      if (["lsa_signer_count", "lsa_signing_method"].includes(name)) setWizardLoanSigningFields(form);
+      updateWizardEstimate(form);
+    });
     form.addEventListener("change", (event) => { if (event.target.name?.endsWith("_witness_need")) setWizardWitnessFields(form); const match=String(event.target.name||"").match(/^lsa_signer_same_address_(\d+)$/);if(match){const group=$(`[data-admin-lsa-address="${match[1]}"]`,form);if(group){group.hidden=event.target.checked;$$('input',group).forEach(input=>input.disabled=event.target.checked);}} setWizardRonStructuredFields(form); setWizardMobileAddonFields(form); setWizardService(form); setWizardLoanSigningFields(form); updateWizardEstimate(form); });
     $("#adminWizardNext", form).addEventListener("click", () => { if (validateWizardStep(form)) showWizardStep(form, moduleState.newOrderStep + 1, true); });
     $("#adminWizardPrevious", form).addEventListener("click", () => showWizardStep(form, moduleState.newOrderStep - 1));

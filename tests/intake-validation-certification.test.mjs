@@ -33,6 +33,9 @@ test("Admin RON and Mobile dynamic fields preserve surviving values", () => {
   assert.match(admin, /preserveAdminDynamicValues\(signerHost,/);
   assert.match(admin, /preserveAdminDynamicValues\(actHost,/);
   assert.match(admin, /preserveAdminDynamicValues\(witnessHost,/);
+  assert.match(admin, /form\.addEventListener\("input", \(event\) =>/);
+  assert.match(admin, /\["ron_signer_count", "ron_notarization_count", "mobile_signer_count", "mobile_notarization_count"\]\.includes\(name\)/);
+  assert.doesNotMatch(admin, /form\.addEventListener\("input", \(\) => \{ setWizardRonStructuredFields/);
 });
 
 test("disabled Continue state has visible customer-facing guidance", async () => {

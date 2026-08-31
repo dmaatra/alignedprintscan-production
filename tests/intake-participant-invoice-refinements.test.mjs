@@ -75,7 +75,7 @@ test("Print & Scan remains free of notarial participant requirements",async()=>{
 test("Admin New Order disables every inactive service control after dynamic fields render",async()=>{
   const admin=await read("assets/js/admin-v3.js");
   assert.match(admin,/setWizardRonStructuredFields\(form\);\s*setWizardMobileAddonFields\(form\);\s*setWizardService\(form\);/);
-  assert.match(admin,/form\.addEventListener\("input", \(\) => \{ setWizardRonStructuredFields\(form\); setWizardMobileAddonFields\(form\); setWizardService\(form\);/);
+  assert.match(admin,/form\.addEventListener\("input", \(event\) =>[\s\S]*\["mobile_print_addon", "mobile_scan_addon"\]\.includes\(name\)[\s\S]*setWizardMobileAddonFields\(form\);\s*setWizardService\(form\);/);
   assert.match(admin,/form\.addEventListener\("change",[\s\S]*setWizardRonStructuredFields\(form\); setWizardMobileAddonFields\(form\); setWizardService\(form\);/);
   assert.match(admin,/control\.disabled = !active/);
 });
