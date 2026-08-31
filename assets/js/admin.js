@@ -1629,7 +1629,15 @@ async function selectRequest(id) {
     adminClient.from("review_queue_items").select("id,blocker_key,title,detail,state").eq("service_request_id", id).eq("blocker_key", "possible_existing_customer").eq("state", "open").maybeSingle(),
   ]);
   if (!serviceDetails) {
-    detail.innerHTML = `<section class="admin-detail-section"><h3>${escapeHtml(serviceLabel(selectedRequest.service_type))} details unavailable</h3><p class="admin-muted">The request identity is preserved, but its service-specific detail record is missing. Review the request record before taking fulfillment action.</p></section>`;
+    detail.innerHTML = `<section class="admin-detail-section" data-v3-tab-target="overview"><h3>${escapeHtml(serviceLabel(selectedRequest.service_type))} details unavailable</h3><p class="admin-muted">The request identity is preserved, but its service-specific detail record is missing. Review the request record before taking fulfillment action.</p></section>
+      <section class="admin-detail-section" data-v3-tab-target="overview">
+        <div class="admin-v3-section-heading"><span class="small-label">Request Administration</span><h3>Request Visibility</h3></div>
+        <div class="status-actions archive-actions">
+          <button id="archiveRequestBtn" class="btn dark" type="button">${isArchived(selectedRequest) ? "Restore Request" : "Archive Request"}</button>
+        </div>
+        <p class="admin-muted small-admin-note">Archiving hides the request from active operations without deleting history. Fulfillment and permanent-deletion actions remain unavailable until the missing service detail is reviewed.</p>
+      </section>`;
+    $("#archiveRequestBtn", detail)?.addEventListener("click", toggleArchiveRequest);
     return;
   }
   const participants = participantResult.data || [];
