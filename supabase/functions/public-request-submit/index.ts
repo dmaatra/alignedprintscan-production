@@ -137,9 +137,12 @@ function validate(body: Record<string, unknown>, adminRequest = false) {
         !String(person.first_name || person.full_legal_name || "").trim() ||
         !String(person.last_name || person.full_legal_name || "").trim() ||
         !person.address || typeof person.address !== "object" ||
-        !String((person.address as Record<string, unknown>).line1 || "").trim() ||
-        !String((person.address as Record<string, unknown>).city || "").trim() ||
-        !String((person.address as Record<string, unknown>).state || "").trim() ||
+        !String((person.address as Record<string, unknown>).line1 || "")
+          .trim() ||
+        !String((person.address as Record<string, unknown>).city || "")
+          .trim() ||
+        !String((person.address as Record<string, unknown>).state || "")
+          .trim() ||
         !String((person.address as Record<string, unknown>).zip || "").trim()
       )
     ) {
@@ -150,7 +153,11 @@ function validate(body: Record<string, unknown>, adminRequest = false) {
     if (
       String(detail.signing_method || "") === "ron" &&
       signers.some((person) => !String(person.email || "").includes("@"))
-    ) throw new Error("Every remote online Loan Signing signer requires an individual email address.");
+    ) {
+      throw new Error(
+        "Every remote online Loan Signing signer requires an individual email address.",
+      );
+    }
   }
   return { customer, request, detail, participants, acts, files, service };
 }
@@ -176,10 +183,11 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: "Method not allowed." }, 405);
   }
   let requestId = "";
+  let adminRequest = false;
   const storedPaths: string[] = [];
   try {
     const body = cleanObject(await req.json());
-    const adminRequest = body.admin_request === true;
+    adminRequest = body.admin_request === true;
     if (adminRequest) await requireProofAdmin(req);
     const input = validate(body, adminRequest);
     const requestPayload = allowed(input.request, [
@@ -531,6 +539,11 @@ Deno.serve(async (req) => {
       ok: false,
       error:
         "We could not submit your request. Please try again or contact Aligned Print & Scan.",
+      ...(adminRequest
+        ? {
+          admin_detail: error instanceof Error ? error.message : String(error),
+        }
+        : {}),
     }, 400);
   }
 });
