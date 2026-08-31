@@ -401,7 +401,7 @@ Deno.test("definitively rejected signer configuration can be corrected safely", 
   assertEquals(x.s.configureCalls, 1);
   assertEquals(result.signers[0].configurationState, "configured");
 });
-Deno.test("rejected primary signer can reconcile by exact provider email", async () => {
+Deno.test("rejected primary signer email alone cannot bypass enrichment retry", async () => {
   const x = setup();
   x.r.s = [{
     ...signer(),
@@ -431,8 +431,8 @@ Deno.test("rejected primary signer can reconcile by exact provider email", async
       email: "signer@example.test",
     }],
   }, admin) as { signers: Array<{ configurationState: string }> };
-  assertEquals(x.s.configureCalls, 0);
-  assertEquals(x.r.s[0].proof_signer_id, "si_existing");
+  assertEquals(x.s.configureCalls, 1);
+  assertEquals(x.r.s[0].proof_signer_id, "si_0");
   assertEquals(result.signers[0].configurationState, "configured");
 });
 Deno.test("ambiguous signer result retained", async () => {

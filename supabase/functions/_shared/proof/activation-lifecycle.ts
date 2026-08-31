@@ -158,26 +158,11 @@ export class ProofActivationLifecycle {
           "Rejected signer claims no longer match the approved APS signer set.",
         );
       }
-      const provider = await this.service.getTransaction(
-        tx.proof_transaction_id!,
-      );
-      const providerSigners = provider.signers ?? [];
-      if (
-        providerSigners.length === existing.length &&
-        existing.every((row) => this.providerMatch(row, providerSigners))
-      ) {
-        const recovered = await this.persistProvider(
-          existing,
-          providerSigners,
-          admin,
-        );
-        await this.repo.updateTransaction(tx.id, {
-          signer_configuration_state: "configured",
-          updated_by: admin,
-        });
-        await this.audit(tx, "configure_signers", "succeeded", admin);
-        return { kind: "signers", signers: recovered.map(signerProjection) };
-      }
+      // A provider 4xx is definitive: the rejected update was not applied.
+      // The original draft still contains its email-only primary signer, so
+      // email equality cannot prove that names, external IDs, scheduling, or
+      // operator instructions were configured. Deliberately retry the linked
+      // draft instead of falsely reconciling that seed signer as complete.
       claimed = [];
       for (const row of existing) {
         claimed.push(
