@@ -38,6 +38,11 @@ test("Admin RON and Mobile dynamic fields preserve surviving values", () => {
   assert.doesNotMatch(admin, /form\.addEventListener\("input", \(\) => \{ setWizardRonStructuredFields/);
 });
 
+test("Admin New Order surfaces the safe Edge Function error detail", () => {
+  assert.match(admin, /requestError\?\.context\?\.clone\?\.\(\)\.json\?\.\(\)/);
+  assert.match(admin, /detail\?\.error\?\.message\|\|detail\?\.error\|\|detail\?\.message\|\|message/);
+});
+
 test("disabled Continue state has visible customer-facing guidance", async () => {
   const pricing = await readFile(new URL("../pricing.html", import.meta.url), "utf8");
   assert.match(pricing, /id="wizardValidationGuidance"[^>]*role="status"/);
