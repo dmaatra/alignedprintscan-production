@@ -1,5 +1,6 @@
 import { customerPortalUrl, emailButton, recipientGreeting, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
 import { deliverCustomerCommunication, safeDeliveryError } from "../_shared/communication-history.mjs";
+import { isReservedSyntheticRecipient } from "../_shared/synthetic-recipient.ts";
 
 // Aligned Print & Scan — New request notification emails
 // Sends a branded customer confirmation and an admin alert to hello@alignedprintscan.com.
@@ -73,6 +74,18 @@ Deno.serve(async (req) => {
     }
 
     if (!customer.email) throw new Error("Customer email missing.");
+
+    if (isReservedSyntheticRecipient(customer.email)) {
+      return json({
+        ok: true,
+        suppressed: true,
+        suppression_reason: "reserved_synthetic_recipient",
+        customer_email_id: null,
+        admin_email_id: null,
+        admin_alert_sent: false,
+        admin_alert_error: null,
+      });
+    }
 
     const templateResponse = await supabaseFetch("message_templates?select=*&template_key=eq.request_received&active=eq.true&limit=1");
     const template = templateResponse.ok ? (await templateResponse.json())?.[0] : null;

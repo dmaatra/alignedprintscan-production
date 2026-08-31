@@ -1,5 +1,6 @@
 import { requireProofAdmin } from "../_shared/proof/admin-auth.ts";
 import { detectPdfPageCount } from "../_shared/pdf-page-count.ts";
+import { normalizedIntakeParticipants } from "../_shared/intake-contract.ts";
 
 /** Atomic-enough, server-authorized intake orchestration.
  * Browser callers never receive service-role credentials or direct table write access.
@@ -268,12 +269,14 @@ Deno.serve(async (req) => {
   }
   let requestId = "";
   let adminRequest = false;
+  let failureStage = "request_validation";
   const storedPaths: string[] = [];
   try {
     const body = cleanObject(await req.json());
     adminRequest = body.admin_request === true;
     if (adminRequest) await requireProofAdmin(req);
     const input = validate(body, adminRequest);
+    failureStage = "request_creation";
     const requestPayload = allowed(input.request, [
       "service_type",
       "status",
@@ -327,6 +330,7 @@ Deno.serve(async (req) => {
     const result = Array.isArray(resolution) ? resolution[0] : resolution;
     requestId = String(result?.request_id || "");
     if (!requestId) throw new Error("The request record could not be created.");
+    failureStage = "estimate_persistence";
     await rows(
       await api(`service_requests?id=eq.${encodeURIComponent(requestId)}`, {
         method: "PATCH",
@@ -475,6 +479,7 @@ Deno.serve(async (req) => {
       },
     };
     const config = detailConfig[input.service];
+    failureStage = "service_detail_persistence";
     await rows(
       await api(config.table, {
         method: "POST",
@@ -486,31 +491,18 @@ Deno.serve(async (req) => {
     );
 
     if (input.participants.length) {
+      failureStage = "participant_persistence";
       await rows(
         await api("request_participants", {
           method: "POST",
-          body: JSON.stringify(input.participants.map((person, index) => ({
-            service_request_id: requestId,
-            ...allowed(person, [
-              "participant_type",
-              "first_name",
-              "middle_name",
-              "last_name",
-              "full_legal_name",
-              "email",
-              "address",
-              "identity_name_confirmed",
-              "witness_source",
-              "quantity",
-              "sort_order",
-            ]),
-            mobile_phone: person.phone || person.mobile_phone || null,
-            sort_order: Number(person.sort_order ?? index),
-          }))),
+          body: JSON.stringify(
+            normalizedIntakeParticipants(input.participants, requestId),
+          ),
         }),
       );
     }
     if (input.acts.length) {
+      failureStage = "notarial_act_persistence";
       await rows(
         await api("request_notarial_acts", {
           method: "POST",
@@ -527,6 +519,7 @@ Deno.serve(async (req) => {
     }
 
     for (const file of input.files) {
+      failureStage = "document_persistence";
       const name = safeName(file.name);
       const mime = String(file.type || "application/octet-stream");
       const raw = Uint8Array.from(
@@ -590,6 +583,7 @@ Deno.serve(async (req) => {
         }),
       );
     }
+    failureStage = "timeline_persistence";
     await rows(
       await api("request_timeline_events", {
         method: "POST",
@@ -634,6 +628,7 @@ Deno.serve(async (req) => {
     }
     console.error("public_request_submit_failed", {
       requestId: requestId || null,
+      stage: failureStage,
       message: error instanceof Error ? error.message : String(error),
       rollbackResult,
       rollbackError,
