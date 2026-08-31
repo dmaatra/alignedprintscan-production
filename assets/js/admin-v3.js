@@ -359,6 +359,15 @@
       activateTab("communication");
     });
 
+    $("#workspaceBackToRequests")?.addEventListener("click", () => {
+      $(".admin-v3-workspace")?.classList.remove("has-selection");
+      const selectedCard = state.selectedRequestId
+        ? $(`#requestList .request-row[data-id="${CSS.escape(state.selectedRequestId)}"]`)
+        : null;
+      window.scrollTo({ top: 0, behavior: "auto" });
+      selectedCard?.focus();
+    });
+
     $("#newRequestButton")?.addEventListener("click", () => {
       window.open("pricing.html#request", "_blank", "noopener");
     });
