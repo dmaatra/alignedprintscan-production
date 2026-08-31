@@ -9,6 +9,10 @@ const migration = await readFile(
   ),
   "utf8",
 );
+const admin = await readFile(
+  new URL("../assets/js/admin.js", import.meta.url),
+  "utf8",
+);
 
 test("Loan Signing workspace grants authenticated administrators read-only detail access", () => {
   assert.match(
@@ -21,4 +25,11 @@ test("Loan Signing workspace grants authenticated administrators read-only detai
     migration,
     /grant (?:insert|update|delete|all).*authenticated/i,
   );
+});
+
+test("Loan Signing overview uses its own workflow guide without Print fallback", () => {
+  assert.match(admin, /s === "loan_signing" \|\| s\.includes\("loan"\)/);
+  assert.match(admin, /Loan Signing Workflow/);
+  assert.match(admin, /\["under_review", "Assignment Received"\]/);
+  assert.match(admin, /\["appointment_confirmed", "Signing Scheduled"\]/);
 });
