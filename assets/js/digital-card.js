@@ -32,7 +32,7 @@
         "Loan Signing Agent",
       ]),
       supportingCredentials: Object.freeze([
-        "NNA Certified Loan Signing Agent",
+        "NNA Certified Notary Signing Agent",
         "Bonded & Insured",
       ]),
       organization: "Aligned Print & Scan",
@@ -48,7 +48,7 @@
         "Print / Scan / Document Services",
       ]),
       requestUrl: "pricing.html?utm_source=doneisha_professional_card&utm_medium=digital_card#request",
-      note: "NNA Certified Loan Signing Agent | Bonded & Insured",
+      note: "NNA Certified Notary Signing Agent | Bonded & Insured",
     }),
   });
   const PROFESSIONALS = Object.freeze({ doneisha: CARD_PROFILES.doneisha });

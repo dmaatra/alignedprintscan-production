@@ -14,7 +14,7 @@ const shellPages = [
 ].filter((file) => fs.existsSync(path.join(root, file)) && read(file).includes('<header class="site-header"'));
 
 test("all public pages use the same static navigation hierarchy and five-column footer", () => {
-  assert.equal(shellPages.length, 26);
+  assert.equal(shellPages.length, 27);
   for (const file of shellPages) {
     const html = read(file);
     const header = html.match(/<header class="site-header">[\s\S]*?<\/header>/)?.[0] || "";
@@ -26,7 +26,7 @@ test("all public pages use the same static navigation hierarchy and five-column 
     assert.match(footer, /<h3>Secure Document &amp; Notary Solutions<\/h3>/);
     assert.match(footer, />Resource Center<\/a>/);
     assert.match(footer, /class="footer-business-login">Business Portal Sign In<\/a>/);
-    assert.match(html, /styles\.css\?v=20260820-release-9-2-1-production/);
+    assert.match(html, /styles\.css\?v=20260831-nna-credentials/);
     assert.match(
       html,
       file === "pricing.html"
