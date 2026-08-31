@@ -59,6 +59,10 @@ test("admin core requests survive protected Loan Signing enrichment failures", (
   assert.match(admin, /Promise\.allSettled/);
   assert.match(admin, /loan_signing_enrichment_error/);
   assert.match(admin, /Requests could not be loaded\. Refresh your session and try again\./);
+  assert.match(admin, /details unavailable[\s\S]*Request Visibility/);
+  assert.match(admin, /details unavailable[\s\S]*archiveRequestBtn/);
+  assert.match(admin, /Fulfillment and permanent-deletion actions remain unavailable/);
+  assert.match(admin, /\$\("#archiveRequestBtn", detail\)\?\.addEventListener\("click", toggleArchiveRequest\)/);
   assert.match(module, /Core requests remain available/);
   assert.match(edge, /requireRelease2Staff/);
   assert.match(edge, /serviceRows/);
