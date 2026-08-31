@@ -63,7 +63,6 @@ Deno.test("Proof primary signer update preserves the draft signer shape", async 
         middle_name: undefined,
         last_name: "Signer",
         external_id: "aps:signer:1",
-        order: "1",
         entity: undefined,
         capacity: undefined,
       },
