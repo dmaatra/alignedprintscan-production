@@ -1309,7 +1309,14 @@
       }
       const files=await Promise.all(Array.from(form.elements.order_documents?.files||[]).map(adminFilePayload));
       const {data:resolution,error:requestError}=await adminClient.functions.invoke("public-request-submit",{body:{admin_request:true,customer:customerPayload,request:requestPayload,service_detail:serviceDetail,participants,notarial_acts:notarialActs,files}});
-      if(requestError||!resolution?.request_id)throw new Error(resolution?.error||requestError?.message||"The request could not be created.");
+      if(requestError||!resolution?.request_id){
+        let message=resolution?.error||requestError?.message||"The request could not be created.";
+        try {
+          const detail=await requestError?.context?.clone?.().json?.();
+          message=detail?.error?.message||detail?.error||detail?.message||message;
+        } catch (_) { /* Keep the safe client fallback when the response body is unavailable. */ }
+        throw new Error(message);
+      }
       const request={id:resolution.request_id};
       if(wizardValue(form,"email")){const reference=`APS-${request.id.slice(0,8).toUpperCase()}`;const {error:messageError}=await adminClient.functions.invoke("send-request-email",{body:{request_id:request.id,reference_number:reference,email:wizardValue(form,"email"),first_name:wizardValue(form,"first_name"),last_name:wizardValue(form,"last_name")}});if(messageError)console.warn("Admin-created request acknowledgment failed",messageError);}
       const calendarDate=moduleState.newOrderCalendarDate;
