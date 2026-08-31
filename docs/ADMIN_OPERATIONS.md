@@ -70,6 +70,9 @@ This sequence is **CONFIRMED IN CODE** and **CONFIRMED IN DOCUMENTATION**.
 
 - **CONFIRMED IN CODE:** The dashboard subscribes to `service_requests` and `support_tickets` via Supabase Realtime and reloads on changes.
 - **CONFIRMED IN CODE:** A soft browser-generated sound can play on new requests; browser interaction may be required before audio is allowed.
+- **CONFIRMED IN CODE:** The Requests page count is the count of unarchived request cards in the loaded Requests context. The sidebar Requests badge is separate: it counts active customer submissions from the website or Business Portal that have no company-level first authorized APS operator view. Admin-created orders, structured test/synthetic sources, pre-ledger historical requests, completed/cancelled/declined/refunded/void requests, and archived requests do not count.
+- **CONFIRMED IN CODE:** Opening a qualifying request records the first APS operator view without changing workflow, Review Queue, document, quote, payment, fulfillment, communication, or notification state. The existing `admin_request_views` ledger is reused; no separate unread system is introduced.
+- **CONFIRMED IN CODE:** The sidebar count refreshes after request-list changes, first open, Admin navigation, mobile drawer opening, browser focus/visibility return, and browser reload. The notification bell remains a separate event-read system, and Review Queue remains a separate operational-action system.
 - **PRODUCTION VERIFICATION REQUIRED:** Whether both tables are enabled in the production Realtime publication.
 
 ## Known Phase 4.1 gaps

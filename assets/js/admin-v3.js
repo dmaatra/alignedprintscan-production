@@ -284,14 +284,26 @@
     box.innerHTML = unique.length ? unique.map((item) => `<button type="button" role="option" data-search-request="${escapeSearchResult(item.id)}" data-search-tab="${escapeSearchResult(item.tab)}"><span>${escapeSearchResult(item.type)}</span><strong>${escapeSearchResult(item.title)}</strong><small>${escapeSearchResult(item.detail)}</small></button>`).join("") : '<p>No matching requests, customers, or invoices.</p>';
   }
 
+  let requestCountRefreshSequence = 0;
+
   /** Keep request counters in the new shell synchronized with rendered cards. */
   async function syncRequestCount() {
+    const refreshSequence = ++requestCountRefreshSequence;
     const count = $$("#requestList .request-row").filter((row) => row.dataset.archived !== "true").length;
     $("#requestCountBadge").textContent = String(count);
     const { data, error } = await adminClient.rpc("admin_unopened_request_count");
-    const unopened = error ? 0 : Number(data || 0);
+    if (refreshSequence !== requestCountRefreshSequence) return;
     const badge = $("#navRequestCount");
-    if (badge) { badge.textContent = String(unopened); badge.hidden = unopened === 0; }
+    if (error) {
+      console.warn("Awaiting-initial-review count could not be refreshed:", error);
+      return;
+    }
+    const unopened = Number(data || 0);
+    if (badge) {
+      badge.textContent = String(unopened);
+      badge.hidden = unopened === 0;
+      badge.setAttribute("aria-label", `${unopened} new request${unopened === 1 ? "" : "s"} awaiting initial APS review`);
+    }
   }
 
   /** Wire persistent navigation and controls. */
@@ -339,6 +351,7 @@
       const sidebar = $("#adminSidebar");
       const isOpen = sidebar.classList.toggle("is-open");
       event.currentTarget.setAttribute("aria-expanded", String(isOpen));
+      if (isOpen) syncRequestCount();
     });
 
     document.addEventListener("keydown", (event) => {
@@ -1366,6 +1379,7 @@
   }
   async function showAdminView(view) {
     moduleState.activeView=view;
+    syncRequestCount();
     const isRequests=view==="requests";
     appView.hidden=!isRequests; moduleView.hidden=isRequests;
     if(!isRequests){const labels=moduleTitles[view]||moduleTitles.dashboard;$("#moduleEyebrow").textContent=labels[0];$("#moduleTitle").textContent=labels[1];$("#moduleSubtitle").textContent=labels[2];moduleContent.innerHTML='<div class="admin-v3-module-card"><p>Loading…</p></div>';await loadCommunicationData(view);if(moduleState.activeView!==view)return;moduleContent.innerHTML=view==="scripts"?await renderScripts():renderModule(view);if(view==="sessions")moduleContent.insertAdjacentHTML("afterbegin",ronProofDashboardLink());bindModuleActions();}
@@ -1378,6 +1392,8 @@
   window.addEventListener("aps:requests-loading",()=>{moduleState.requestsState="loading";moduleState.requestsError="";if(moduleState.activeView==="calendar")refreshCalendarView();});
   window.addEventListener("aps:requests-error",event=>{moduleState.requestsState="error";moduleState.requestsError=event.detail?.message||"Requests could not be loaded.";if(moduleState.activeView==="calendar")refreshCalendarView();});
   window.addEventListener("aps:requests-loaded",event=>{moduleState.requests=event.detail.requests||[];moduleState.requestsState="ready";moduleState.requestsError="";if(moduleState.activeView!=="requests")showAdminView(moduleState.activeView);});
+  window.addEventListener("focus",()=>syncRequestCount());
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)syncRequestCount();});
   window.addEventListener("aps:support-loaded",event=>{moduleState.supportTickets=event.detail.supportTickets||[];if(moduleState.activeView==="support")showAdminView("support");});
   $("#returnToRequests")?.addEventListener("click",()=>showAdminView("requests"));
   $("#newRequestButton")?.replaceWith($("#newRequestButton").cloneNode(true));
