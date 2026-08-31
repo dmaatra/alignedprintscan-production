@@ -202,13 +202,34 @@ export class ProofActivationLifecycle {
         })),
         draftEnrichment(tx, ctx, signers),
       );
+      const providerSigners = provider.signers ?? [];
+      const stagedEmail = tx.pending_primary_signer_email?.toLowerCase();
+      const stagedLink = tx.pending_primary_signer_access_link;
+      if (stagedEmail && stagedLink) {
+        const stagedIndexes = providerSigners.flatMap((signer, index) =>
+          signer.email === stagedEmail ? [index] : []
+        );
+        if (
+          stagedIndexes.length === 1 &&
+          !providerSigners[stagedIndexes[0]].accessLink
+        ) {
+          const stagedIndex = stagedIndexes[0];
+          providerSigners[stagedIndex] = {
+            ...providerSigners[stagedIndex],
+            accessLink: stagedLink,
+            accessLinkPresent: true,
+          };
+        }
+      }
       const updated = await this.persistProvider(
         claimed,
-        provider.signers ?? [],
+        providerSigners,
         admin,
       );
       await this.repo.updateTransaction(tx.id, {
         signer_configuration_state: "configured",
+        pending_primary_signer_access_link: null,
+        pending_primary_signer_email: null,
         updated_by: admin,
       });
       await this.audit(tx, "configure_signers", "succeeded", admin);
