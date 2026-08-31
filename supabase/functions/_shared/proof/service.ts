@@ -30,6 +30,7 @@ export interface ProofProviderSigner {
   email: string | null;
   status: string | null;
   accessLinkPresent: boolean;
+  accessLink: string | null;
 }
 
 export interface ConfigureSignerInput {
@@ -226,6 +227,38 @@ export class ProofService {
         }
         : {}),
     }));
+    const enrichmentPayload = {
+      ...(enrichment.transactionName
+        ? { transaction_name: enrichment.transactionName }
+        : {}),
+      ...(enrichment.notaryMeetingTime
+        ? { notary_meeting_time: enrichment.notaryMeetingTime }
+        : {}),
+      ...(enrichment.notaryInstructions
+        ? {
+          notary_instructions: [{
+            notary_note: enrichment.notaryInstructions,
+          }],
+        }
+        : {}),
+      ...(enrichment.messageToSigner
+        ? { message_to_signer: enrichment.messageToSigner }
+        : {}),
+    };
+    if (Object.keys(enrichmentPayload).length) {
+      // Proof's production Business API validates transaction-level metadata
+      // independently from primary-signer replacement. Keep the two supported
+      // update shapes separate so a failed enrichment remains review-blocking
+      // without corrupting the linked draft or creating another transaction.
+      await this.client.request<unknown>(
+        `/v1/transactions/${encodeURIComponent(transactionId)}`,
+        {
+          method: "PUT",
+          retry: false,
+          json: { draft: true, ...enrichmentPayload },
+        },
+      );
+    }
     const data = await this.client.request<unknown>(
       `/v1/transactions/${encodeURIComponent(transactionId)}`,
       {
@@ -233,22 +266,6 @@ export class ProofService {
         retry: false,
         json: {
           draft: true,
-          ...(enrichment.transactionName
-            ? { transaction_name: enrichment.transactionName }
-            : {}),
-          ...(enrichment.notaryMeetingTime
-            ? { notary_meeting_time: enrichment.notaryMeetingTime }
-            : {}),
-          ...(enrichment.notaryInstructions
-            ? {
-              notary_instructions: [{
-                notary_note: enrichment.notaryInstructions,
-              }],
-            }
-            : {}),
-          ...(enrichment.messageToSigner
-            ? { message_to_signer: enrichment.messageToSigner }
-            : {}),
           // Drafts created with Proof's primary `signer` field must continue
           // to use that field when APS enriches a single signer. Sending a
           // one-item `signers` array attempts to add a second signer instead.
@@ -464,21 +481,43 @@ export function sanitizeTransaction(
       ? object.signers.map(sanitizeSigner)
       : object.signer && typeof object.signer === "object"
       ? [sanitizeSigner(object.signer)]
+      : object.signer_info && typeof object.signer_info === "object"
+      ? [
+        sanitizeSigner(object.signer_info),
+        ...(object.cosigner_info && typeof object.cosigner_info === "object"
+          ? [sanitizeSigner(object.cosigner_info)]
+          : []),
+      ]
       : [],
   };
 }
 
 function sanitizeSigner(value: unknown): ProofProviderSigner {
   const signer = asObject(value);
+  const accessLink = safeProofAccessLink(
+    signer.transaction_access_link ?? signer.access_link,
+  );
   return {
     id: safeString(signer.id ?? signer.signer_id),
     externalId: safeString(signer.external_id),
     email: safeString(signer.email)?.toLowerCase() ?? null,
     status: safeString(signer.status),
-    accessLinkPresent: Boolean(
-      signer.transaction_access_link ?? signer.access_link,
-    ),
+    accessLinkPresent: Boolean(accessLink),
+    accessLink,
   };
+}
+
+function safeProofAccessLink(value: unknown): string | null {
+  const text = safeString(value);
+  if (!text) return null;
+  try {
+    const url = new URL(text);
+    return url.protocol === "https:" && url.hostname === "app.proof.com"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function asObject(value: unknown): Record<string, unknown> {

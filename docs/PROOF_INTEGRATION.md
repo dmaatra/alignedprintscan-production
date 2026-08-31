@@ -116,7 +116,9 @@ Increment 1 does not use Supabase JWT or service-role authentication for the pro
 
 ## Increment 4 signer and activation lifecycle
 
-**CONFIRMED IN CODE:** Signer and activation commands route from `proof-admin-transaction` through `ProofActivationLifecycle`, `ProofService`, and the sole Proof transport. Draft signer updates and activation disable retries. Proof owns Version 1 invitation email; `suppress_email` is always false. Phone numbers and access links are not accepted or exposed.
+**CONFIRMED IN CODE:** Signer and activation commands route from `proof-admin-transaction` through `ProofActivationLifecycle`, `ProofService`, and the sole Proof transport. Draft signer updates and activation disable retries. Proof owns Version 1 invitation email; `suppress_email` is always false. Valid signer phone numbers may be mapped without enabling SMS authentication or secondary ID requirements.
+
+**CONFIRMED IN CODE:** Proof signer transaction-access URLs are accepted only from the exact HTTPS `app.proof.com` signer portal, associated to the matching signer by external ID or unique email, and stored in the service-role-only `proof_signers` table. Create/configure responses and `Sync Proof Status` can backfill the value. The Admin Proof control panel may display the signer-scoped URL to an authenticated APS administrator; command projections, public request-status responses, and the Customer Portal do not receive it. The `Signer Access` fulfillment stage remains true when a safe link is present or when Proof has reported that its invitation was sent.
 
 The readiness evaluator fails closed on ownership, draft state, ambiguity/manual review, signer count/configuration, processed documents, witness mapping, outstanding non-void/non-cancelled invoice balances, confirmed appointment fields, IANA timezone, prior activation, and administrator confirmation. It never modifies APS financial, scheduling, or workflow state.
 

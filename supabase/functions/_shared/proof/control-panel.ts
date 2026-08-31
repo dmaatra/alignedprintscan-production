@@ -61,7 +61,7 @@ export class ProofControlPanel {
     const [signers, assets, invoices] = await Promise.all([
       integrationId
         ? this.rows(
-          `proof_signers?select=id,aps_signer_reference,signer_position,first_name,middle_name,last_name,email,configuration_state,invitation_state,access_link_present,aps_status,proof_status,manual_review_reason,configured_at,opened_at,completed_at,last_synced_at&proof_transaction_record_id=eq.${integrationId}&order=signer_position.asc`,
+          `proof_signers?select=id,aps_signer_reference,signer_position,first_name,middle_name,last_name,email,configuration_state,invitation_state,access_link_present,access_link,aps_status,proof_status,manual_review_reason,configured_at,opened_at,completed_at,last_synced_at&proof_transaction_record_id=eq.${integrationId}&order=signer_position.asc`,
         )
         : [],
       integrationId
