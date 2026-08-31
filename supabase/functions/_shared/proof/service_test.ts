@@ -139,7 +139,7 @@ Deno.test("Proof draft signer update carries supported handoff enrichment", asyn
     notaryInstructions: "APS REQUEST: APS-12345678",
     messageToSigner: "Your Remote Online Notarization is ready.",
   });
-  assertEquals(requests.length, 2);
+  assertEquals(requests.length, 1);
   const payload = requests[0] as Record<string, unknown>;
   assertEquals(payload.transaction_name, "APS-12345678 — RON — Signer");
   assertEquals(payload.notary_meeting_time, "2026-09-15T10:00:00-05:00");
@@ -150,8 +150,7 @@ Deno.test("Proof draft signer update carries supported handoff enrichment", asyn
     payload.message_to_signer,
     "Your Remote Online Notarization is ready.",
   );
-  const signerPayload = requests[1] as Record<string, unknown>;
-  assertEquals((signerPayload.signer as Record<string, unknown>).phone, {
+  assertEquals((payload.signer as Record<string, unknown>).phone, {
     country_code: "1",
     number: "4695550101",
   });

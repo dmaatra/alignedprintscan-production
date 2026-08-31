@@ -245,20 +245,6 @@ export class ProofService {
         ? { message_to_signer: enrichment.messageToSigner }
         : {}),
     };
-    if (Object.keys(enrichmentPayload).length) {
-      // Proof's production Business API validates transaction-level metadata
-      // independently from primary-signer replacement. Keep the two supported
-      // update shapes separate so a failed enrichment remains review-blocking
-      // without corrupting the linked draft or creating another transaction.
-      await this.client.request<unknown>(
-        `/v1/transactions/${encodeURIComponent(transactionId)}`,
-        {
-          method: "PUT",
-          retry: false,
-          json: { draft: true, ...enrichmentPayload },
-        },
-      );
-    }
     const data = await this.client.request<unknown>(
       `/v1/transactions/${encodeURIComponent(transactionId)}`,
       {
@@ -266,9 +252,12 @@ export class ProofService {
         retry: false,
         json: {
           draft: true,
+          ...enrichmentPayload,
           // Drafts created with Proof's primary `signer` field must continue
           // to use that field when APS enriches a single signer. Sending a
           // one-item `signers` array attempts to add a second signer instead.
+          // Proof also validates transaction metadata in the context of the
+          // draft's signer set, so keep both in this single supported update.
           ...(providerSigners.length === 1
             ? { signer: providerSigners[0] }
             : { signers: providerSigners }),
