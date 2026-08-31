@@ -995,6 +995,10 @@ button {
   transform: translateY(0);
 }
 
+.admin-v3-workspace-back {
+  display: none;
+}
+
 /* ========================================================================== 
    Responsive behavior
    ========================================================================== */
@@ -1143,6 +1147,25 @@ button {
   .admin-v3-workspace-header {
     min-height: auto;
     padding: 14px 16px;
+  }
+
+  .admin-v3-workspace-back {
+    align-items: center;
+    align-self: flex-start;
+    background: transparent;
+    border: 0;
+    color: var(--navy, #161c4d);
+    cursor: pointer;
+    display: inline-flex;
+    font: inherit;
+    font-weight: 800;
+    gap: 7px;
+    padding: 2px 0;
+  }
+
+  .admin-v3-workspace-back:focus-visible {
+    outline: 3px solid rgba(200, 169, 107, 0.5);
+    outline-offset: 4px;
   }
 
   .admin-v3-workspace-tabs {

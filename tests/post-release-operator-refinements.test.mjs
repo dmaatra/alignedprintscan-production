@@ -66,7 +66,7 @@ test("conversion migration is backward-compatible and admin-authorized",async()=
 test("production pages load the post-release frontend asset version",async()=>{
   const admin=await read("admin-dashboard.html");
   assert.match(admin,/admin\.js\?v=20260831-loan-workflow-guide/);
-  assert.match(admin,/admin-v3\.js\?v=20260831-loan-service-label/);
+  assert.match(admin,/admin-v3\.js\?v=20260831-admin-nav-security/);
   for(const page of ["index.html","mobile-notary.html","print-scan.html","remote-online-notary.html","pricing.html","success.html","support.html","accessibility.html","privacy.html","faq.html","terms.html"]){
     assert.match(await read(page),page==="pricing.html"?/script\.js\?v=20260830-intake-validation-repair/:/script\.js\?v=20260820-release-9-2-1-production/,page);
   }
