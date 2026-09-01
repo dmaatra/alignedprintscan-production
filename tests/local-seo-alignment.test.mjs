@@ -32,6 +32,14 @@ test("core service metadata is distinct, branded, and geographically aligned", (
   }
 });
 
+test("the sitemap includes every core canonical service and excludes the removed About route", () => {
+  const sitemap = read("sitemap.xml");
+  for (const canonical of Object.values(corePages)) {
+    assert.match(sitemap, new RegExp(canonical.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.doesNotMatch(sitemap, /about\.html/);
+});
+
 test("local physical services establish Waxahachie and Ellis County relevance", () => {
   for (const file of ["mobile-notary.html", "loan-signing.html", "print-scan.html"]) {
     const html = read(file);
