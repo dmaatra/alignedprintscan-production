@@ -1949,7 +1949,7 @@ async function selectRequest(id) {
           <strong>Loading archived customer updates…</strong>
         </div>
       </div>
-      ${requestMessages.length ? `<ul class="admin-file-list communication-history-list">${requestMessages.map(message => `<li><div><span class="small-label">${escapeHtml(statusLabel(message.source_type || (message.created_by ? "admin" : "automatic")))} · ${escapeHtml(message.channel || "email")}${message.template_key ? ` · ${escapeHtml(message.template_key)}` : ""}</span><strong>${escapeHtml(message.subject)}</strong><small>${escapeHtml(message.recipient)} · ${escapeHtml(statusLabel(message.delivery_state))} · ${new Date(message.sent_at || message.failed_at || message.attempted_at || message.created_at).toLocaleString()}</small>${message.error_message ? `<small class="communication-error">${escapeHtml(message.error_message)}</small>` : ""}</div><details><summary>Inspect rendered message</summary><iframe class="communication-rendered-preview" sandbox title="Rendered customer message" srcdoc="${escapeHtml(message.rendered_html || `<pre>${escapeHtml(message.rendered_text || "No rendered content retained.")}</pre>`)}"></iframe>${message.provider_message_id ? `<small>Provider ID: ${escapeHtml(message.provider_message_id)}</small>` : ""}</details></li>`).join("")}</ul>` : '<p class="admin-muted">No customer communications logged for this request.</p>'}
+      ${requestMessages.length ? `<ul class="admin-file-list communication-history-list">${requestMessages.map(message => `<li><div><span class="small-label">${escapeHtml(statusLabel(message.source_type || (message.created_by ? "admin" : "automatic")))} · ${escapeHtml(message.channel || "email")}${message.template_key ? ` · ${escapeHtml(message.template_key)}` : ""}</span><strong>${escapeHtml(message.subject)}</strong><small>${escapeHtml(message.recipient)} · ${escapeHtml(statusLabel(message.delivery_state))} · ${new Date(message.sent_at || message.failed_at || message.attempted_at || message.created_at).toLocaleString()}</small>${message.error_message ? `<small class="communication-error">${escapeHtml(message.error_message)}</small>` : ""}</div><details><summary>Inspect rendered message</summary><iframe class="communication-rendered-preview" sandbox title="Rendered customer message" srcdoc="${escapeHtml(message.rendered_html || `<pre>${escapeHtml(message.rendered_text || "No rendered content retained.")}</pre>`)}"></iframe>${message.provider_message_id ? `<small>Provider ID: ${escapeHtml(message.provider_message_id)}</small><button type="button" class="btn dark verify-email-provider" data-message-id="${escapeHtml(message.id)}">Verify Email Provider</button>` : ""}</details></li>`).join("")}</ul>` : '<p class="admin-muted">No customer communications logged for this request.</p>'}
     </section>
 
     <section class="admin-detail-section" data-v3-tab-target="overview">
@@ -1971,6 +1971,15 @@ async function selectRequest(id) {
   }));
   $("#messageTemplateSelect", detail)?.addEventListener("change", () => applyMessageTemplate(messageTemplates, customer, ref));
   $("#previewMessageBtn", detail)?.addEventListener("click", previewMessage);
+  $$(".verify-email-provider", detail).forEach(button => button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      const {data,error} = await adminClient.functions.invoke("send-message", {body:{action:"delivery_status",request_id:id,message_id:button.dataset.messageId}});
+      if (error || !data?.ok) throw new Error(data?.error || "APS provider verification failed.");
+      button.textContent = `Provider: ${data.delivery_event} · ${data.has_secure_portal_link ? "Secure link" : "Original link"}`;
+    } catch (error) { button.textContent = error.message; }
+    finally { button.disabled = false; }
+  }));
   $("#sendMessageBtn", detail)?.addEventListener("click", () => sendComposedMessage(false));
   $$(".edit-participant-btn", detail).forEach(button => button.addEventListener("click", () => openParticipantEditor(participants.find(person => person.id === button.dataset.participantId))));
   $(".add-participant-btn", detail)?.addEventListener("click", () => openParticipantEditor(null));

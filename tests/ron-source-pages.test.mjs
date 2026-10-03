@@ -55,27 +55,27 @@ test("RON source totals exclude returns/copies/audits and source changes still b
     await db.query("update request_files set detected_page_count=3 where id=$1",[source]);
     assert.equal((await db.query("select * from review_queue_items where service_request_id=$1 and blocker_key='pdf_page_count_changed_after_quote' and state='open'",[ron])).rows.length,1);
     // Exercise the exact approval-gated proposal only against isolated fixtures.
-    const incident = "aca9ee54-fb45-4042-8cf4-4b3a6d906d22";
+    const incident = "10000000-0000-4000-8000-000000000001";
     await db.query("insert into service_requests(id,service_type,detected_pdf_page_count,pdf_page_count_changed_after_quote) values ($1,'ron',8,true)",[incident]);
     for (const [id,uploader,classification,path,visible,review] of [
-      ["d466f534-59a9-45ef-9bcc-0a13b4429477","customer","customer_document","source.pdf",true,"pending"],
-      ["be945904-9894-497b-8937-3d06de42fd9f","admin","completed_notarized_document","manual.pdf",false,"pending"],
-      ["ef51366f-17dc-44ed-af91-e914217b32a6","proof","completed_notarized_document","returned.pdf",true,"approved"],
-      ["ceb2aceb-e8c7-454c-a080-93bde9594cf1","proof","internal_document","audit.pdf",false,"pending"],
+      ["10000000-0000-4000-8000-000000000005","customer","customer_document","source.pdf",true,"pending"],
+      ["10000000-0000-4000-8000-000000000002","admin","completed_notarized_document","manual.pdf",false,"pending"],
+      ["10000000-0000-4000-8000-000000000003","proof","completed_notarized_document","returned.pdf",true,"approved"],
+      ["10000000-0000-4000-8000-000000000004","proof","internal_document","audit.pdf",false,"pending"],
     ]) await db.query("insert into request_files(id,service_request_id,file_path,uploaded_by,document_category,document_classification,detected_page_count,page_count_status,customer_visible,eligible_for_delivery,review_state) values ($1,$2,$3,$4,$5,$6,2,'detected',$7,$8,$9)",[id,incident,path,uploader,uploader === "proof" ? "proof-completed" : "upload",classification,visible,uploader === "proof" && visible,review]);
     await db.query("update service_requests set detected_pdf_page_count=8,pdf_page_count_changed_after_quote=true where id=$1",[incident]);
-    await db.query("insert into review_queue_items(id,service_request_id,blocker_key,state) values ('e5ebf3c7-24a3-47ab-91ca-409a54d7518e',$1,'pdf_page_count_changed_after_quote','open')",[incident]);
-    const recovery = await readFile(new URL("../supabase/incident-recovery/APS-ACA9EE54.sql",import.meta.url),"utf8");
+    await db.query("insert into review_queue_items(id,service_request_id,blocker_key,state) values ('10000000-0000-4000-8000-000000000006',$1,'pdf_page_count_changed_after_quote','open')",[incident]);
+    const recovery = await readFile(new URL("./fixtures/ron-recovery.sql",import.meta.url),"utf8");
     await assert.rejects(db.exec(recovery), /Explicit owner approval/);
     await db.exec("rollback");
     await db.query("select set_config('aps.incident_approval','isolated-test-only',false)");
     await db.exec(recovery);
     assert.deepEqual((await db.query("select detected_pdf_page_count,pdf_page_count_changed_after_quote from service_requests where id=$1",[incident])).rows[0],{ detected_pdf_page_count:2,pdf_page_count_changed_after_quote:false });
-    assert.equal((await db.query("select state from review_queue_items where id='e5ebf3c7-24a3-47ab-91ca-409a54d7518e'")).rows[0].state,"resolved");
+    assert.equal((await db.query("select state from review_queue_items where id='10000000-0000-4000-8000-000000000006'")).rows[0].state,"resolved");
     const history=(await db.query("select metadata from request_timeline_events where event_type='ron_source_page_count_reconciled'")).rows[0].metadata;
     assert.equal(history.request_before.detected_pdf_page_count,8);
     assert.equal(history.review_before.state,"open");
-    assert.equal((await db.query("select customer_visible from request_files where id='ceb2aceb-e8c7-454c-a080-93bde9594cf1'")).rows[0].customer_visible,false);
+    assert.equal((await db.query("select customer_visible from request_files where id='10000000-0000-4000-8000-000000000004'")).rows[0].customer_visible,false);
     // Administrator removal cases A-J, using the actual database routines.
     const internal = await file(ron,"admin","internal_document",2,"manual",`${ron}/admin/internal.pdf`);
     const manual = await file(ron,"admin","completed_notarized_document",2,"manual",`${ron}/admin/copy.pdf`);

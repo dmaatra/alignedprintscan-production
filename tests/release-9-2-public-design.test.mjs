@@ -29,7 +29,9 @@ test("all public pages use the same static navigation hierarchy and five-column 
     assert.match(html, /styles\.css\?v=20260831-nna-credentials/);
     assert.match(
       html,
-      file === "pricing.html"
+      file === "success.html"
+        ? /script\.js\?v=20261003-secure-portal/
+        : file === "pricing.html"
         ? /script\.js\?v=20260830-intake-validation-repair/
         : /script\.js\?v=20260820-release-9-2-1-production/,
     );

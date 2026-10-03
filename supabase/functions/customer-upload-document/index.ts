@@ -1,3 +1,4 @@
+import { authorizePortal } from "../_shared/portal-access.ts";
 import { detectPdfPageCount } from "../_shared/pdf-page-count.ts";
 
 /** Secure request-scoped customer upload after matching the request email. */
@@ -54,6 +55,7 @@ Deno.serve(async (req) => {
       throw new Error("Request, email, and at least one file are required.");
     }
     if (files.length > 12) throw new Error("Select no more than 12 documents.");
+    if (!await authorizePortal(req, id, body.access_token, U, K)) return json({ok:false,error:"Verified customer access is required."},403);
     const requestRows = await rows(
       await db(
         `service_requests?select=id,customers(email)&id=eq.${

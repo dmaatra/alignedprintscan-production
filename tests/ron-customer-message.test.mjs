@@ -6,8 +6,8 @@ test("normal send-message validates before sending and attaches only the selecte
   const originalFetch = globalThis.fetch, originalDeno = globalThis.Deno;
   let handler, providerCalls = 0, insertedMessages = 0, statusUpdates = 0;
   let openReview = true;
-  const requestId = "aca9ee54-fb45-4042-8cf4-4b3a6d906d22";
-  const returned = { id: "ef51366f-17dc-44ed-af91-e914217b32a6", file_name: "completed.pdf", file_path: "returned.pdf", uploaded_by: "proof", document_classification: "completed_notarized_document", review_state: "approved", is_active: true, customer_visible: true, eligible_for_delivery: true };
+  const requestId = "10000000-0000-4000-8000-000000000001";
+  const returned = { id: "10000000-0000-4000-8000-000000000003", file_name: "completed.pdf", file_path: "returned.pdf", uploaded_by: "proof", document_classification: "completed_notarized_document", review_state: "approved", is_active: true, customer_visible: true, eligible_for_delivery: true };
   const files = [returned, { ...returned, id: "manual", uploaded_by: "admin", review_state: "pending", customer_visible: false, eligible_for_delivery: false }, { ...returned, id: "audit", document_classification: "internal_document", customer_visible: false, eligible_for_delivery: false }];
   const request = { id: requestId, service_type: "ron", customer_id: "customer", document_state: "approved", participant_state: "approved", status: "appointment_confirmed" };
   const json = (value,status=200) => new Response(JSON.stringify(value),{status});
@@ -32,6 +32,8 @@ test("normal send-message validates before sending and attaches only the selecte
       providerCalls++;
       const email=JSON.parse(init.body);
       assert.equal(email.attachments.length,1);
+      assert.match(email.html, /#access_token=[0-9a-f]{64}/);
+      for (const link of email.html.match(/https:\/\/alignedprintscan\.com\/success\.html[^"<>]+/g) || []) assert.match(link, /#access_token=[0-9a-f]{64}/);
       assert.equal(email.attachments[0].filename,"completed.pdf");
       return json({id:"provider-message"});
     }

@@ -1,3 +1,4 @@
+import { authorizePortal } from "../_shared/portal-access.ts";
 /**
  * Aligned Print & Scan — Stripe Embedded Checkout.
  *
@@ -93,6 +94,7 @@ Deno.serve(async (request) => {
       throw new Error("Missing request_id.");
     }
 
+    if (!await authorizePortal(request, requestId, body.access_token, SUPABASE_URL, SERVICE_ROLE_KEY)) return json({ok:false,error:"Verified customer access is required."},403);
     const requestResponse = await supabaseFetch(
       `service_requests?select=id,status,customers(email,first_name,last_name)&id=eq.${requestId}&limit=1`,
     );

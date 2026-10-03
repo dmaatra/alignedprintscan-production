@@ -1,3 +1,4 @@
+import { authorizePortal } from "../_shared/portal-access.ts";
 /**
  * Aligned Print & Scan — Customer quote actions.
  *
@@ -367,6 +368,7 @@ Deno.serve(async (request) => {
       body.request_id,
       body.reference_number,
     );
+    if (!await authorizePortal(request, requestId, body.access_token, SUPABASE_URL, SERVICE_ROLE_KEY)) return json({ok:false,error:"Verified customer access is required."},403);
     const action = String(body.action || "").trim();
 
     if (!requestId) {
