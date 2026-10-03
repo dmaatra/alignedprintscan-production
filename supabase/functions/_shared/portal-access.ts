@@ -1,3 +1,14 @@
+/** Read-only customer projection for a verified administrator; never used by customer mutations. */
+export async function authorizeAdminPreview(req: Request, url: string, key: string): Promise<boolean> {
+  const authorization = req.headers.get('authorization') || '';
+  if (!authorization.startsWith('Bearer ')) return false;
+  const headers = {apikey:key, Authorization:authorization, 'Content-Type':'application/json'};
+  const identity = await fetch(`${url}/auth/v1/user`, {headers});
+  if (!identity.ok || !(await identity.json()).id) return false;
+  const admin = await fetch(`${url}/rest/v1/rpc/is_admin`, {method:'POST',headers,body:'{}'});
+  return admin.ok && await admin.json() === true;
+}
+
 /** Request identifiers are public. Only verified ownership or a scoped token authorizes access. */
 export async function authorizePortal(req: Request, requestId: string, token: unknown, url: string, key: string): Promise<boolean> {
   const headers = {apikey:key, Authorization:`Bearer ${key}`, 'Content-Type':'application/json'};
