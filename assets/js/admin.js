@@ -1938,7 +1938,7 @@ async function selectRequest(id) {
         <div class="admin-v3-section-heading"><span class="small-label">Internal Notes</span><h3>APS Staff Note</h3></div>
         <p class="admin-muted">Internal notes are visible only to APS staff and are not visible to the customer.</p>
         <textarea id="adminStatusNote" placeholder="Add an internal note visible only to APS staff..."></textarea>
-        <label class="check"><input id="updateStatusWithoutSending" type="checkbox"> Update Status Without Sending (exception only)</label>
+        <label class="check"><input id="updateStatusWithoutSending" type="checkbox"> Update Status Without Sending</label>
       </div>
     </section>
 
@@ -1963,7 +1963,10 @@ async function selectRequest(id) {
   `;
   renderInvoiceRows(rows);
   $$(".status-actions button[data-status]", detail).forEach((btn) => btn.addEventListener("click", () => {
-    if (btn.dataset.status === "completed") return beginCompletion(messageTemplates);
+    if (btn.dataset.status === "completed") {
+      if ($("#updateStatusWithoutSending", detail)?.checked) return updateRequestStatus("completed");
+      return beginCompletion(messageTemplates);
+    }
     if (btn.dataset.status === "payment_received") return openManualPaymentDialog("initial");
     if (btn.dataset.status === "final_payment_received") return openManualPaymentDialog("final");
     if ($("#updateStatusWithoutSending", detail)?.checked) return updateRequestStatus(btn.dataset.status);
@@ -2686,7 +2689,7 @@ async function updateRequestStatus(status) {
   }
 
   await refreshSelectedRequest(selectedRequest.id);
-  showToast(`Status updated and emails queued: ${statusLabel(status)}`);
+  showToast(sendMessage ? `Status updated and emails queued: ${statusLabel(status)}` : `Status updated without sending: ${statusLabel(status)}`);
 }
 
 function populateInvoicePresetSelect() {
