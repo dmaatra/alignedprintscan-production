@@ -1,3 +1,4 @@
+import { issuePortalToken } from "../_shared/portal-access.ts";
 import { REVIEW_DESTINATIONS, renderFullTemplateEmail } from "../_shared/template-preview.mjs";
 import { customerPortalUrl } from "../_shared/customer-email.mjs";
 import { safeDeliveryError } from "../_shared/communication-history.mjs";
@@ -190,6 +191,16 @@ Deno.serve(async (request) => {
     const adminId = await requireAdmin(request);
     const body = await request.json();
     requestId = cleanUuid(body.request_id);
+    if (body.action === "delivery_status") {
+      const requestedMessage = cleanUuid(body.message_id);
+      if (!requestId || !requestedMessage) return json({ok:false,error:"Request and message are required."},400);
+      const records = await rows(`messages?select=id,provider_message_id&service_request_id=eq.${requestId}&id=eq.${requestedMessage}&limit=1`);
+      if (!records[0]?.provider_message_id) return json({ok:false,error:"No provider record is available."},404);
+      const response = await fetch(`https://api.resend.com/emails/${encodeURIComponent(records[0].provider_message_id)}`, {headers:{Authorization:`Bearer ${RESEND_API_KEY}`}});
+      if (!response.ok) return json({ok:false,error:"APS provider lookup failed.",provider_status:response.status},502);
+      const delivery = await response.json();
+      return json({ok:true,provider:"APS configured Resend account",delivery_event:delivery.last_event || "unknown",created_at:delivery.created_at,has_secure_portal_link:String(delivery.html || "").includes("#access_token=")});
+    }
     const templateId = cleanUuid(body.template_id),
       targetStatus = String(body.status || "").trim();
     if (!requestId || !templateId) {
@@ -386,6 +397,8 @@ Deno.serve(async (request) => {
     const subject = String(
       body.subject || render(template.subject_template, values),
     ).trim();
+    const portalToken = await issuePortalToken(requestId, SUPABASE_URL, SERVICE_ROLE_KEY);
+    const securePortalUrl = `${values.portal_url}#access_token=${portalToken}`;
     const previewContext = {
       requestId,
       reference,
@@ -417,14 +430,14 @@ Deno.serve(async (request) => {
       releasedDocumentNames: releasedFiles.map((file: any) => file.file_name),
       completionDate: values.completion_date,
       siteUrl: "https://alignedprintscan.com",
-      actionUrl: isReviewRequest ? REVIEW_DESTINATIONS.google : undefined,
+      actionUrl: isReviewRequest ? REVIEW_DESTINATIONS.google : securePortalUrl,
     };
     const html = renderFullTemplateEmail({
       template,
       context: previewContext,
       editedBody: String(body.html || render(template.html_template, values)),
       subjectOverride: subject,
-    }).html;
+    }).html.replace(/https:\/\/alignedprintscan\.com\/success\.html\?[^"<>\s]+/g, securePortalUrl.replaceAll("&", "&amp;"));
     const text = String(
       body.text ||
         render(

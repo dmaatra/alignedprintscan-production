@@ -297,6 +297,7 @@ test("customer portal initializes a completed existing request", async () => {
   };
   const serviceDetail = { ron_session_completed: true };
   const context = {
+    portalAccessToken: () => "",
     URLSearchParams,
     encodeURIComponent,
     window: { location: { search: "?request_id=existing-request-id&tab=overview" } },

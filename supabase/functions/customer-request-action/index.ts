@@ -1,3 +1,4 @@
+import { authorizePortal } from "../_shared/portal-access.ts";
 /**
  * Aligned Print & Scan — Customer cancellation/reschedule request.
  *
@@ -50,6 +51,7 @@ Deno.serve(async (req) => {
     if (!["cancel", "reschedule"].includes(actionType)) throw new Error("Invalid customer action.");
     if (actionType === "reschedule" && !proposed) throw new Error("A proposed date and time are required.");
 
+    if (!await authorizePortal(req, requestId, body.access_token, SUPABASE_URL, SERVICE_ROLE_KEY)) return json({ok:false,error:"Verified customer access is required."},403);
     const requestRows = await rows(await db(`service_requests?select=id,status,paid_amount,customer_id,customers(email,first_name,last_name)&id=eq.${requestId}&limit=1`));
     const request = requestRows?.[0];
     if (!request) return json({ ok: false, error: "Request not found." }, 404);

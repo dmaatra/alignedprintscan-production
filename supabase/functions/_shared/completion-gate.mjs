@@ -46,9 +46,16 @@ export function evaluateCompletion(input) {
   const facts = input.facts || {};
   const components = componentSet(input);
   if (!components.size) add("SERVICE_COMPONENTS_UNKNOWN", "Confirm the purchased service components", "fulfillment");
-  const released = (input.files || []).some((file) => file.is_active !== false && file.customer_visible === true && file.eligible_for_delivery === true && file.document_classification !== "internal_document");
+  const released = (input.files || []).some((file) => file.is_active !== false && file.customer_visible === true && file.eligible_for_delivery === true && file.document_classification !== "internal_document" &&
+    (file.document_classification !== "completed_notarized_document" || (file.uploaded_by === "proof" && ["approved", "reviewed", "ready"].includes(String(file.review_state || "pending").toLowerCase()))));
   const deliveryPathKnown = facts.aps_deliverable_required === true || facts.external_platform_delivery === true || facts.physical_only === true || facts.customer_declined_optional_deliverable === true;
   if (components.has("ron")) {
+    const pendingProofDocuments = (input.files || []).filter((file) =>
+      file.is_active !== false && file.uploaded_by === "proof" &&
+      file.document_classification === "completed_notarized_document" &&
+      !["approved", "reviewed", "ready"].includes(String(file.review_state || "pending").toLowerCase())
+    );
+    if (pendingProofDocuments.length) add("PROOF_DOCUMENT_REVIEW", "Complete APS review of retrieved Proof completed documents", "documents");
     const proofComplete = ["completed", "released"].includes(String(input.proofTransaction?.proof_status || "").toLowerCase());
     if (!truthy(facts.ron_session_completed) && !proofComplete) add("RON_SESSION", "RON session not completed", "fulfillment");
     if (!deliveryPathKnown) add("RON_DELIVERY_PATH", "Confirm how final RON documents are delivered", "documents");

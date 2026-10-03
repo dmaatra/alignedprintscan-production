@@ -2045,6 +2045,11 @@ function formatTimeWindow(value) {
     .replace(/\b(am|pm)\b/gi, (m) => m.toUpperCase());
 }
 
+function portalAccessToken() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const id = new URLSearchParams(location.search).get("request_id") || "";
+  return params.get("access_token") || sessionStorage.getItem(`aps:portal:${id}`) || "";
+}
 async function getPublicStatus(requestId, ref) {
   if (!requestId && !ref) return null;
   if (
@@ -2057,6 +2062,7 @@ async function getPublicStatus(requestId, ref) {
   }
   try {
     const payload = {};
+    payload.access_token = portalAccessToken();
     if (requestId) payload.request_id = requestId;
     if (ref) payload.ref = ref;
     const { data, error } = await supabaseClient.functions.invoke(
@@ -2410,6 +2416,7 @@ async function submitQuoteDecision(requestId, reference, decision, quoteId = "")
     {
       body: {
         request_id: requestId,
+        access_token: portalAccessToken(),
         reference_number: reference,
         action: decision,
         quote_id: quoteId,
@@ -2440,6 +2447,7 @@ async function startEmbeddedPayment(requestId, invoiceId) {
       {
         body: {
           request_id: requestId,
+        access_token: portalAccessToken(),
           invoice_id: invoiceId || null,
         },
       },
@@ -2553,7 +2561,8 @@ async function submitCustomerAction(requestId, actionType) {
   if (!email) throw new Error("Enter the email address used for this request.");
   if (actionType === "reschedule" && !proposed) throw new Error("Choose a proposed new date and time.");
   if (statusBox) statusBox.textContent = "Submitting your request…";
-  const { data, error } = await supabaseClient.functions.invoke("customer-request-action", { body: { request_id: requestId, email, action_type: actionType, reason, proposed_appointment_at: proposed || null } });
+  const { data, error } = await supabaseClient.functions.invoke("customer-request-action", { body: { request_id: requestId,
+        access_token: portalAccessToken(), email, action_type: actionType, reason, proposed_appointment_at: proposed || null } });
   if (error || data?.ok === false) throw new Error(data?.error || error?.message || "Request could not be submitted.");
   if (statusBox) statusBox.textContent = "Your request was received. Check your email for confirmation.";
 }
@@ -2569,7 +2578,8 @@ async function uploadAdditionalCustomerFiles(requestId) {
   if (statusBox) statusBox.textContent = `Preparing ${files.length} document(s)…`;
   const payloadFiles = await Promise.all(files.map(async (file) => ({ name: file.name, type: file.type, base64: await fileToBase64(file) })));
   const message=String(qs("#additionalCustomerMessage")?.value||"").trim();
-  const { data, error } = await supabaseClient.functions.invoke("customer-upload-document", { body: { request_id: requestId, email, category: "additional", message, files: payloadFiles } });
+  const { data, error } = await supabaseClient.functions.invoke("customer-upload-document", { body: { request_id: requestId,
+        access_token: portalAccessToken(), email, category: "additional", message, files: payloadFiles } });
   if (error || data?.ok === false) throw new Error(data?.error || error?.message || "Documents could not be uploaded.");
   if (statusBox) statusBox.textContent = `${files.length} document(s) uploaded successfully.`;
   input.value = "";
@@ -2608,8 +2618,11 @@ async function initSuccessPage() {
     params.get("request_id") || params.get("id") || saved.requestId || null;
   const ref = params.get("ref") || saved.ref || null;
   const result =
-    (await getPublicStatus(requestId, ref)) ||
-    renderSuccessFallback(params, saved);
+    await getPublicStatus(requestId, ref);
+  if (!result) {
+    successBox.innerHTML = `<div class="next-panel"><h2>Secure customer access required</h2><p>Open the secure access link sent to the email address on your request. Contact APS support if you need a replacement link.</p><a class="btn primary" href="support.html">Contact Support</a></div>`;
+    return;
+  }
   const request = result.request || {};
   if (!request.id && requestId) request.id = requestId;
   window.__alignedCurrentRequestId = request.id || requestId || null;
@@ -2679,7 +2692,7 @@ async function initSuccessPage() {
   const messages = result.messages || [];
   const activity = result.customer_activity || [];
   const portalTab = params.get("tab") || "overview";
-  const tabLink = (tab) => `success.html?request_id=${encodeURIComponent(request.id || requestId || "")}&tab=${tab}`;
+  const tabLink = (tab) => `success.html?request_id=${encodeURIComponent(request.id || requestId || "")}&tab=${tab}#access_token=${encodeURIComponent(portalAccessToken())}`;
   const primaryAction = customerPrimaryAction({ request, invoices, documents: apsDocuments, messages, hasQuote, sessionId });
   const canApprove = primaryAction?.key === "quote";
   const canPay = primaryAction?.key === "payment";
