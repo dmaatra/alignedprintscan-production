@@ -5,8 +5,8 @@ import test from "node:test";
 const script = await readFile(new URL("../assets/js/script.js", import.meta.url), "utf8");
 
 test("customer portal uses customer-facing APS document copy", () => {
-  assert.match(script, /Files provided to you by Aligned Print &amp; Scan will appear here\./);
-  assert.match(script, /No documents have been provided yet\./);
+  assert.match(script, /View or download the documents provided for your request\./);
+  assert.match(script, /No documents are available yet\./);
   assert.doesNotMatch(script, /Customer deliverables intentionally released by APS\./);
   assert.doesNotMatch(script, /No APS deliverables have been released yet\./);
 });
@@ -16,7 +16,7 @@ test("APS document release filtering remains intact", () => {
     script,
     /const apsDocuments = documents\.filter\(file => file\.document_classification !== "completed_notarized_document" && !customerProvidedDocuments\.includes\(file\)\);/,
   );
-  assert.match(script, /portalDocumentList\(apsDocuments, "No documents have been provided yet\."\)/);
+  assert.match(script, /portalDocumentList\(providedDocuments\)/);
 });
 
 test("customer portal avoids internal APS shorthand outside request references", () => {

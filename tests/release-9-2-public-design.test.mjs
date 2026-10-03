@@ -30,7 +30,7 @@ test("all public pages use the same static navigation hierarchy and five-column 
     assert.match(
       html,
       file === "success.html"
-        ? /script\.js\?v=20261003-completed-session-copy/
+        ? /script\.js\?v=20261003-document-navigation/
         : file === "pricing.html"
         ? /script\.js\?v=20260830-intake-validation-repair/
         : /script\.js\?v=20260820-release-9-2-1-production/,

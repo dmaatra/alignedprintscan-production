@@ -37,7 +37,7 @@ test("24 staged Timeline event is deduplicated",async()=>assert.match(await read
 test("25 completed document storage identity is stable",async()=>assert.match(await read("supabase/functions/_shared/proof/completed-asset-repository.ts"),/proof-completed\/\$\{asset\.id\}\.pdf/));
 test("26 notification dedupe is request-document scoped",async()=>assert.match(await read("supabase/migrations/20260815083242_proof_return_operator_review.sql"),/proof-review:/));
 test("27 completed Proof document stays hidden before release",async()=>assert.match(await read("supabase/functions/_shared/proof/completed-asset-repository.ts"),/customer_visible: false/));
-test("28 released completed documents remain customer visible",async()=>assert.match(await read("assets/js/script.js"),/Completed Notarized Documents/));
+test("28 released completed documents remain customer visible",async()=>assert.match(await read("assets/js/script.js"),/Completed Notarized Document/));
 test("29 source and completed documents remain separate",async()=>assert.match(await read("supabase/functions/_shared/proof/completed-asset-repository.ts"),/source file not overwritten|proof-completed/));
 test("30 audit documents remain internal",async()=>assert.match(await read("supabase/functions/_shared/proof/completed-asset-repository.ts"),/"internal_document"/));
 test("31 RON stepper retains all post-session stages",async()=>{const source=await read("assets/js/admin.js");for(const label of ["Proof Completion","Completed Document Return","APS Review","Customer Release","APS Completion"])assert.match(source,new RegExp(label));});
