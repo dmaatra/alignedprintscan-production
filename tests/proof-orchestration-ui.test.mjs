@@ -128,7 +128,7 @@ test("RON customer documents remain filtered by the existing release boundary", 
   const status = await read("supabase/functions/get-request-status/index.ts");
   const portal = await read("assets/js/script.js");
   assert.match(status, /file\.customer_visible === true &&\s*file\.eligible_for_delivery === true/);
-  assert.match(portal, /Completed Notarized Documents/);
+  assert.match(portal, /Completed Notarized Document/);
   assert.match(portal, /completed_notarized_document/);
 });
 

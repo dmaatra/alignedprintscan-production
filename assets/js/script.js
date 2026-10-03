@@ -2694,12 +2694,13 @@ async function initSuccessPage() {
   const customerProvidedDocuments = documents.filter(file => file.uploaded_by === "customer" && file.document_classification === "customer_document");
   const apsDocuments = documents.filter(file => file.document_classification !== "completed_notarized_document" && !customerProvidedDocuments.includes(file));
   const portalDocumentList = (files, empty = "None available yet.") => files.length ? `<ul class="portal-document-list">${files.map(file => `<li><strong>${escapePublic(file.file_name)}</strong>${file.uploaded_by === "customer" ? `<span>Customer Upload</span>` : file.document_classification === "completed_notarized_document" ? `<span>Completed Notarized Document</span>` : `<span>Document from Aligned Print &amp; Scan</span>`}${file.download_url ? `<a class="btn dark" href="${escapePublic(file.download_url)}" target="_blank" rel="noopener noreferrer">View / Download</a>` : ""}</li>`).join("")}</ul>` : `<p>${escapePublic(empty)}</p>`;
+  const providedDocuments = [...completedNotarizedDocuments, ...apsDocuments];
   const messages = result.messages || [];
   const activity = result.customer_activity || [];
   const portalTab = params.get("tab") || "overview";
   const previewQuery = params.get("preview") === "admin" ? "&preview=admin" : "";
   const tabLink = (tab) => `success.html?request_id=${encodeURIComponent(request.id || requestId || "")}&tab=${tab}${previewQuery}#access_token=${encodeURIComponent(portalAccessToken())}`;
-  const primaryAction = customerPrimaryAction({ request, invoices, documents: apsDocuments, messages, hasQuote, sessionId });
+  const primaryAction = customerPrimaryAction({ request, invoices, documents: providedDocuments, messages, hasQuote, sessionId });
   const canApprove = primaryAction?.key === "quote";
   const canPay = primaryAction?.key === "payment";
   const actionRequired = primaryAction ? `<section class="next-panel portal-action-required reveal" aria-labelledby="customerActionHeading"><p class="eyebrow">Action Required</p><h3 id="customerActionHeading">${escapePublic(primaryAction.title)}</h3>${primaryAction.detail ? `<p>${escapePublic(primaryAction.detail)}</p>` : ""}<a class="btn primary" href="${tabLink(primaryAction.tab)}" data-portal-action="${escapePublic(primaryAction.tab)}">${escapePublic(primaryAction.label)}</a></section>` : `<section class="portal-no-action reveal"><strong>No action required</strong><span>${escapePublic(copy.body)}</span></section>`;
@@ -2715,13 +2716,13 @@ async function initSuccessPage() {
       ${actionRequired}
       ${statusTimeline(displayStatus, request.service_type)}
       <div class="success-grid portal-summary-grid reveal"><div><span class="small-label">Service</span><strong>${escapePublic(serviceName)}</strong></div><div><span class="small-label">Status</span><strong>${escapePublic(copy.title)}</strong></div><div><span class="small-label">Prepared For</span><strong>${escapePublic([customer.first_name, customer.last_name].filter(Boolean).join(" ") || "Customer")}</strong></div>${customer.email ? `<div><span class="small-label">Email</span><strong>${escapePublic(customer.email)}</strong></div>` : ""}${customer.phone ? `<div><span class="small-label">Phone</span><strong>${escapePublic(customer.phone)}</strong></div>` : ""}</div>
-      <div class="email-notice status-${statusClass} reveal"><h3>${escapePublic(copy.title)}</h3><p>${escapePublic(copy.body)}</p></div>
+      <div class="email-notice status-${statusClass} reveal"><h3>${escapePublic(copy.title)}</h3><p>${escapePublic(copy.body)}</p>${completed && providedDocuments.length ? `<p>Your completed documents are available on the Documents tab.</p><a class="btn primary" href="#" data-portal-action="documents">View Documents</a>` : ""}</div>
       ${printControls(reference)}
     </section>
     <section data-portal-panel="documents" ${portalTab !== "documents" ? "hidden" : ""}>
-      <div class="next-panel reveal"><h3>Documents You Provided</h3><p>Files you uploaded with this request or later through Manage This Request.</p>${portalDocumentList(customerProvidedDocuments, "You have not uploaded any documents yet.")}</div>
-      <div class="next-panel reveal"><h3>Documents from Aligned Print &amp; Scan</h3><p>Files provided to you by Aligned Print &amp; Scan will appear here.</p>${portalDocumentList(apsDocuments, "No documents have been provided yet.")}</div>
-      ${request.service_type === "ron" ? `<div class="next-panel reveal"><h3>Completed Notarized Documents</h3><p>Reviewed notarized documents appear here after Aligned Print & Scan makes them available to you.</p>${portalDocumentList(completedNotarizedDocuments)}</div>` : ""}
+      ${providedDocuments.length ? `<div class="next-panel reveal"><h3>Documents from Aligned Print &amp; Scan</h3><p>View or download the documents provided for your request.</p>${portalDocumentList(providedDocuments)}</div>` : ""}
+      ${customerProvidedDocuments.length ? `<div class="next-panel reveal"><h3>Documents You Provided</h3><p>Your original uploads are listed below.</p>${portalDocumentList(customerProvidedDocuments)}</div>` : ""}
+      ${!providedDocuments.length && !customerProvidedDocuments.length ? '<div class="next-panel"><h3>Documents</h3><p>No documents are available yet.</p></div>' : ""}
       <div id="customerActionsPanel">${customerActionPanel(request, reference, customerActions)}</div>
     </section>
     <section data-portal-panel="quote-payment" ${portalTab !== "quote-payment" ? "hidden" : ""}>

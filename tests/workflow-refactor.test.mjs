@@ -152,7 +152,7 @@ test("customer portal prioritizes one action-required card", async () => {
 test("completed portal treats only APS-released documents as a customer deliverable action", async () => {
   const script = await read("assets/js/script.js");
   assert.match(script, /const apsDocuments = documents\.filter/);
-  assert.match(script, /customerPrimaryAction\(\{ request, invoices, documents: apsDocuments, messages, hasQuote, sessionId \}\)/);
+  assert.match(script, /customerPrimaryAction\(\{ request, invoices, documents: providedDocuments, messages, hasQuote, sessionId \}\)/);
   assert.doesNotMatch(script, /customerPrimaryAction\(\{ request, invoices, documents, messages, hasQuote, sessionId \}\)/);
 });
 
