@@ -117,7 +117,7 @@
     primaryButton.dataset.targetTab = primaryAction.tab;
     $("#workspaceEmailAction").disabled = false;
     const portalLink = $("#workspaceCustomerPortal");
-    portalLink.href = `success.html?request_id=${encodeURIComponent(request.id)}&ref=${encodeURIComponent(reference)}`;
+    portalLink.href = `success.html?request_id=${encodeURIComponent(request.id)}&ref=${encodeURIComponent(reference)}&preview=admin`;
     portalLink.setAttribute("aria-disabled", "false");
     workspace?.classList.add("has-selection");
     resetWorkspaceScroll();

@@ -2062,6 +2062,7 @@ async function getPublicStatus(requestId, ref) {
   }
   try {
     const payload = {};
+    payload.admin_preview = new URLSearchParams(location.search).get("preview") === "admin";
     payload.access_token = portalAccessToken();
     if (requestId) payload.request_id = requestId;
     if (ref) payload.ref = ref;
@@ -2692,7 +2693,8 @@ async function initSuccessPage() {
   const messages = result.messages || [];
   const activity = result.customer_activity || [];
   const portalTab = params.get("tab") || "overview";
-  const tabLink = (tab) => `success.html?request_id=${encodeURIComponent(request.id || requestId || "")}&tab=${tab}#access_token=${encodeURIComponent(portalAccessToken())}`;
+  const previewQuery = params.get("preview") === "admin" ? "&preview=admin" : "";
+  const tabLink = (tab) => `success.html?request_id=${encodeURIComponent(request.id || requestId || "")}&tab=${tab}${previewQuery}#access_token=${encodeURIComponent(portalAccessToken())}`;
   const primaryAction = customerPrimaryAction({ request, invoices, documents: apsDocuments, messages, hasQuote, sessionId });
   const canApprove = primaryAction?.key === "quote";
   const canPay = primaryAction?.key === "payment";

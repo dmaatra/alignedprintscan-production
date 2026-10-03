@@ -1,4 +1,4 @@
-import { authorizePortal } from "../_shared/portal-access.ts";
+import { authorizePortal, authorizeAdminPreview } from "../_shared/portal-access.ts";
 // Aligned Print & Scan — Public status reader
 // Purpose: Success page calls this function to safely retrieve the current order status.
 // Notes: Uses the service role key server-side so the public success page does not need direct table access.
@@ -176,7 +176,11 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "Missing or invalid request_id." }, 400);
     }
 
-    if (!await authorizePortal(req, requestId, body.access_token, SUPABASE_URL, SERVICE_ROLE_KEY)) {
+    // Preview changes authorization only; the customer projection and document filters below stay identical.
+    const authorized = body.admin_preview === true
+      ? await authorizeAdminPreview(req, SUPABASE_URL, SERVICE_ROLE_KEY)
+      : await authorizePortal(req, requestId, body.access_token, SUPABASE_URL, SERVICE_ROLE_KEY);
+    if (!authorized) {
       return json({ok:false,error:"Verified customer access is required."},403);
     }
     // Use broad selects to prevent 400 errors when optional columns are still being migrated.
