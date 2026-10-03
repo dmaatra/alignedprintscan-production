@@ -2404,7 +2404,9 @@ function selectStatusMessage(status, templates) {
     currentMessagePreviewContext.context.completionDate = customerPreviewDate(new Date().toISOString(), "Completion pending");
   }
   const select = $("#messageTemplateSelect");
-  const template = templates.find(item => item.associated_status === status);
+  const template = status === "completed"
+    ? templates.find(item => item.template_key === "order_completed")
+    : templates.find(item => item.associated_status === status && item.template_key !== "review_request");
   $("#messageStatus").value = status;
   if (template && select) {
     select.value = template.id;
