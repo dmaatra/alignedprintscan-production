@@ -2395,8 +2395,12 @@ function completedSuccessView({
   `;
 }
 
-function ronNextStepPanel(request = {}, detail = {}, session = null) {
+function ronNextStepPanel(request = {}, detail = {}, session = null, documents = []) {
   if (workflowKind(request.service_type) !== "ron") return "";
+  if (session?.state === "completed" || String(request.workflow_status || request.status).toLowerCase() === "completed") {
+    const released = documents.some(file => file.document_classification === "completed_notarized_document");
+    return `<div class="next-panel reveal"><h3>Session Completed</h3><p>Your online notarization is complete. ${released ? "Your completed notarized documents are available on the Documents tab." : "Reviewed completed documents will appear on the Documents tab when released."}</p><a class="btn primary" href="#" data-portal-action="documents">View Documents</a></div>`;
+  }
   const link = request.appointment_link || request.ron_session_url || "";
   const copy = {
     payment_required: ["Payment Required", "Your required payment must be received before the secure online notary session can begin."],
@@ -2674,7 +2678,7 @@ async function initSuccessPage() {
   const reviewButtons = completed && googleReviewUrl
     ? `<div class="cta-row review-buttons"><a class="btn primary" href="${escapePublic(googleReviewUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Share an optional Google review for Aligned Print & Scan (opens in a new tab)">Share an Optional Google Review</a><a class="btn secondary" href="support.html">Contact Customer Support</a></div>`
     : "";
-  const prepVideo = request.prep_video_url
+  const prepVideo = !completed && result.ron_session?.state !== "completed" && request.prep_video_url
     ? `<div class="next-panel reveal"><h3>Appointment Preparation Video</h3><p>Watch this preparation guide before your session or appointment.</p><div class="video-embed"><iframe src="${escapePublic(request.prep_video_url)}" title="Preparation video" allowfullscreen></iframe></div></div>`
     : "";
 
@@ -2726,7 +2730,7 @@ async function initSuccessPage() {
       ${receiptPanel({ ...request, status: displayStatus }, reference)}
     </section>
     <section data-portal-panel="fulfillment" ${portalTab !== "fulfillment" ? "hidden" : ""}>
-      ${appointmentDetailsPanel({ ...request, status: displayStatus })}${ronNextStepPanel(request, detail, result.ron_session)}${prepVideo || '<div class="next-panel"><h3>Appointment / Fulfillment</h3><p>Confirmed details and delivery instructions will appear here.</p></div>'}
+      ${appointmentDetailsPanel({ ...request, status: displayStatus })}${ronNextStepPanel(request, detail, result.ron_session, documents)}${prepVideo}
     </section>
     <section data-portal-panel="messages" ${portalTab !== "messages" ? "hidden" : ""}>
       <div class="next-panel"><h3>Messages</h3>${messages.length ? `<ul class="portal-message-list">${messages.map(message => `<li><strong>${escapePublic(message.subject)}</strong><p>${escapePublic(message.rendered_text || "")}</p><small>${formatDateValue(message.sent_at || message.created_at)}</small></li>`).join("")}</ul>` : "<p>No customer messages have been sent yet.</p>"}</div>
