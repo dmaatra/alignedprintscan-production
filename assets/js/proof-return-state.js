@@ -7,7 +7,7 @@
 
   const text = value => String(value || "").toLowerCase();
   const activeCompletedFiles = files => (files || []).filter(file =>
-    file.is_active !== false && text(file.document_classification) === "completed_notarized_document"
+    file.is_active !== false && file.uploaded_by === "proof" && text(file.document_classification) === "completed_notarized_document"
   );
 
   function derive({ request = {}, transaction = null, assets = [], files = [] } = {}) {

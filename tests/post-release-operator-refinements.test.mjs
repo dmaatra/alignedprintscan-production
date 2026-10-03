@@ -54,7 +54,9 @@ test("payment message binds the triggering payment and current cumulative totals
 
 test("admin document removal is audit-safe and conversion preserves the same request",async()=>{
   const handler=await read("supabase/functions/admin-service-adjustment/index.ts");
-  assert.match(handler,/remove_admin_document/);assert.match(handler,/Customer-uploaded source documents cannot be removed/);assert.match(handler,/Proof Completed Documents cannot be removed/);assert.match(handler,/Withdraw Release/);assert.match(handler,/admin_document_removed/);
+  assert.match(handler,/remove_admin_document/);assert.match(handler,/admin_remove_uploaded_document/);assert.match(handler,/b.confirmed!==true/);
+  const removal=await read("supabase/migrations/20261003151318_ron_source_pages_and_canonical_proof_staging.sql");
+  assert.match(removal,/f.uploaded_by='admin'/);assert.match(removal,/proof_transaction_assets/);assert.match(removal,/f.customer_visible=false/);assert.match(removal,/admin_document_removed/);
   assert.match(handler,/preview_service_conversion/);assert.match(handler,/convert_service/);assert.match(handler,/same_request:true/);assert.match(handler,/proof_history_preserved/);assert.match(handler,/create-additional-invoice/);assert.match(handler,/request_service_conversions/);assert.doesNotMatch(handler,/delete.*(invoice|payment|request_files)/i);
 });
 
@@ -66,7 +68,7 @@ test("conversion migration is backward-compatible and admin-authorized",async()=
 
 test("production pages load the post-release frontend asset version",async()=>{
   const admin=await read("admin-dashboard.html");
-  assert.match(admin,/admin\.js\?v=20260831-loan-workflow-guide/);
+  assert.match(admin,/admin\.js\?v=20261003-ron-incident/);
   assert.match(admin,/admin-v3\.js\?v=20260831-admin-nav-security/);
   for(const page of ["index.html","mobile-notary.html","print-scan.html","remote-online-notary.html","pricing.html","success.html","support.html","accessibility.html","privacy.html","faq.html","terms.html"]){
     assert.match(await read(page),page==="pricing.html"?/script\.js\?v=20260830-intake-validation-repair/:/script\.js\?v=20260820-release-9-2-1-production/,page);

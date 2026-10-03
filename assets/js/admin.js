@@ -605,6 +605,7 @@ async function getFiles(requestId) {
     .from("request_files")
     .select("id,file_name,file_path,file_type,file_size,created_at,uploaded_by,document_category,document_classification,customer_visible,eligible_for_delivery,review_state,is_active,detected_page_count,page_count_status,page_count_source,page_count_error")
     .eq("service_request_id", requestId)
+    .eq("is_active", true)
     .order("created_at", {
       ascending: false,
     });
@@ -1616,7 +1617,7 @@ async function selectRequest(id) {
     detail.innerHTML = '<section class="admin-detail-section"><h3>Unsupported service</h3><p class="admin-muted">APS cannot safely load service details for this request type.</p></section>';
     return;
   }
-  const [files, serviceDetails, invoices, patch32Records, participantResult, actResult, templateResult, messageResult, completionResult, identityReviewResult] = await Promise.all([
+  const [files, serviceDetails, invoices, patch32Records, participantResult, actResult, templateResult, messageResult, completionResult, identityReviewResult, removalEligibility] = await Promise.all([
     getFiles(id),
     getDetailRows(table, id),
     getInvoices(id),
@@ -1627,6 +1628,7 @@ async function selectRequest(id) {
     adminClient.from("messages").select("*").eq("service_request_id", id).order("created_at", { ascending: false }),
     adminClient.from("request_completion_facts").select("*").eq("service_request_id", id).maybeSingle(),
     adminClient.from("review_queue_items").select("id,blocker_key,title,detail,state").eq("service_request_id", id).eq("blocker_key", "possible_existing_customer").eq("state", "open").maybeSingle(),
+    adminClient.rpc("admin_removable_uploads", { p_request: id }),
   ]);
   if (!serviceDetails) {
     detail.innerHTML = `<section class="admin-detail-section" data-v3-tab-target="overview"><h3>${escapeHtml(serviceLabel(selectedRequest.service_type))} details unavailable</h3><p class="admin-muted">The request identity is preserved, but its service-specific detail record is missing. Review the request record before taking fulfillment action.</p></section>
@@ -1646,6 +1648,8 @@ async function selectRequest(id) {
   const requestMessages = messageResult.data || [];
   const completionFacts = completionResult.data || {};
   const identityReview = identityReviewResult.data || null;
+  const removableFileIds = new Set((removalEligibility.data || []).map(row => row.file_id));
+  if (removalEligibility.error) console.warn("Administrator upload removal eligibility could not be loaded.");
   const identityCandidates = identityReview ? [...new Map(requests.map(request => Array.isArray(request.customers) ? request.customers[0] : request.customers).filter(candidate => candidate?.id && candidate.id !== customer?.id && ((customer?.normalized_email && candidate.normalized_email === customer.normalized_email) || (customer?.normalized_phone && candidate.normalized_phone === customer.normalized_phone))).map(candidate => [candidate.id, candidate])).values()] : [];
   const invoiceItems = await getInvoiceItems(id, invoices);
   const currentInvoice = invoices.find(invoice => !["void", "cancelled"].includes(String(invoice.status || "").toLowerCase())) || invoices[0] || {};
@@ -1690,14 +1694,15 @@ async function selectRequest(id) {
       const url = await signedUrl(f.file_path);
       const released = f.customer_visible && f.eligible_for_delivery && f.document_classification !== "internal_document";
       const customerUpload = f.uploaded_by === "customer" && f.document_classification === "customer_document";
-      const provenance = customerUpload ? "Customer Upload" : f.document_classification === "completed_notarized_document" ? "Proof Completed Document" : f.document_classification === "customer_deliverable" ? "APS Deliverable" : f.document_classification === "internal_document" ? "Admin / Internal" : "Admin Upload";
+      const proofCompleted = f.uploaded_by === "proof" && f.document_classification === "completed_notarized_document";
+      const completedClassification = f.document_classification === "completed_notarized_document";
+      const provenance = customerUpload ? "Customer Upload" : proofCompleted ? "Proof Completed Document" : f.document_classification === "customer_deliverable" ? "APS Deliverable" : f.document_classification === "internal_document" ? "Admin / Internal" : "Admin Upload";
       const access = customerUpload ? "Customer already has access" : released ? "Released to customer" : "Customer-hidden";
-      const proofCompleted = f.document_classification === "completed_notarized_document";
       const reviewed = ["approved", "reviewed", "ready"].includes(String(f.review_state || "").toLowerCase());
       const reviewControl = proofCompleted && !reviewed ? `<button class="btn dark review-proof-document-btn" data-file-id="${escapeHtml(f.id)}" type="button">Mark APS Review Complete</button>` : "";
-      const releaseControl = customerUpload || (proofCompleted && !reviewed) ? "" : `<button class="btn dark release-document-btn" data-file-id="${escapeHtml(f.id)}" data-released="${released}" type="button">${released ? "Withdraw Release" : "Release to Customer"}</button>`;
-      const removable=!customerUpload&&!proofCompleted&&!released&&f.uploaded_by==="admin";
-      const removalControl=removable?`<button class="btn danger-ghost remove-admin-document-btn" data-file-id="${escapeHtml(f.id)}" type="button">Remove Admin Upload</button>`:"";
+      const releaseControl = customerUpload || (completedClassification && (!proofCompleted || !reviewed)) ? "" : `<button class="btn dark release-document-btn" data-file-id="${escapeHtml(f.id)}" data-released="${released}" type="button">${released ? "Withdraw Release" : "Release to Customer"}</button>`;
+      const removable = !removalEligibility.error && removableFileIds.has(f.id);
+      const removalControl=removable?`<button class="btn danger-ghost remove-admin-document-btn" data-file-id="${escapeHtml(f.id)}" data-file-name="${escapeHtml(f.file_name)}" type="button">Remove Admin Upload</button>`:"";
       const received = f.created_at ? ` · Received ${new Date(f.created_at).toLocaleString()}` : "";
       const pageState = f.page_count_status === "detected" || f.page_count_status === "manual" ? `${f.detected_page_count} page${f.detected_page_count===1?"":"s"}${f.page_count_status==="manual"?" · manually verified":""}` : f.page_count_status === "failed" || f.page_count_status === "pending" ? "Page count needs review" : "Page count not applicable";
       const pageControl = (/pdf$/i.test(f.file_name)||f.file_type==="application/pdf") ? `<button class="btn dark verify-pdf-page-count-btn" data-file-id="${escapeHtml(f.id)}" data-current="${escapeHtml(f.detected_page_count||"")}" type="button">${f.page_count_status==="failed"||f.page_count_status==="pending"?"Enter Verified Page Count":"Correct Page Count"}</button>` : "";
@@ -1973,7 +1978,15 @@ async function selectRequest(id) {
   $("#sendAndUpdateStatusBtn", detail)?.addEventListener("click", () => sendComposedMessage(true));
   $$(".release-document-btn", detail).forEach(button => button.addEventListener("click", () => setDocumentRelease(button.dataset.fileId, button.dataset.released !== "true")));
   $$(".review-proof-document-btn", detail).forEach(button => button.addEventListener("click", () => reviewProofDocument(button.dataset.fileId)));
-  $$(".remove-admin-document-btn", detail).forEach(button => button.addEventListener("click", async()=>{if(!confirm("Remove this unreleased administrator upload? The file history will be preserved as inactive."))return;try{await invokeServiceAdjustment({command:"remove_admin_document",file_id:button.dataset.fileId});await selectRequest(id);showToast("Administrator upload removed; audit history preserved.");}catch(error){alert(error.message||"Document could not be removed.")}}));
+  $$(".remove-admin-document-btn", detail).forEach(button => button.addEventListener("click", async () => {
+    if (!confirm(`Remove "${button.dataset.fileName}" from ${ref}? The upload will leave the active APS request. Its private file and audit history will be retained.`)) return;
+    button.disabled = true;
+    try {
+      await invokeServiceAdjustment({ command: "remove_admin_document", file_id: button.dataset.fileId, confirmed: true });
+      await selectRequest(id);
+      showToast("Administrator upload removed; audit history preserved.");
+    } catch (error) { button.disabled = false; alert(error.message || "Document could not be removed."); }
+  }));
   $$(".verify-pdf-page-count-btn", detail).forEach(button => button.addEventListener("click", async()=>{try{await verifyPdfPageCount(button.dataset.fileId,button.dataset.current)}catch(error){alert(error.message||"Page count could not be saved.")}}));
   window.setTimeout(() => focusProofDocument(selectedRequest.id), 0);
   $("#saveCompletionFactsBtn", detail)?.addEventListener("click", saveCompletionFacts);

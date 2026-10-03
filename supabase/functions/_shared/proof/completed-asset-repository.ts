@@ -129,7 +129,7 @@ export class SupabaseCompletedAssetRepository
     }
     const destination = `${serviceRequestId}/proof-completed/${asset.id}.pdf`;
     const existing = await this.rows<{ id: string }>(
-      `request_files?select=id&service_request_id=eq.${serviceRequestId}&file_path=eq.${
+      `request_files?select=id&uploaded_by=eq.proof&service_request_id=eq.${serviceRequestId}&file_path=eq.${
         encodeURIComponent(destination)
       }&limit=1`,
     );
@@ -193,6 +193,14 @@ export class SupabaseCompletedAssetRepository
         content_fingerprint: asset.sha256,
       }),
     });
+    // The canonical-path unique index arbitrates simultaneous staging. Never
+    // upsert: a retry must preserve the winning row's review/release history.
+    if (response.status === 409) {
+      const canonical = await this.rows<{ id: string }>(
+        `request_files?select=id&uploaded_by=eq.proof&service_request_id=eq.${serviceRequestId}&file_path=eq.${encodeURIComponent(destination)}&limit=1`,
+      );
+      if (canonical[0]) return canonical[0].id;
+    }
     const rows = await this.read<{ id: string }>(response);
     if (!rows[0]) {
       throw new ProofError(
