@@ -6,7 +6,8 @@ const root=require('node:path').resolve(__dirname,'..');
  const {PGlite}=await import(process.env.APS_PGLITE_MODULE || '@electric-sql/pglite');const db=new PGlite();
  await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create function auth.uid() returns uuid language sql as $$select '11111111-1111-4111-8111-111111111111'::uuid$$;create function public.is_admin() returns boolean language sql as $$select true$$;`);
  await db.exec(fs.readFileSync(root+'/tests/fixtures/neighborhood-schema.sql','utf8'));
- for(const f of ['20261016032854_neighborhood_pricing_program.sql','20261016045905_neighborhood_review_hardening.sql'])await db.exec(fs.readFileSync(root+'/supabase/migrations/'+f,'utf8'));
+ for(const f of ['20261016032854_neighborhood_pricing_program.sql','20261016045905_neighborhood_review_hardening.sql','20261016092536_neighborhood_atomic_conversion.sql'])await db.exec(fs.readFileSync(root+'/supabase/migrations/'+f,'utf8'));
+ await db.exec(`create table ron_requests(id uuid primary key default gen_random_uuid(),service_request_id uuid,number_of_signers integer,number_of_notarizations integer,witness_review_required boolean);create table proof_transactions(id uuid primary key default gen_random_uuid(),service_request_id uuid,aps_status text);`);
  await db.exec(`create table request_status_updates(id uuid default gen_random_uuid(),service_request_id uuid,status text,message text,sent_email boolean,sent_sms boolean,created_at timestamptz default now());`);
  const ids=['22222222-2222-4222-8222-222222222222','44444444-4444-4444-8444-444444444444'];
  for(const [i,id] of ids.entries()){
@@ -27,6 +28,7 @@ const root=require('node:path').resolve(__dirname,'..');
  if(spec.kind==='function'){
   const a=spec.args.body||{};
   if(spec.name==='admin-business-foundation')return {data:{ok:true},error:null};
+  if(spec.name==='admin-service-adjustment'){if(a.command==='preview_service_conversion')await new Promise(resolve=>setTimeout(resolve,200));const result=await db.query('select aps_convert_neighborhood_service($1,$2,$3,$4,$5,$6,$7,$8) result',[a.request_id,a.new_service_type,a.new_service_total,JSON.stringify(a),a.reason,a.command==='preview_service_conversion',a.revision??null,a.expected_quote??null]);return {data:result.rows[0].result,error:null};}
   if(spec.name==='admin-route-distance'){
    if(a.command==='record_manual'){const calculation=(await db.query(`insert into mobile_travel_calculations(service_request_id,suggested_fee,applied_fee,round_trip_miles,operator_note,pricing_tier_label) values($1,$2,$2,$3,$4,'Synthetic reviewed mileage') returning *`,[a.request_id,a.actual_fee,a.round_trip_miles,a.operator_note])).rows[0];return {data:{ok:true,calculation},error:null};}
 
@@ -42,7 +44,7 @@ const root=require('node:path').resolve(__dirname,'..');
  else if(spec.operation==='insert'){let all=[];for(const value of Array.isArray(spec.value)?spec.value:[spec.value]){const keys=Object.keys(value);const r=await db.query(`insert into "${spec.table}" (${keys.map(k=>'"'+k+'"').join(',')}) values (${keys.map((k,i)=>'$'+(i+1)).join(',')}) returning *`,Object.values(value));all.push(...r.rows)}result={rows:all};}
  else result=await db.query(`select * from "${spec.table}"${where}`,params);
  let data=result.rows;
- if(spec.table==='service_requests')for(const r of data){r.customers=customer;r.request_promotion_applications=(await db.query('select * from request_promotion_applications where service_request_id=$1',[r.id])).rows;r.request_participants=[];for(const name of ['mobile_notary_requests','print_scan_requests'])r[name]=(await db.query(`select * from ${name} where service_request_id=$1`,[r.id])).rows;}
+ if(spec.table==='service_requests')for(const r of data){r.customers=customer;r.request_promotion_applications=(await db.query('select * from request_promotion_applications where service_request_id=$1',[r.id])).rows;r.request_participants=[];for(const name of ['mobile_notary_requests','print_scan_requests','ron_requests'])r[name]=(await db.query(`select * from ${name} where service_request_id=$1`,[r.id])).rows;}
  data=JSON.parse(JSON.stringify(data),(k,v)=>['preferred_date','appointment_date'].includes(k)&&typeof v==='string'?v.slice(0,10):v);return {data:spec.single?data[0]||null:data,count:data.length,error:null};
  }catch(e){return {data:null,error:{message:e.message}};}}
  const browser=await chromium.launch({headless:true,channel:'chrome'});const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.type()==='confirm'?d.accept():d.dismiss());
@@ -67,6 +69,16 @@ const root=require('node:path').resolve(__dirname,'..');
  assert.equal((await db.query('select quote_amount from service_requests where id=$1',[ids[0]])).rows[0].quote_amount,'70');assert.equal((await db.query('select count(*) from request_pricing_reviews where service_request_id=$1',[ids[0]])).rows[0].count,2);console.log('ADMIN_DENIAL_STANDARD_MILEAGE_HISTORY_PASS');
  await page.locator('[data-id="'+ids[1]+'"]').first().click();await page.locator('#pricingProgramReason').fill('Synthetic document address reviewed');await page.locator('#reviewPricingProgram').click();await page.waitForFunction(()=>document.querySelector('#requestDetail')?.innerText.includes('Applied pricing: CAMDEN_PARK'));
  assert.equal((await db.query('select approved_travel_amount from request_promotion_applications where service_request_id=$1',[ids[1]])).rows[0].approved_travel_amount,'4');console.log('ADMIN_APPROVAL_DOCUMENT_PASS');
+ // Exercise the real conversion dialog and the atomic RPC against fixture data.
+ await page.locator('[data-id="'+ids[0]+'"]').first().click();await page.locator('[data-workspace-tab="customer"]').click();await page.locator('#convertServiceBtn').click();
+ let dialog=page.locator('.service-adjustment-dialog');await dialog.locator('[name="total"]').fill('35');await dialog.locator('[name="reason"]').fill('Synthetic destination conversion');await dialog.locator('.preview-conversion').click();await dialog.locator('[name="total"]').fill('36');await page.waitForTimeout(400);assert.equal(await dialog.locator('.confirm-conversion').isDisabled(),true);await dialog.locator('[name="total"]').fill('35');await dialog.locator('.preview-conversion').click();await page.waitForFunction(()=>!document.querySelector('.confirm-conversion')?.disabled);
+ await dialog.locator('[name="total"]').fill('36');assert.equal(await dialog.locator('.confirm-conversion').isDisabled(),true);await dialog.locator('[name="total"]').fill('35');await dialog.locator('.preview-conversion').click();await page.waitForFunction(()=>!document.querySelector('.confirm-conversion')?.disabled);await dialog.locator('.confirm-conversion').click();await page.locator('.service-adjustment-dialog').waitFor({state:'detached'});
+ assert.equal((await db.query('select service_type from service_requests where id=$1',[ids[0]])).rows[0].service_type,'ron');console.log('ADMIN_MOBILE_TO_RON_CONVERSION_PASS');await page.setViewportSize({width:390,height:1000});
+ await page.locator('[data-workspace-tab="customer"]').click();await page.locator('#convertServiceBtn').click();dialog=page.locator('.service-adjustment-dialog');
+ for(const [name,value] of Object.entries({total:'60',street:'456 Synthetic Lane',city:'Waxahachie',state:'TX',zip:'75165',reason:'Synthetic return to Mobile'}))await dialog.locator('[name="'+name+'"]').fill(value);
+ await dialog.locator('.preview-conversion').click();await page.waitForFunction(()=>!document.querySelector('.confirm-conversion')?.disabled);await dialog.locator('.confirm-conversion').click();await page.locator('.service-adjustment-dialog').waitFor({state:'detached'});
+ assert.equal((await db.query('select eligibility_status from request_promotion_applications where service_request_id=$1',[ids[0]])).rows[0].eligibility_status,'pending_review');console.log('ADMIN_RON_TO_MOBILE_PENDING_REVIEW_PASS');await page.locator('[data-workspace-tab="overview"]').click();assert.match(await page.locator('#requestDetail').innerText(),/Current service address to review:.*456 Synthetic Lane/s);await page.screenshot({path:'/private/tmp/aps-admin-converted-mobile.png',fullPage:true});await page.setViewportSize({width:1440,height:1000});
+ await page.locator('[data-id="'+ids[1]+'"]').first().click();
  // Execute the actual quote-approval helper against the same synthetic database.
  const vm=require('node:vm'),{stripTypeScriptTypes}=require('node:module');
  const invoiceContext=vm.createContext({Deno:{env:{get:()=>''},serve(){}},Response,console,fetch:async(url,options={})=>{

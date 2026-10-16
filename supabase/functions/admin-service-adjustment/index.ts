@@ -23,7 +23,19 @@ async function stripeRefund(paymentIntent:string,amount:number,key:string,reason
 
 Deno.serve(async(req)=>{if(req.method==="OPTIONS")return new Response("ok",{headers:cors});try{const admin=await requireAdmin(req),b=await req.json(),command=String(b.command||"");const requestId=id(b.request_id);if(!requestId)throw new Error("A valid request is required.");if (["preview_service_conversion", "convert_service"].includes(command)) {
  const promotion = await rows(`request_promotion_applications?service_request_id=eq.${requestId}&select=id&limit=1`);
- if (promotion.length) throw new Error("Neighborhood service conversion is unavailable until its atomic quote and eligibility revision workflow is verified. No conversion changes were made.");
+ if (promotion.length) {
+   const response = await fetch(`${URL}/rest/v1/rpc/aps_convert_neighborhood_service`, {
+     method: "POST", headers: {apikey: SERVICE, Authorization: req.headers.get("Authorization") || "", "Content-Type": "application/json"},
+     body: JSON.stringify({p_request: requestId, p_target: b.new_service_type, p_total: b.new_service_total,
+       p_details: {street_address: b.street_address, unit: b.unit, city: b.city, state: b.state, zip: b.zip,
+         number_of_signers: b.number_of_signers, number_of_notarizations: b.number_of_notarizations},
+       p_reason: b.reason, p_preview: command === "preview_service_conversion", p_revision: b.revision ?? null,
+       p_expected_quote: b.expected_quote || null}),
+   });
+   const result = await response.json();
+   if (!response.ok) throw new Error(result?.message || "Neighborhood service conversion was rejected.");
+   return json(result);
+ }
  }
  let c=await context(requestId);
  if(command==="preview_cancellation"){const effective=String(b.effective_at||new Date().toISOString());return json({ok:true,policy_band:policyBand(c,effective),request:c.request,invoices:c.invoices,payments:c.payments,refunds:c.refunds,proof:c.proof,financials:calculate(c)});}

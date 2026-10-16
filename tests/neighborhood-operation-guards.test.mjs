@@ -6,7 +6,7 @@ import { stripTypeScriptTypes } from 'node:module';
 
 const requestId = '22222222-2222-4222-8222-222222222222';
 for (const [entry, commands, message] of [
-  ['admin-service-adjustment', ['preview_service_conversion', 'convert_service'], /atomic quote and eligibility/],
+  ['admin-service-adjustment', ['preview_service_conversion', 'convert_service'], /financial history requires/],
   ['admin-route-distance', ['apply_to_quote', 'apply_manual'], /neighborhood pricing review/],
 ]) {
   for (const command of commands) test(`${command} refuses unsafe neighborhood mutations before writing`, async () => {
@@ -16,6 +16,11 @@ for (const [entry, commands, message] of [
       calls.push({url, method: options.method || 'GET'});
       if (url.endsWith('/auth/v1/user')) return Response.json({id: 'admin'});
       if (url.endsWith('/rpc/is_admin')) return Response.json(true);
+      if (url.endsWith('/rpc/aps_convert_neighborhood_service')) {
+        assert.equal(options.headers.Authorization, 'Bearer synthetic-admin');
+        assert.equal(JSON.parse(options.body).p_preview, command === 'preview_service_conversion');
+        return Response.json({message: 'Conversion with financial history requires separate review'}, {status:400});
+      }
       if (url.includes('/request_promotion_applications?')) return Response.json([{id: 'application'}]);
       throw new Error('Unexpected network call');
     };
@@ -30,6 +35,6 @@ for (const [entry, commands, message] of [
     }));
     assert.equal(response.status, 400);
     assert.match((await response.json()).error, message);
-    assert.equal(calls.filter(call => call.method !== 'GET' && !call.url.endsWith('/rpc/is_admin')).length, 0);
+    assert.equal(calls.filter(call => call.method !== 'GET' && !call.url.includes('/rpc/')).length, 0);
   });
 }

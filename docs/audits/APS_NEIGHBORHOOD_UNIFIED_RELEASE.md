@@ -103,7 +103,7 @@ Existing service request fields identify submissions, workflow completion, and p
 
 ## Verification
 
-Latest complete Node suite: **579 passed, 0 failed, 0 skipped** using Node's TypeScript transform flag and isolated PGlite. Includes invoice/payment/webhook/portal/security regressions and new pricing, reconciliation, scan, attribution and Checkout cases. Tests cover both price increases and decreases using separate records, repeated approvals, stale review revisions, quote tampering, RLS, and scan fulfillment gates.
+Latest complete Node suite: **589 passed, 0 failed, 0 skipped** using Node's TypeScript transform flag and isolated PGlite. Includes invoice/payment/webhook/portal/security regressions and new pricing, reconciliation, scan, attribution and Checkout cases. Tests cover both price increases and decreases using separate records, repeated approvals, stale review revisions, quote tampering, RLS, and scan fulfillment gates.
 
 Deno checks cover the eight deployment entrypoints listed below. Changed JavaScript syntax and `git diff --check` pass. Browser verification covers six page/width combinations (390/1440) without overflow or JavaScript errors, two intercepted scan-only submissions with exact campaign payloads, and full-Mobile-intake transition. Intercepted submissions deliberately return a local error after payload capture; they do not create real requests. Screenshots are under `output/qa/`.
 
@@ -121,7 +121,7 @@ No claim of complete customer-ready production operation is made while these gro
 After full recovery verification and integration checks:
 
 1. Reconfirm APS project/domain/repo identities and current production baseline; review any new main changes.
-2. After renewed release authorization, apply only the reviewed migrations `20261016032854` and `20261016045905` through the migration tool; do not bulk-push the historical local migration directory because deployed migration history differs.
+2. After renewed release authorization, apply only the reviewed migrations `20261016032854`, `20261016045905`, and `20261016092536` through the migration tool; do not bulk-push the historical local migration directory because deployed migration history differs.
 3. Deploy these functions to APS only, preserving current JWT settings: `public-request-submit`, `get-request-status`, `send-request-email`, `admin-route-distance`, `admin-service-adjustment`, `client-quote-action`, `create-embedded-checkout`, `update-request-status` (shared completion dependency).
 4. Verify admin review, quote issue/approval, Invoice #1/#2, partial/final payment, refunds, duplicate webhook delivery, file authorization, completion and email retry using isolated/synthetic records.
 5. Merge the reviewed PR and verify the Vercel deployment belongs to the recorded APS project. Check public pages, standard intake, protected portal/admin, QR URL/UTM persistence and source-to-completed/paid reporting.
@@ -166,12 +166,12 @@ At the owner's explicit request, the authenticated APS production **Messages →
 - Blocked direct mileage-apply operations that could bypass neighborhood review.
 - Added an early service-conversion safety guard: the existing conversion implementation would otherwise write some details before the immutable reviewed-quote guard rejected a later write. Conversion is now explicitly unavailable for neighborhood requests until an atomic revision workflow is implemented and verified. This is an unresolved feature blocker, not completed conversion support.
 
-Regression result: **579 Node tests passed**, **201 Deno tests passed**, and eight Deno entrypoint checks passed. Existing cached dependencies were used. No skipped tests are being counted as recovery/provider verification.
+Regression result: **589 Node tests passed**, **201 Deno tests passed**, and eight Deno entrypoint checks passed. Existing cached dependencies were used. No skipped tests are being counted as recovery/provider verification.
 
 ### 6. Remaining release blockers
 
 1. Full compatible Supabase recovery, including missing extensions/Vault environment and separately preserved platform resources.
-2. Atomic neighborhood service conversion with eligibility/quote revisions and rollback-safe persistence.
+2. Conversion of requests with financial or unresolved provider history remains blocked. Pre-invoice atomic conversion is now implemented and locally verified, as described below.
 3. Isolated hosted end-to-end customer/admin lifecycle: Auth/RLS, document storage, quote approval/invoices, partial/final payments and refunds, automatic communications/notifications, and appointment conversion/provider integrations. Local fixture/UI and unit tests do not replace this evidence.
 4. Owner release authorization: the current instruction explicitly prohibits merge/deploy/production migrations. PR #159 must remain draft.
 
@@ -183,3 +183,18 @@ Fault-injection tests against the actual `materializeInitialInvoice` helper repr
 The existing admin browser harness now runs the actual quote-approval helper through a synthetic REST adapter into the same PGlite database used for manual eligibility review. Verified the approved $7 document-service quote creates one invoice, attaches all three reviewed line items, transitions to awaiting payment, and remains one invoice after retry. Synthetic partial ($2 paid/$5 balance) and full ($7 paid/$0 balance) states survive repeated approval unchanged and appear in the actual admin payment view. Desktop/mobile tabs still pass with no overflow or JavaScript errors. No payment provider was called; this is database/helper/UI integration, not a real payment test.
 
 Updated complete suite: **579 passed, zero failed/skipped**. Changed Edge Function type-check passed with remote/npm resolution disabled. Atomic service conversion and full recovery remain blockers; this follow-up does not remove the conversion safety guard or authorize release.
+
+
+## Atomic pre-invoice conversion follow-up (2026-10-16)
+
+**CONFIRMED IN CODE:** Migration `20261016092536_neighborhood_atomic_conversion.sql` adds an authenticated-administrator RPC for neighborhood RON ↔ Mobile conversion. The Edge Function forwards the administrator's token; service-role and anonymous execution are revoked. Preview is read-only. Commit locks the request and application and checks the preview's eligibility revision/current quote. The UI invalidates a preview when its inputs change.
+
+For requests without financial history, the same transaction updates destination requirements, snapshots prior request/service-detail/quote/item state into the private pricing-review history, creates conversion history and a revised draft quote, preserves original intake estimate/acquisition/address and related records, resets scheduling, and adds destination-review and timeline entries. Existing witness/add-on fields survive and require renewed compatibility review. No invoice, payment, refund or email is created by this action. The destination total remains administrator-entered; its draft service-charge allocation must be reviewed/itemized before quote issuance. Pricing catalog rates are unchanged.
+
+Mobile destinations return to `pending_review` with no discount. Manual eligibility review subsequently applies the approved $25 base or standard pricing/mileage. RON uses standard pricing and no neighborhood travel discount. The admin panel separately labels the original submitted address and current service address to review, preventing an old address from being mistaken for the new destination.
+
+**Compatibility limits:** Any invoice/payment/refund history (including void historical invoices), legacy checkout/payment references, unresolved financial adjustment, active/unresolved Proof transaction, started fulfillment, or completed/cancelled/archived request blocks this action before writes. Cancelled/failed Proof history is retained. Financial-history conversion still needs its own reviewed reconciliation workflow; this implementation does not claim that path is complete.
+
+**Verification:** Synthetic PostgreSQL/PGlite tests cover authorization, revoked roles, read-only previews, financial/legacy checkout/provider guards, stale previews, both conversion directions, re-eligibility, and original-data preservation. An injected failure at the final timeline insert rolls back all earlier changes. Both directions also succeeded inside one rollback-only transaction against the existing isolated real restored schema; that server was stopped afterward. This is migration compatibility evidence, not full Supabase recovery.
+
+The actual admin Customer-tab conversion dialogs passed against synthetic database adapters: Mobile → RON at desktop width and RON → Mobile at 390px. Editing the previewed amount disabled confirmation until a new preview. The returned Mobile request showed pending eligibility and the new destination address. Existing invoice/payment-view and eight-tab responsive checks still passed without page overflow or JavaScript errors. Updated Node suite: **589 passed, zero failed/skipped**; changed JavaScript syntax and Edge Function type checks passed without dependency downloads. Real hosted Auth/provider lifecycle and full recovery remain unverified. PR #159 remains draft; no production migration, merge or deployment was performed.
