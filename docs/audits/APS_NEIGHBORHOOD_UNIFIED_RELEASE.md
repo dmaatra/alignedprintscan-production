@@ -4,9 +4,9 @@ Date: 2026-10-16. **CONFIRMED IN CODE** unless explicitly labeled otherwise.
 
 ## Release status
 
-Implementation is prepared on `codex/aps-neighborhood-team-unified-update`. Production release is **incomplete and blocked** by full recovery verification. The branch will be submitted as a draft PR. It must not merge while the recovery gate is open because `main` triggers production deployment.
+Implementation is prepared on `codex/aps-neighborhood-team-unified-update`. Production release is **incomplete and blocked** by full recovery verification. Draft PR: [#159](https://github.com/dmaatra/alignedprintscan-production/pull/159), OPEN and not merged. Implementation/artwork revision: `af1a6328f4f9aefda7e0b3b1dd3c1703103c6c73`; a documentation-only follow-up records this handoff. It must not merge while the recovery gate is open because `main` triggers production deployment.
 
-No production migration, Edge Function deployment, application deployment, payment/refund, customer test email, data deletion, or database reset was performed. PATC resources were not modified. The original APS checkout and its unrelated Supabase temporary changes remain untouched.
+No production migration, production Edge Function deployment, production application deployment, payment/refund, customer test email, data deletion, or database reset was performed. PATC resources were not modified. The original APS checkout and its unrelated Supabase temporary changes remain untouched.
 
 Verified targets:
 
@@ -16,6 +16,8 @@ Verified targets:
 - Previous production Git revision: `ccbafd5b490a3b50ce8f56aa5c4a8bb7d47fa893`
 - Previous production deployment: `dpl_7P6o1LoxuSiapwh39oGgcro8MsSQ`, `alignedprintscan-production-ra6c9ayqh-doneishas-projects.vercel.app`
 - Canonical domain: `https://alignedprintscan.com`
+
+The feature push automatically created a READY Vercel **preview**, `dpl_7UJy4Kw6FF4io71fMiqDjU2iFiay`, on the verified APS project; GitHub Vercel checks passed. This is not a production release or a verified hosted-backend lifecycle. Preview frontend code still points to the existing production backend, so no preview request submissions were performed.
 
 ## Backup and recovery verification
 
