@@ -1,5 +1,7 @@
 # APS unified neighborhood release — implementation and recovery report
 
+Latest infrastructure investigation: [Comprehensive existing-infrastructure discovery](APS_EXISTING_INFRASTRUCTURE_DISCOVERY.md). Six APS checkout configurations, runtime/store locations, running services, CLI and connected project inventories, extension files, recovery scripts and historical setup were inspected. No compatible isolated target was found. The implementation and 592/201-test evidence from `2564921` are preserved; release gates remain open.
+
 ## Release-gate follow-up — 2026-10-16
 
 **Final release decision: BLOCKED.** Owner authorization now permits merge/deploy automatically **after** all mandatory gates pass. It does not waive recovery, hosted lifecycle, or financial-history conversion. PR #159 remains draft and production is unchanged.
