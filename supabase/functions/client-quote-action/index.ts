@@ -217,6 +217,13 @@ async function materializeInitialInvoice(
     throw new Error("APS must finish the neighborhood pricing review before quote approval.");
   }
 
+  // Conversion has already recorded only the charge difference. Approval must
+  // never materialize another full-price primary invoice or rewrite old terms.
+  const conversionRows = promotion ? await readJson(await supabaseFetch(
+    `neighborhood_conversion_operations?service_request_id=eq.${requestId}&select=result`,
+  )) : [];
+  const paidConversion = (conversionRows || []).find((row: any) =>
+    row.result?.financial_version && row.result?.quote_id === request.current_quote_id);
   const amountDue = Number(
     request.initial_payment_amount ||
       request.quote_amount ||
@@ -252,6 +259,12 @@ async function materializeInitialInvoice(
     `invoices?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
   );
   const existingRows = await readJson(invoiceLookupResponse);
+  if (paidConversion) {
+    const retained = (existingRows || []).filter((row: any) => !["void", "cancelled"].includes(String(row.status)));
+    const selected = retained.find((row: any) => row.id === paidConversion.result.adjustment_invoice_id) || retained[0];
+    if (!selected) throw new Error("The preserved conversion invoices require administrator review.");
+    return {...selected, conversion_reused: true, request_balance_due: retained.reduce((sum: number, row: any) => sum + Number(row.balance_due || 0), 0)};
+  }
   const existingInvoice = (existingRows || []).find((row: any) => {
     return (
       String(row.invoice_type || "").includes("initial") ||
@@ -398,6 +411,13 @@ Deno.serve(async (request) => {
         requestId,
         String(body.quote_id || "").trim(),
       );
+
+      if (invoice.conversion_reused) {
+        await logTimeline(requestId, "conversion_quote_approved", "Revised quote approved",
+          "The revised service quote was approved. Original invoices and payments remain unchanged; any additional balance is recorded separately.",
+          "customer", {invoice_id: invoice.id, balance_due: invoice.request_balance_due}, "customer");
+        return json({ok: true, status: invoice.request_balance_due > 0 ? "awaiting_payment" : "paid", reference_number: reference, invoice});
+      }
 
       await supabaseFetch("request_status_updates", {
         method: "POST",

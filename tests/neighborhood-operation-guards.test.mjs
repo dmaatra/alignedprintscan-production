@@ -16,7 +16,7 @@ for (const [entry, commands, message] of [
       calls.push({url, method: options.method || 'GET'});
       if (url.endsWith('/auth/v1/user')) return Response.json({id: 'admin'});
       if (url.endsWith('/rpc/is_admin')) return Response.json(true);
-      if (url.endsWith('/rpc/aps_convert_neighborhood_service')) {
+      if (url.endsWith('/rpc/aps_convert_neighborhood_paid_service')) {
         assert.equal(options.headers.Authorization, 'Bearer synthetic-admin');
         assert.equal(JSON.parse(options.body).p_preview, command === 'preview_service_conversion');
         return Response.json({message: 'Conversion with financial history requires separate review'}, {status:400});

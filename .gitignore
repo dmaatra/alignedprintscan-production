@@ -6,3 +6,6 @@ supabase/.env
 supabase/.env.*
 supabase/functions/.env
 supabase/functions/.env.*
+
+# Local owner review captures; the permanent copy is kept in APS Deliverables.
+output/owner-acceptance/

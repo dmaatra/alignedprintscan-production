@@ -15,16 +15,19 @@ END $$;
 \ir ../supabase/migrations/20261016092536_neighborhood_atomic_conversion.sql
 \ir ../supabase/migrations/20261016101212_neighborhood_financial_history_integrity.sql
 \ir ../supabase/migrations/20261016124235_neighborhood_reconciliation_retry_safety.sql
+\ir ../supabase/migrations/20261016152822_neighborhood_paid_conversion.sql
 DO $$ BEGIN
  IF (SELECT count(*) FROM pg_trigger WHERE tgname IN ('guard_neighborhood_quote','guard_neighborhood_quote_status','sync_promotion_review_queue','guard_issued_promotion_items','guard_promotion_primary_invoice','snapshot_review_payments') AND NOT tgisinternal)<>6 THEN
    RAISE EXCEPTION 'Expected six neighborhood triggers';
  END IF;
  IF (SELECT count(*) FROM pg_trigger WHERE tgname='aa_serialize_neighborhood_finance' AND NOT tgisinternal)<>5 THEN RAISE EXCEPTION 'Financial serialization triggers missing'; END IF;
- IF EXISTS(SELECT 1 FROM pg_class WHERE oid IN ('public.promotion_programs'::regclass,'public.request_promotion_applications'::regclass,'public.request_pricing_reviews'::regclass) AND NOT relrowsecurity) THEN
+ IF EXISTS(SELECT 1 FROM pg_class WHERE oid IN ('public.promotion_programs'::regclass,'public.request_promotion_applications'::regclass,'public.request_pricing_reviews'::regclass,'public.neighborhood_conversion_operations'::regclass) AND NOT relrowsecurity) THEN
    RAISE EXCEPTION 'Neighborhood RLS missing';
  END IF;
  IF has_function_privilege('anon','public.aps_resolve_pricing_adjustment(uuid,integer,text)','EXECUTE') THEN RAISE EXCEPTION 'Anonymous resolver access'; END IF;
  IF has_function_privilege('anon','public.aps_convert_neighborhood_service(uuid,text,numeric,jsonb,text,boolean,integer,uuid)','EXECUTE') THEN RAISE EXCEPTION 'Anonymous conversion access'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='guard_paid_conversion_quote' AND NOT tgisinternal) THEN RAISE EXCEPTION 'Paid conversion quote guard missing'; END IF;
+ IF has_function_privilege('anon','public.aps_convert_neighborhood_paid_service(uuid,text,numeric,jsonb,text,boolean,integer,uuid,text,uuid)','EXECUTE') THEN RAISE EXCEPTION 'Anonymous paid conversion access'; END IF;
  IF NOT has_function_privilege('authenticated','public.aps_resolve_pricing_adjustment(uuid,integer,text)','EXECUTE') THEN RAISE EXCEPTION 'Authenticated resolver missing'; END IF;
 END $$;
 ROLLBACK;

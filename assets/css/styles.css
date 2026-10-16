@@ -4517,3 +4517,9 @@ button.btn.secondary:hover {
 .neighborhood-offers { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .neighborhood-offers s { font-size:.65em; opacity:.65; margin-right:.4rem; }
 @media(max-width:760px) { .neighborhood-offers { grid-template-columns:1fr; } }
+
+/* Neighborhood prices use the established service cards and visit model. */
+.neighborhood-page .price s { color: var(--aps-text-muted); font-weight: 400; margin-right: .35rem; }
+.neighborhood-page .price strong { color: var(--aps-navy-primary); }
+.neighborhood-page #starting-rates,
+.neighborhood-page #request { scroll-margin-top: 100px; }

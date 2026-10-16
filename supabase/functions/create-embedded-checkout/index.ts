@@ -97,7 +97,7 @@ Deno.serve(async (request) => {
 
     if (!await authorizePortal(request, requestId, body.access_token, SUPABASE_URL, SERVICE_ROLE_KEY)) return json({ok:false,error:"Verified customer access is required."},403);
     const requestResponse = await supabaseFetch(
-      `service_requests?select=id,status,customers(email,first_name,last_name)&id=eq.${requestId}&limit=1`,
+      `service_requests?select=id,status,current_quote_id,customers(email,first_name,last_name)&id=eq.${requestId}&limit=1`,
     );
     const requestRows = await readJson(requestResponse);
     const serviceRequest = requestRows?.[0];
@@ -110,6 +110,12 @@ Deno.serve(async (request) => {
     const promotion = (await readJson(promotionResponse))?.[0];
     if (promotion && (promotion.eligibility_status === "pending_review" || promotion.financial_adjustment_required)) {
       throw new Error("APS must finish the neighborhood pricing review before payment.");
+    }
+
+    if (promotion) {
+      const quoteId = serviceRequest.current_quote_id;
+      const quotes = quoteId ? await readJson(await supabaseFetch(`quotes?id=eq.${quoteId}&service_request_id=eq.${requestId}&select=state&limit=1`)) : [];
+      if (quotes?.[0]?.state !== "approved") throw new Error("Approve the current service quote before making a payment.");
     }
 
     if (!invoiceId) {

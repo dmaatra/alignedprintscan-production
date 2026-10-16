@@ -33,7 +33,7 @@ test("the approved About destination remains the existing homepage section", () 
   assert.equal(existsSync(path.join(root, "about.html")), false);
   assert.doesNotMatch(read("sitemap.xml"), /about\.html/);
   for (const { name, html } of publicHtml.filter(({ html }) => html.includes('<footer class="site-footer footer">'))) {
-    assert.match(html, /href="(?:\.\.\/){0,2}index\.html#about">About<\/a>/, name);
+    assert.match(html, /href="(?:\/|(?:\.\.\/){0,2})index\.html#about">About<\/a>/, name);
     assert.doesNotMatch(html, /href="(?:\.\.\/){0,2}about\.html">About<\/a>/, name);
   }
 });

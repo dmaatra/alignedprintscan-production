@@ -55,3 +55,27 @@ assert '"net_charges": 70' in result.stdout, result.stdout
 count = run(f"SELECT count(*) FROM request_timeline_events WHERE service_request_id='{request}' AND event_type='pricing_adjustment_reconciled';").stdout.strip()
 assert count == '1', count
 print('RETRY_SUCCEEDED_WITH_ONE_AUDIT_EVENT')
+
+# Paid service conversion: a competing operator cannot commit a stale preview,
+# and an uncertain-response retry creates exactly one supplemental invoice.
+import json
+run(auth + f"UPDATE invoices SET balance_due=amount_due-amount_paid WHERE service_request_id='{request}'; UPDATE service_requests SET paid_amount=35 WHERE id='{request}';")
+details = '{"number_of_signers":1,"number_of_notarizations":1}'
+preview_sql = f"SELECT aps_convert_neighborhood_paid_service('{request}','ron',90,'{details}','Native paid conversion',true);"
+preview = json.loads(run(auth + preview_sql).stdout.strip().splitlines()[-1])
+operation = '88888888-8888-4888-8888-888888888888'
+quote = "NULL" if preview['expected_quote'] is None else "'" + preview['expected_quote'] + "'"
+convert = f"SELECT aps_convert_neighborhood_paid_service('{request}','ron',90,'{details}','Native paid conversion',false,{preview['revision']},{quote},'{preview['financial_version']}','{operation}');"
+p = holder(convert)
+try:
+    result = run("SET lock_timeout='200ms';" + auth + convert, False)
+    assert result.returncode != 0 and 'lock timeout' in result.stderr, result.stderr
+    print('CONCURRENT_PAID_CONVERSION_FENCED')
+finally:
+    release(p)
+retry = json.loads(run(auth + convert).stdout.strip().splitlines()[-1])
+assert retry['duplicate'] is True and retry['additional_amount_due'] == 20, retry
+assert run(f"SELECT count(*) FROM neighborhood_conversion_operations WHERE id='{operation}';").stdout.strip() == '1'
+assert run(f"SELECT count(*) FROM invoices WHERE invoice_number='INV-CONV-{operation}';").stdout.strip() == '1'
+assert run(f"SELECT balance_due FROM service_requests WHERE id='{request}';").stdout.strip() == '55'
+print('PAID_CONVERSION_RETRY_ONE_ADJUSTMENT_BALANCE_55')

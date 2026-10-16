@@ -8,4 +8,5 @@ create table ron_requests(id uuid primary key default gen_random_uuid(),service_
 \ir ../../supabase/migrations/20261016092536_neighborhood_atomic_conversion.sql
 \ir ../../supabase/migrations/20261016101212_neighborhood_financial_history_integrity.sql
 \ir ../../supabase/migrations/20261016124235_neighborhood_reconciliation_retry_safety.sql
+\ir ../../supabase/migrations/20261016152822_neighborhood_paid_conversion.sql
 \ir neighborhood-native-financial.sql

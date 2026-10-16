@@ -12,10 +12,10 @@
     const mobile = ["mobile:base", "print:mobile_base"].includes(base.key);
     const standard = mobile ? 50 : 20, discount = mobile ? 25 : 16;
     base.quantity = 1; base.unit_amount = standard; base.line_amount = standard;
-    result.components.push({key:"promotion:CAMDEN_PARK",label:"Camden Park Promotional Adjustment — Pending Address Review",quantity:1,unit_amount:-discount,line_amount:-discount,billable:true,included:false,review_required:true,note:"Estimated only. APS must approve address eligibility before issuing promotional pricing.",promotion_code:PROGRAM});
+    result.components.push({key:"promotion:CAMDEN_PARK",label:"Camden Park Promotional Adjustment — Pending Address Review",quantity:1,unit_amount:-discount,line_amount:-discount,billable:true,included:false,review_required:true,note:"Estimated only. Aligned Print & Scan must approve address eligibility before issuing promotional pricing.",promotion_code:PROGRAM});
     result.total = Math.round(result.components.filter(line=>line.billable).reduce((sum,line)=>sum+Number(line.line_amount),0)*100)/100;
     result.review_required = true;
-    result.review_reasons = [...new Set([...(result.review_reasons || []), "Camden Park address eligibility requires APS review."])];
+    result.review_reasons = [...new Set([...(result.review_reasons || []), "Camden Park address eligibility requires Aligned Print & Scan review."])];
     return result;
   }
   root.APSNeighborhoodPricing = Object.freeze({PROGRAM, apply});

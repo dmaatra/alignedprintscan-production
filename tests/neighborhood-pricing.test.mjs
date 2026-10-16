@@ -29,8 +29,8 @@ test('RON and witness rates unchanged',()=>{
  assert.equal(mobile.components.find(line=>line.key==='mobile:witness').unit_amount,50);
  assert.equal(mobile.components.find(line=>line.key.startsWith('notarial_act')).unit_amount,10);
 });
-test('neighborhood reuses exact standard wizard markup',()=>{
- const section=html=>html.slice(html.indexOf('<section class="section" id="request">'),html.indexOf('</form>')+7);
+test('neighborhood reuses standard wizard controls with promotion-specific explanatory notes',()=>{
+ const section=html=>html.slice(html.indexOf('<form class="wizard-form"'),html.indexOf('</form>')+7).replace(/<div class="inline-note premium-note">\s*<strong> Travel pricing: <\/strong>[\s\S]*?<\/div>/,'<div>Service-specific travel explanation</div>');
  assert.equal(section(read('neighborhood.html')),section(read('pricing.html')));
 });
 const source=read('supabase/functions/public-request-submit/index.ts').replace(/^import .*;\n/gm,'');
