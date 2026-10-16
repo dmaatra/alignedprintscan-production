@@ -1,5 +1,8 @@
 # APS unified neighborhood release — implementation and recovery report
 
+**Current checkpoint:** [Revised release strategy and verification](APS_PR159_REVISED_RELEASE_STRATEGY.md). 597 Node / 201 Deno tests pass; local native concurrency verified. Paid conversion remains incomplete; hosted and full-recovery gates remain open. No merge/deployment authorization is inferred. Earlier counts and infrastructure recommendations below are historical.
+
+
 Latest infrastructure investigation: [Comprehensive existing-infrastructure discovery](APS_EXISTING_INFRASTRUCTURE_DISCOVERY.md). Six APS checkout configurations, runtime/store locations, running services, CLI and connected project inventories, extension files, recovery scripts and historical setup were inspected. No compatible isolated target was found. The implementation and 592/201-test evidence from `2564921` are preserved; release gates remain open.
 
 ## Release-gate follow-up — 2026-10-16
@@ -149,7 +152,7 @@ No claim of complete customer-ready production operation is made while these gro
 After full recovery verification and integration checks:
 
 1. Reconfirm APS project/domain/repo identities and current production baseline; review any new main changes.
-2. After renewed release authorization, apply only the reviewed migrations `20261016032854`, `20261016045905`, and `20261016092536` through the migration tool; do not bulk-push the historical local migration directory because deployed migration history differs.
+2. Once applicable release gates and the current owner policy permit deployment, apply only the reviewed migrations `20261016032854`, `20261016045905`, `20261016092536`, `20261016101212_neighborhood_financial_history_integrity.sql`, and `20261016124235_neighborhood_reconciliation_retry_safety.sql`, in that order. Do not bulk-push the historical local migration directory because deployed migration history differs. See `APS_PR159_REVISED_RELEASE_STRATEGY.md` for dependencies, trigger locking, rollback scope and the unexecuted hosted-validation plan.
 3. Deploy these functions to APS only, preserving current JWT settings: `public-request-submit`, `get-request-status`, `send-request-email`, `admin-route-distance`, `admin-service-adjustment`, `client-quote-action`, `create-embedded-checkout`, `update-request-status` (shared completion dependency).
 4. Verify admin review, quote issue/approval, Invoice #1/#2, partial/final payment, refunds, duplicate webhook delivery, file authorization, completion and email retry using isolated/synthetic records.
 5. Merge the reviewed PR and verify the Vercel deployment belongs to the recorded APS project. Check public pages, standard intake, protected portal/admin, QR URL/UTM persistence and source-to-completed/paid reporting.

@@ -13,6 +13,7 @@ test('promotion migration, RLS, quote revision and paid-history integration', {s
  await db.exec(read('supabase/migrations/20261016032854_neighborhood_pricing_program.sql'));
  await db.exec(read('supabase/migrations/20261016045905_neighborhood_review_hardening.sql'));
  await db.exec(read('supabase/migrations/20261016101212_neighborhood_financial_history_integrity.sql'));
+ await db.exec(read('supabase/migrations/20261016124235_neighborhood_reconciliation_retry_safety.sql'));
  const user='11111111-1111-4111-8111-111111111111';
  await db.exec(`set test.user_id='${user}';set test.admin='true';`);
  const request='22222222-2222-4222-8222-222222222222';
@@ -41,7 +42,9 @@ test('promotion migration, RLS, quote revision and paid-history integration', {s
  await t.test('denial supersedes quote and preserves itemization history',async()=>{await review('denied',1,travel);const quote=(await db.query(`select state,amount,version from quotes order by version`)).rows;assert.equal(quote.length,2);assert.equal(quote[0].state,'superseded');assert.equal(Number(quote[1].amount),70);const history=(await db.query(`select previous_items from request_pricing_reviews order by created_at desc limit 1`)).rows[0];assert.equal(history.previous_items.length,3);});
  await t.test('reapproval does not duplicate travel or discount',async()=>{await review('owner_exception',2);const rows=(await db.query(`select * from invoice_items where service_request_id=$1`,[request])).rows;assert.equal(rows.reduce((s,x)=>s+Number(x.line_total),0),35);assert.equal(rows.length,3)});
  await t.test('tampered promotion blocks quote issuance',async()=>{await db.query(`update invoice_items set line_total=-50 where item_type='promotion'`);await assert.rejects(db.query(`update service_requests set status='quote_ready' where id=$1`,[request]),/authorized pricing/);await db.query(`update invoice_items set line_total=-25 where item_type='promotion'`)});
+ await db.query(`update quotes set state='approved' where id=(select current_quote_id from service_requests where id=$1)`,[request]);
  await db.query(`insert into invoices(service_request_id,status,amount_due,amount_paid) values($1,'paid',35,35)`,[request]);
+ await db.query(`update invoice_items set invoice_id=(select id from invoices where service_request_id=$1) where service_request_id=$1`,[request]);
  await db.query(`insert into request_payments(service_request_id,invoice_id,amount,payment_method,is_test) select service_request_id,id,35,'test',true from invoices where service_request_id=$1`,[request]);
  await t.test('paid history is untouched and review requires financial adjustment',async()=>{const before=(await db.query('select * from invoices')).rows;const count=(await db.query('select count(*) from quotes')).rows[0].count;const result=await review('denied',3,travel);assert.equal(result.rows[0].result.financial_adjustment_required,true);assert.deepEqual((await db.query('select * from invoices')).rows,before);assert.equal((await db.query('select count(*) from quotes')).rows[0].count,count)});
  await t.test('unreconciled financial change blocks completion and resolution',async()=>{
@@ -58,11 +61,54 @@ test('promotion migration, RLS, quote revision and paid-history integration', {s
   await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,4,'Reject edited payment')`,[request]),/Historical payment changed/);
   await db.query(`update request_payments set amount=35 where service_request_id=$1`,[request]);
  });
+ await t.test('issued quote and invoice item history must survive reconciliation',async()=>{
+  const q=(await db.query(`select * from quotes where state='approved'`)).rows[0];
+  await db.query(`update quotes set notes='Changed issued terms' where id=$1`,[q.id]);
+  await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,4,'Reject quote history mutation')`,[request]),/Previously issued quote changed/);
+  await db.query(`update quotes set notes=$2 where id=$1`,[q.id,q.notes]);
+  const item=(await db.query(`select * from invoice_items where invoice_id is not null limit 1`)).rows[0];
+  await db.query(`update invoice_items set description='Changed invoice terms' where id=$1`,[item.id]);
+  await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,4,'Reject invoice item mutation')`,[request]),/Historical invoice item changed/);
+  await db.query(`update invoice_items set description=$2 where id=$1`,[item.id,item.description]);
+ });
+ await t.test('missing status and nonfinite invoice amounts cannot satisfy reconciliation',async()=>{
+  for(const [status,amount] of [[null,35],['issued','NaN'],['issued','Infinity']]) {
+   const invoice=(await db.query(`insert into invoices(service_request_id,status,amount_due) values($1,$2,$3) returning id`,[request,status,amount])).rows[0];
+   await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,4,'Reject malformed invoice')`,[request]),/issued invoices/);
+   await db.query('delete from invoices where id=$1',[invoice.id]);
+  }
+ });
+ await t.test('draft invoice cannot falsely satisfy the reviewed charge difference',async()=>{
+  const invoice=(await db.query(`insert into invoices(service_request_id,status,amount_due) values($1,'draft',35) returning id`,[request])).rows[0];
+  await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,4,'Reject draft reconciliation')`,[request]),/issued invoices/);
+  await db.query('delete from invoices where id=$1',[invoice.id]);
+ });
+ await t.test('late reconciliation failure atomically preserves pending review and history',async()=>{
+  const invoice=(await db.query(`insert into invoices(service_request_id,status,amount_due) values($1,'issued',35) returning id`,[request])).rows[0];
+  const snapshot=async()=>({application:(await db.query('select * from request_promotion_applications order by id')).rows,reviews:(await db.query('select * from request_pricing_reviews order by id')).rows,timeline:(await db.query('select * from request_timeline_events order by id')).rows});
+  await db.exec(`create function fail_reconciliation() returns trigger language plpgsql as $$begin if new.event_type='pricing_adjustment_reconciled' then raise exception 'Injected reconciliation failure';end if;return new;end$$;create trigger fail_reconciliation before insert on request_timeline_events for each row execute function fail_reconciliation();`);
+  const before=await snapshot();
+  await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,4,'Injected rollback verification')`,[request]),/Injected reconciliation failure/);
+  assert.deepEqual(await snapshot(),before);
+  await db.exec('drop trigger fail_reconciliation on request_timeline_events');
+  await db.query('delete from invoices where id=$1',[invoice.id]);
+ });
  await t.test('separate supplemental invoice resolves the exact difference without rewriting paid invoice',async()=>{
   await db.query(`insert into invoices(service_request_id,status,amount_due,amount_paid) values($1,'issued',35,0)`,[request]);
   await db.query(`select aps_resolve_pricing_adjustment($1,4,'Verified separate supplemental invoice')`,[request]);
   const a=(await db.query(`select * from request_promotion_applications where service_request_id=$1`,[request])).rows[0];assert.equal(a.financial_adjustment_required,false);assert.equal(a.applied_pricing_program,'STANDARD');
   assert.equal((await db.query(`select * from invoices where status='paid'`)).rows[0].amount_due,'35');
+ });
+ await t.test('successful retry returns the same result without another timeline or revision',async()=>{
+  const count=(await db.query('select count(*) from request_timeline_events')).rows[0].count;
+  const result=await db.query(`select aps_resolve_pricing_adjustment($1,4,'Verified separate supplemental invoice') as result`,[request]);
+  assert.equal(result.rows[0].result.net_charges,70);
+  assert.equal((await db.query('select count(*) from request_timeline_events')).rows[0].count,count);
+  assert.equal((await db.query('select revision from request_promotion_applications')).rows[0].revision,5);
+  await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,4,'Different operation must not replay')`,[request]),/Refresh/);
+  await db.exec("set test.admin='false'");
+  await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,4,'Verified separate supplemental invoice')`,[request]),/Administrator/);
+  await db.exec("set test.admin='true'");
  });
  await t.test('lower reviewed price requires a recorded refund and preserves both invoices',async()=>{
   await review('approved',5);
