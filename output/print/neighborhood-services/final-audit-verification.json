@@ -1,0 +1,22 @@
+{
+  "standalone_png": "PASS",
+  "standalone_svg": "PASS",
+  "sign_png": "PASS",
+  "sign_svg": "PASS",
+  "pdf_qr": "PASS",
+  "pdf_pages": 1,
+  "trim_inches": [
+    24,
+    18
+  ],
+  "bleed_inches": 0.125,
+  "png_pixels": [
+    7200,
+    5400
+  ],
+  "png_dpi": 300,
+  "used_fonts_embedded": true,
+  "font_weight": 700,
+  "transparent_logo_matches_owner_master": true,
+  "qr_url": "https://alignedprintscan.com/neighborhood?utm_source=yard_sign&utm_medium=offline&utm_campaign=neighborhood_services"
+}

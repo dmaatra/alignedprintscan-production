@@ -4,6 +4,8 @@ Date: 2026-10-16. **CONFIRMED IN CODE** unless explicitly labeled otherwise.
 
 ## Release status
 
+**Final release decision: BLOCKED.** Final local verification is complete for the documented scope. Full recovery, hosted lifecycle verification, and financial-history conversion remain unresolved. A read-only check on 2026-10-16 returned HTTP **404** for the approved public QR destination; artwork must not be put into public use before an authorized release and destination smoke test.
+
 Implementation is prepared on `codex/aps-neighborhood-team-unified-update`. Production release is **incomplete and blocked** by recovery, service-conversion and hosted integration gaps. Draft PR: [#159](https://github.com/dmaatra/alignedprintscan-production/pull/159), OPEN and not merged. The current audit corrections are on this same branch. It must not merge while the recovery gate is open because `main` triggers production deployment.
 
 No production migration, production Edge Function deployment, production application deployment, payment/refund, data deletion, or database reset was performed. The owner subsequently authorized two test correspondence emails, recorded below. PATC resources were not modified. The original APS checkout and its unrelated Supabase temporary changes remain untouched.
@@ -164,7 +166,7 @@ At the owner's explicit request, the authenticated APS production **Messages →
 - Rejected nonfinite estimates.
 - Added migration `20261016045905_neighborhood_review_hardening.sql` to reject issued quote totals that do not reconcile with reviewed line items.
 - Blocked direct mileage-apply operations that could bypass neighborhood review.
-- Added an early service-conversion safety guard: the existing conversion implementation would otherwise write some details before the immutable reviewed-quote guard rejected a later write. Conversion is now explicitly unavailable for neighborhood requests until an atomic revision workflow is implemented and verified. This is an unresolved feature blocker, not completed conversion support.
+- Initially blocked unsafe service conversion before writes. The subsequent atomic pre-invoice implementation supersedes that blanket guard; financial-history conversion remains blocked. See the conversion follow-up below.
 
 Regression result: **589 Node tests passed**, **201 Deno tests passed**, and eight Deno entrypoint checks passed. Existing cached dependencies were used. No skipped tests are being counted as recovery/provider verification.
 
@@ -182,7 +184,7 @@ Fault-injection tests against the actual `materializeInitialInvoice` helper repr
 
 The existing admin browser harness now runs the actual quote-approval helper through a synthetic REST adapter into the same PGlite database used for manual eligibility review. Verified the approved $7 document-service quote creates one invoice, attaches all three reviewed line items, transitions to awaiting payment, and remains one invoice after retry. Synthetic partial ($2 paid/$5 balance) and full ($7 paid/$0 balance) states survive repeated approval unchanged and appear in the actual admin payment view. Desktop/mobile tabs still pass with no overflow or JavaScript errors. No payment provider was called; this is database/helper/UI integration, not a real payment test.
 
-Updated complete suite: **579 passed, zero failed/skipped**. Changed Edge Function type-check passed with remote/npm resolution disabled. Atomic service conversion and full recovery remain blockers; this follow-up does not remove the conversion safety guard or authorize release.
+Updated complete suite: **579 passed, zero failed/skipped**. Changed Edge Function type-check passed with remote/npm resolution disabled. At that checkpoint, conversion was still blocked. The later pre-invoice conversion follow-up supersedes that status; no release is authorized.
 
 
 ## Atomic pre-invoice conversion follow-up (2026-10-16)
@@ -198,3 +200,64 @@ Mobile destinations return to `pending_review` with no discount. Manual eligibil
 **Verification:** Synthetic PostgreSQL/PGlite tests cover authorization, revoked roles, read-only previews, financial/legacy checkout/provider guards, stale previews, both conversion directions, re-eligibility, and original-data preservation. An injected failure at the final timeline insert rolls back all earlier changes. Both directions also succeeded inside one rollback-only transaction against the existing isolated real restored schema; that server was stopped afterward. This is migration compatibility evidence, not full Supabase recovery.
 
 The actual admin Customer-tab conversion dialogs passed against synthetic database adapters: Mobile → RON at desktop width and RON → Mobile at 390px. Editing the previewed amount disabled confirmation until a new preview. The returned Mobile request showed pending eligibility and the new destination address. Existing invoice/payment-view and eight-tab responsive checks still passed without page overflow or JavaScript errors. Updated Node suite: **589 passed, zero failed/skipped**; changed JavaScript syntax and Edge Function type checks passed without dependency downloads. Real hosted Auth/provider lifecycle and full recovery remain unverified. PR #159 remains draft; no production migration, merge or deployment was performed.
+
+
+## Final verification matrix and handoff — 2026-10-16
+
+**CONFIRMED IN CODE / local execution:** The final Node suite passed **589/589**, with zero failures/skips. The existing cached Deno suite passed **201/201**. All eight affected Edge Function entrypoints type-checked using `deno test --cached-only --no-run`; modules were not executed. No package/build framework is present, so an npm/framework build is not applicable. Changed JavaScript syntax and `git diff --check` passed. A credential-pattern scan of 79 changed text files found zero targeted live-secret/credential-URL patterns; no database archives are tracked. This scan is not a claim of comprehensive security certification.
+
+| Required workflow | Verified evidence | Remaining limitation |
+|---|---|---|
+| Neighborhood customer submission | Actual wizard, six service combinations × desktop/mobile; all 12 pass | Transport/storage/provider calls mocked |
+| Mobile/RON/print/scan/combined intake | Actual server validation, attachments represented by synthetic files; correct campaign payloads | Hosted persistence not tested |
+| New administrative requests | Actual admin UI loads synthetic pending requests | Hosted data visibility not tested |
+| Attribution and eligibility | Original source/campaign retained through review/conversion; real SQL review functions | Hosted reporting not tested |
+| Approve/deny/exception pricing | $25/$4 approvals, standard mileage denial and immutable history pass; exception covered by SQL tests | Live route provider not called |
+| Quote creation/edit/save/approval | Actual admin save and quote-approval helper; stale/forged totals and failed-write retries covered | Hosted portal approval not tested |
+| Itemization and reconciliation | Invoice attaches all three $7 quote rows; separate invoice/refund reconciliation tests pass | Real charges/refunds not performed |
+| Invoice generation/payment state | Actual helper → isolated SQL → actual admin view; retries preserve one invoice and partial/full payment state | Payment states are synthetic, not provider transactions |
+| Financial history/audit trails | Original financial rows preserved; pricing and conversion history/rollback tests pass | Provider webhook lifecycle tested only in automated fixtures |
+| Request scheduling/appointment management | Actual admin date/time editing and conversion scheduling reset pass | Real appointment/notification dispatch not performed |
+| Service conversion/compatibility | Atomic pre-invoice RON ↔ Mobile, stale-preview/input-change guards, both directions on restored schema, final-write rollback | Financial-history conversion remains unsupported and blocked |
+| Customer communications | Two explicitly authorized live test correspondence sends recorded as Sent | Inbox receipt and automatic neighborhood triggers unverified |
+| Notifications | Existing automated notification tests pass; UI views exercised | Creation/realtime delivery with real hosted records unverified |
+| Authentication/permissions/RLS | Actual UI redirects anonymous/denied staff sessions to sign-in without mutations; SQL roles/RPC guards tested | Browser identities are mocks; hosted Auth/RLS lifecycle unverified |
+| Dashboard regressions | Actual Calendar, Review Queue, Invoices and Payments modules load; invoice summary reconciles $7 issued/$0 outstanding while excluding the $60 draft from receivables | Fixture scope; no production customer edits |
+| Responsive/accessibility behavior | Eight admin tabs at 1440/390, desktop/mobile conversion dialogs, accessible status/selection checks, no page overflow or JS errors | Not a full assistive-technology audit |
+| Artwork/QR | Five independent decodes: standalone PNG/SVG, sign PNG/SVG, PDF rendering; exact approved URL | Physical phone-camera/printed proof and vendor checkout upload not performed |
+| Recovery | Archive checksum and 123-table/2,436-row partial restore verified; isolated real-schema conversion transaction rolled back | Complete Supabase recovery failed, as detailed below |
+
+### Exact recovery failure inventory
+
+The 11 failed restore statements are: (1) create `pg_net`; (2) comment on `pg_net`; (3) create `supabase_vault`; (4) comment on `supabase_vault`; (5) load `vault.secrets`; (6) apply `net` schema ACL; (7) apply ACL for `vault._crypto_aead_det_decrypt`; (8) apply ACL for `vault.create_secret`; (9) apply ACL for `vault.update_secret`; (10) apply `vault.secrets` ACL; (11) apply `vault.decrypted_secrets` ACL. Required extension versions are `pg_net` 0.20.0 and `supabase_vault` 0.3.1. The currently located standalone PostgreSQL binaries lack them and the managed Vault encryption environment. These are missing platform dependencies, not mismatched customer row counts.
+
+Within the owner's no-install/no-new-cloud-resource constraints, an already available isolated, disposable Supabase-compatible target with those dependencies is required to proceed. None was found in the investigated APS environments. Once such an existing target is identified and its isolation verified: disable external email/payment/webhook/scheduled-job effects, restore roles/schema/data, require zero unexplained restore errors, verify extensions/functions/triggers/RLS and all table contents, and separately verify Storage file bytes and platform configuration. Do not restore into the hosted APS development/production database or weaken this requirement.
+
+### Artwork and current destination
+
+Final files remain in the existing APS Deliverables directory. Verified one-page 24×18-inch trim, 24.25×18.25-inch media/bleed, 0.125-inch bleed, 7200×5400 RGB/300-DPI PNG, embedded used fonts at weight 700, and the owner's transparent long logo byte-for-byte. The source logo retains its own faint semitransparent navy pixels. The identical single-page design is intended for both sides without mirroring. No order/payment was placed.
+
+Five QR checks decode exactly to `https://alignedprintscan.com/neighborhood?utm_source=yard_sign&utm_medium=offline&utm_campaign=neighborhood_services`. A read-only live GET returned **HTTP 404**. This is consistent with the unreleased feature, but means the printed campaign is not operational. The URL/campaign were not changed and no deployment was attempted.
+
+### Reproducible local commands
+
+From the APS feature worktree, using only already installed dependencies:
+
+```sh
+APS_PGLITE_MODULE=/private/tmp/aps-unified-test-tools/node_modules/@electric-sql/pglite/dist/index.js node --experimental-transform-types --test tests/*.test.mjs
+DENO_DIR=/Users/doneishawilson/Library/Caches/deno /private/tmp/aps-unified-test-tools/node_modules/.bin/deno test --cached-only --allow-env supabase/functions/_shared/*_test.ts supabase/functions/_shared/proof/*_test.ts
+DENO_DIR=/Users/doneishawilson/Library/Caches/deno /private/tmp/aps-unified-test-tools/node_modules/.bin/deno test --cached-only --no-run supabase/functions/public-request-submit/index.ts supabase/functions/get-request-status/index.ts supabase/functions/send-request-email/index.ts supabase/functions/admin-route-distance/index.ts supabase/functions/admin-service-adjustment/index.ts supabase/functions/client-quote-action/index.ts supabase/functions/create-embedded-checkout/index.ts supabase/functions/update-request-status/index.ts
+APS_PLAYWRIGHT_MODULE=/Users/doneishawilson/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright APS_PGLITE_MODULE=/private/tmp/aps-unified-test-tools/node_modules/@electric-sql/pglite/dist/index.js node tests/neighborhood-browser-admin.cjs
+APS_PLAYWRIGHT_MODULE=/Users/doneishawilson/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright node tests/neighborhood-browser-customer.cjs
+node --check assets/js/admin.js
+git diff --check
+```
+
+Browser tests require the established static server at `127.0.0.1:8028`. They intercept external requests and use reserved synthetic identities. All authentication/provider limitations above still apply. Final safe artwork evidence is committed as `output/print/neighborhood-services/final-audit-verification.json`; synthetic admin screenshots are in `output/qa/`.
+
+### Final checklist
+
+- **Completed:** Existing infrastructure investigation; code corrections and pre-invoice conversion; local customer/admin/database/security/regression checks; authorized test emails; transparent-logo artwork and five QR decodes; report/branch/PR updates.
+- **Pending manual checks:** Physical sign/phone-camera proof, vendor front/back upload review, mailbox receipt confirmation, and post-release public URL/attribution smoke checks.
+- **Blocked mandatory gates:** Full compatible recovery; isolated hosted end-to-end workflow verification; financial-history conversion/reconciliation implementation; live neighborhood destination (currently 404).
+- **Preserved controls:** PR #159 stays draft. No merge, production deployment/migration, customer-data edits, installations, new cloud resources, or purchases. The partial restore is not described as successful full recovery.

@@ -17,7 +17,7 @@ const root=require('node:path').resolve(__dirname,'..');
  else await db.query(`insert into print_scan_requests(service_request_id,fulfillment_type,delivery_address,scan_pages) values($1,'mobile-service','123 Test Lane, Waxahachie, TX 75165',3)`,[id]);
  await db.query(`insert into request_promotion_applications(service_request_id,promotion_code,submitted_service_address) values($1,'CAMDEN_PARK','123 Test Lane, Waxahachie, TX 75165')`,[id]);
  }
- const tables=new Set((await db.query(`select tablename from pg_tables where schemaname='public'`)).rows.map(r=>r.tablename));const calls=[],missing=new Set();
+ const tables=new Set((await db.query(`select tablename from pg_tables where schemaname='public'`)).rows.map(r=>r.tablename));const calls=[],missing=new Set();let denyAccess=false;
  const customer={id:'55555555-5555-4555-8555-555555555555',first_name:'APS',last_name:'Synthetic',email:'aps-audit@example.invalid',phone:'4695550100'};
  async function dispatch(spec){calls.push(spec);try{
  if(spec.kind==='rpc'){
@@ -27,7 +27,7 @@ const root=require('node:path').resolve(__dirname,'..');
  }
  if(spec.kind==='function'){
   const a=spec.args.body||{};
-  if(spec.name==='admin-business-foundation')return {data:{ok:true},error:null};
+  if(spec.name==='admin-business-foundation')return denyAccess?{data:null,error:{message:'Synthetic staff access denied'}}:{data:{ok:true},error:null};
   if(spec.name==='admin-service-adjustment'){if(a.command==='preview_service_conversion')await new Promise(resolve=>setTimeout(resolve,200));const result=await db.query('select aps_convert_neighborhood_service($1,$2,$3,$4,$5,$6,$7,$8) result',[a.request_id,a.new_service_type,a.new_service_total,JSON.stringify(a),a.reason,a.command==='preview_service_conversion',a.revision??null,a.expected_quote??null]);return {data:result.rows[0].result,error:null};}
   if(spec.name==='admin-route-distance'){
    if(a.command==='record_manual'){const calculation=(await db.query(`insert into mobile_travel_calculations(service_request_id,suggested_fee,applied_fee,round_trip_miles,operator_note,pricing_tier_label) values($1,$2,$2,$3,$4,'Synthetic reviewed mileage') returning *`,[a.request_id,a.actual_fee,a.round_trip_miles,a.operator_note])).rows[0];return {data:{ok:true,calculation},error:null};}
@@ -49,7 +49,7 @@ const root=require('node:path').resolve(__dirname,'..');
  }catch(e){return {data:null,error:{message:e.message}};}}
  const browser=await chromium.launch({headless:true,channel:'chrome'});const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.type()==='confirm'?d.accept():d.dismiss());
  await page.exposeFunction('apsAuditDispatch',dispatch);
- await page.route('**/*',async route=>{const u=new URL(route.request().url());if(u.hostname==='localhost'||u.hostname==='127.0.0.1')return route.continue();if(u.hostname==='cdn.jsdelivr.net'&&u.pathname.includes('supabase-js'))return route.fulfill({contentType:'text/javascript',body:'window.supabase=window.__apsMockSupabase;'});return route.abort();});
+ await page.route('**/*',async route=>{const u=new URL(route.request().url());if(u.hostname==='localhost'||u.hostname==='127.0.0.1'){if(u.pathname==='/admin-login.html')return route.fulfill({contentType:'text/html',body:'<h1>APS synthetic sign-in destination</h1>'});return route.continue();}if(u.hostname==='cdn.jsdelivr.net'&&u.pathname.includes('supabase-js'))return route.fulfill({contentType:'text/javascript',body:'window.supabase=window.__apsMockSupabase;'});return route.abort();});
  await page.addInitScript(()=>{
  const session={user:{id:'11111111-1111-4111-8111-111111111111',email:'aps-admin@example.invalid'},access_token:'synthetic-only'};
  const query=table=>{const spec={kind:'table',table,filters:[]};const q={then(resolve,reject){return window.apsAuditDispatch(spec).then(resolve,reject)}};for(const method of ['select','order','limit','range','not','in','or','gte','lte','contains'])q[method]=()=>q;for(const method of ['eq','neq','is'])q[method]=(key,v)=>{spec.filters.push([method,key,v]);return q};for(const method of ['single','maybeSingle'])q[method]=()=>{spec.single=true;return q};for(const method of ['insert','update','delete','upsert'])q[method]=value=>{spec.operation=method;spec.value=value;return q};return q};
@@ -105,5 +105,16 @@ const root=require('node:path').resolve(__dirname,'..');
  }
  for(const id of ids)assert.equal((await db.query('select acquisition_utm_campaign from service_requests where id=$1',[id])).rows[0].acquisition_utm_campaign,'neighborhood_services');
  for(const width of [1440,390]){await page.setViewportSize({width,height:1000});for(const tab of ['overview','customer','documents','quote','payments','messages','fulfillment','timeline']){await page.locator('[data-workspace-tab="'+tab+'"]').click();await page.waitForTimeout(80);assert.equal(await page.locator('[data-workspace-tab="'+tab+'"]').getAttribute('aria-selected'),'true');}await page.locator('[data-workspace-tab="overview"]').click();await page.screenshot({path:'/private/tmp/aps-admin-audit-'+width+'.png',fullPage:true});console.log('ADMIN_TABS',width,'overflow',await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth));}
+ await page.setViewportSize({width:1440,height:1000});
+ for(const view of ['calendar','review','invoices','payments']){
+  await page.locator('a[data-admin-view="'+view+'"]').click();
+  await page.waitForFunction(()=>{const el=document.querySelector('#adminModuleContent');return el&&el.innerText.trim()&&!el.innerText.includes('Loading…')});
+  assert.equal(await page.locator('#adminModuleView').isVisible(),true);
+  if(view==='invoices'){const text=await page.locator('#adminModuleContent').innerText();assert.match(text,/APS-44444444/);assert.match(text,/ISSUED INVOICES\s+\$7.00/);assert.match(text,/OUTSTANDING RECEIVABLE\s+\$0.00/);}
+  console.log('ADMIN_GLOBAL_MODULE_PASS',view);
+ }
+ denyAccess=true;const beforeDenied=calls.length;await page.goto('http://127.0.0.1:8028/admin-dashboard.html');await page.waitForURL('**/admin-login.html');
+ assert.equal(calls.slice(beforeDenied).filter(c=>['insert','update','delete','upsert'].includes(c.operation)).length,0);console.log('ADMIN_STAFF_DENIED_REDIRECT_PASS');
+ await page.addInitScript(()=>{window.__auditAnonymous=true;});await page.goto('http://127.0.0.1:8028/admin-dashboard.html');await page.waitForURL('**/admin-login.html');console.log('ADMIN_ANONYMOUS_REDIRECT_PASS');
  console.log('JS_ERRORS',errors);console.log('UNMODELED_READ_TABLES',[...missing]);fs.writeFileSync('/private/tmp/aps-admin-audit-results.json',JSON.stringify({errors,calls,missing:[...missing]},null,2));assert.deepEqual(errors,[]);await browser.close();await db.close();
 })().catch(e=>{console.error(e);process.exit(1)});
