@@ -1,3 +1,4 @@
+import { canItemizeCheckout } from "../_shared/checkout-itemization.mjs";
 import { authorizePortal } from "../_shared/portal-access.ts";
 /**
  * Aligned Print & Scan — Stripe Embedded Checkout.
@@ -105,6 +106,12 @@ Deno.serve(async (request) => {
       return json({ ok: false, error: "Request not found." }, 404);
     }
 
+    const promotionResponse = await supabaseFetch(`request_promotion_applications?service_request_id=eq.${requestId}&select=eligibility_status,financial_adjustment_required&limit=1`);
+    const promotion = (await readJson(promotionResponse))?.[0];
+    if (promotion && (promotion.eligibility_status === "pending_review" || promotion.financial_adjustment_required)) {
+      throw new Error("APS must finish the neighborhood pricing review before payment.");
+    }
+
     if (!invoiceId) {
       const initialInvoiceResponse = await supabaseFetch(
         `invoices?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
@@ -181,11 +188,7 @@ Deno.serve(async (request) => {
 
     // Use line items only when their sum matches the unpaid balance. Otherwise,
     // use one balance line so partial payments remain accurate.
-    const itemTotal = items.reduce((sum: number, item: any) => {
-      return sum + Number(item.line_total || 0);
-    }, 0);
-    const useItemizedCheckout =
-      items.length > 0 && Math.abs(itemTotal - balanceDue) < 0.01;
+    const useItemizedCheckout = canItemizeCheckout(items, balanceDue);
 
     if (useItemizedCheckout) {
       items.forEach((item: any, index: number) => {

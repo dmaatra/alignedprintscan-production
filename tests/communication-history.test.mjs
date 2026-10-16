@@ -172,7 +172,7 @@ test("idempotent insert conflict re-reads history and never duplicates delivery"
 test("request acknowledgment preserves customer success independently of admin alert", async () => {
   const source = await read("supabase/functions/send-request-email/index.ts");
   const customerAt = source.indexOf("deliverCustomerCommunication");
-  const adminAt = source.indexOf("try { adminSend = await sendEmail");
+  const adminAt = source.indexOf("try { const priorAlert = await supabaseFetch");
   assert.ok(customerAt > 0 && adminAt > customerAt);
   assert.match(source, /admin_alert_sent: !adminAlertError/);
   assert.match(

@@ -1,0 +1,73 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const modulePath=process.env.APS_PGLITE_MODULE;
+const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
+test('promotion migration, RLS, quote revision and paid-history integration', {skip:!modulePath}, async t=>{
+ const {PGlite}=await import(modulePath);const db=new PGlite();
+ await db.exec(`create role anon; create role authenticated; create role service_role; create schema auth;
+ create function auth.uid() returns uuid language sql as $$select nullif(current_setting('test.user_id',true),'')::uuid$$;
+ create function public.is_admin() returns boolean language sql as $$select coalesce(current_setting('test.admin',true),'false')='true'$$;
+ grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
+ await db.exec(read('tests/fixtures/neighborhood-schema.sql'));
+ await db.exec(read('supabase/migrations/20261016032854_neighborhood_pricing_program.sql'));
+ const user='11111111-1111-4111-8111-111111111111';
+ await db.exec(`set test.user_id='${user}';set test.admin='true';`);
+ const request='22222222-2222-4222-8222-222222222222';
+ const snapshot={snapshot_version:'aps-estimate-components-v1',service:'mobile',total:35,components:[{key:'mobile:base',label:'Mobile Notary Appointment Base',quantity:1,unit_amount:50,line_amount:50,billable:true},{key:'notarial_act:jurat',label:'Jurat',quantity:1,unit_amount:10,line_amount:10,billable:true},{key:'promotion:CAMDEN_PARK',label:'Camden Park Promotional Adjustment',quantity:1,unit_amount:-25,line_amount:-25,billable:true}]};
+ await db.query(`insert into service_requests(id,service_type,status,estimated_total,estimate_components,paid_amount,acquisition_landing_page) values($1,'mobile','under_review',35,$2,0,'/neighborhood')`,[request,JSON.stringify(snapshot)]);
+ await db.query(`insert into mobile_notary_requests(service_request_id,street_address,city,state,zip) values($1,'123 Test Lane','Waxahachie','TX','75165')`,[request]);
+ await db.query(`insert into request_promotion_applications(service_request_id,promotion_code,submitted_service_address) values($1,'CAMDEN_PARK','123 Test Lane, Waxahachie, TX 75165')`,[request]);
+ const review=(status,revision,travel=null)=>db.query(`select aps_review_pricing_program($1,$2,'Address reviewed for test',$3,$4) as result`,[request,status,revision,travel]);
+ await t.test('pending discount cannot be issued',async()=>{await assert.rejects(db.query(`update service_requests set status='quote_ready' where id=$1`,[request]),/Complete neighborhood/)});
+ await t.test('unauthorized reviewer denied',async()=>{await db.exec("set test.admin='false'");await assert.rejects(review('approved',0),/Administrator/);await db.exec("set test.admin='true'")});
+ await t.test('approval creates exactly one locked adjustment and original estimate survives',async()=>{await review('approved',0);const {rows}=await db.query(`select * from invoice_items where service_request_id=$1`,[request]);assert.equal(rows.reduce((s,x)=>s+Number(x.line_total),0),35);assert.equal(rows.filter(x=>x.item_type==='promotion').length,1);const state=(await db.query(`select * from service_requests where id=$1`,[request])).rows[0];assert.deepEqual(state.estimate_components,snapshot);assert.equal(state.acquisition_landing_page,'/neighborhood');});
+ await t.test('stale concurrent review is rejected',async()=>{await assert.rejects(review('approved',0),/refresh/)});
+ await t.test('approved quote can be issued',async()=>{await db.query(`update service_requests set status='quote_ready' where id=$1`,[request])});
+ await t.test('issued quote and its line items cannot be silently edited',async()=>{
+  await db.query(`update quotes set state='sent' where id=(select current_quote_id from service_requests where id=$1)`,[request]);
+  await assert.rejects(db.query(`update quotes set amount=1 where state='sent'`),/immutable/);
+  await assert.rejects(db.query(`update invoice_items set line_total=1 where service_request_id=$1`,[request]),/immutable/);
+  await assert.rejects(db.query(`delete from invoice_items where service_request_id=$1`,[request]),/immutable/);
+ });
+ await t.test('denial requires standard mileage',async()=>{await assert.rejects(review('denied',1),/mileage/)});
+ const travel='33333333-3333-4333-8333-333333333333';await db.query(`insert into mobile_travel_calculations(id,service_request_id,suggested_fee) values($1,$2,10)`,[travel,request]);
+ await t.test('denial supersedes quote and preserves itemization history',async()=>{await review('denied',1,travel);const quote=(await db.query(`select state,amount,version from quotes order by version`)).rows;assert.equal(quote.length,2);assert.equal(quote[0].state,'superseded');assert.equal(Number(quote[1].amount),70);const history=(await db.query(`select previous_items from request_pricing_reviews order by created_at desc limit 1`)).rows[0];assert.equal(history.previous_items.length,3);});
+ await t.test('reapproval does not duplicate travel or discount',async()=>{await review('owner_exception',2);const rows=(await db.query(`select * from invoice_items where service_request_id=$1`,[request])).rows;assert.equal(rows.reduce((s,x)=>s+Number(x.line_total),0),35);assert.equal(rows.length,3)});
+ await t.test('tampered promotion blocks quote issuance',async()=>{await db.query(`update invoice_items set line_total=-50 where item_type='promotion'`);await assert.rejects(db.query(`update service_requests set status='quote_ready' where id=$1`,[request]),/authorized pricing/);await db.query(`update invoice_items set line_total=-25 where item_type='promotion'`)});
+ await db.query(`insert into invoices(service_request_id,status,amount_due,amount_paid) values($1,'paid',35,35)`,[request]);
+ await t.test('paid history is untouched and review requires financial adjustment',async()=>{const before=(await db.query('select * from invoices')).rows;const count=(await db.query('select count(*) from quotes')).rows[0].count;const result=await review('denied',3,travel);assert.equal(result.rows[0].result.financial_adjustment_required,true);assert.deepEqual((await db.query('select * from invoices')).rows,before);assert.equal((await db.query('select count(*) from quotes')).rows[0].count,count)});
+ await t.test('unreconciled financial change blocks completion and resolution',async()=>{
+  await assert.rejects(db.query(`update service_requests set status='completed' where id=$1`,[request]),/financial review/);
+  await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,4,'Verified financial records')`,[request]),/reconcile/);
+ });
+ await t.test('separate supplemental invoice resolves the exact difference without rewriting paid invoice',async()=>{
+  await db.query(`insert into invoices(service_request_id,status,amount_due,amount_paid) values($1,'issued',35,0)`,[request]);
+  await db.query(`select aps_resolve_pricing_adjustment($1,4,'Verified separate supplemental invoice')`,[request]);
+  const a=(await db.query(`select * from request_promotion_applications where service_request_id=$1`,[request])).rows[0];assert.equal(a.financial_adjustment_required,false);assert.equal(a.applied_pricing_program,'STANDARD');
+  assert.equal((await db.query(`select * from invoices where status='paid'`)).rows[0].amount_due,'35');
+ });
+ await t.test('lower reviewed price requires a recorded refund and preserves both invoices',async()=>{
+  await review('approved',5);
+  await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,6,'Check refund is complete')`,[request]),/reconcile/);
+  await db.query(`insert into refunds(service_request_id,amount,status) values($1,35,'succeeded')`,[request]);
+  await db.query(`select aps_resolve_pricing_adjustment($1,6,'Confirmed completed refund record')`,[request]);
+  assert.equal((await db.query('select count(*) from invoices')).rows[0].count,2);
+ });
+ await t.test('document delivery receives one locked four-dollar base and quote approval remains idempotent',async()=>{
+  const id='44444444-4444-4444-8444-444444444444';const est={components:[{key:'print:courier',label:'Courier Delivery Base',quantity:1,unit_amount:20,line_amount:20,billable:true},{key:'scan',label:'Scan to PDF',quantity:3,unit_amount:1,line_amount:3,billable:true},{key:'promotion:CAMDEN_PARK',label:'Camden Park Promotional Adjustment',quantity:1,unit_amount:-16,line_amount:-16,billable:true}],total:7};
+  await db.query(`insert into service_requests(id,service_type,status,estimated_total,estimate_components,paid_amount) values($1,'print','under_review',7,$2,0)`,[id,JSON.stringify(est)]);
+  await db.query(`insert into print_scan_requests(service_request_id,fulfillment_type,delivery_address,scan_pages) values($1,'courier','123 Test Lane, Waxahachie, 75165',3)`,[id]);
+  await db.query(`insert into request_promotion_applications(service_request_id,promotion_code,submitted_service_address) values($1,'CAMDEN_PARK','123 Test Lane, Waxahachie, 75165')`,[id]);
+  await db.query(`select aps_review_pricing_program($1,'approved','Verified Camden Park address',0)`,[id]);
+  const a=(await db.query(`select * from request_promotion_applications where service_request_id=$1`,[id])).rows[0];assert.equal(a.approved_travel_amount,'4');
+  await db.query(`update quotes set state='approved' where id=$1`,[a.related_quote_id]);
+  const invoice=(await db.query(`insert into invoices(service_request_id,status,amount_due,amount_paid) values($1,'awaiting_payment',7,0) returning id`,[id])).rows[0];
+  await db.query(`update invoice_items set invoice_id=$1 where service_request_id=$2`,[invoice.id,id]);
+  await db.query(`update service_requests set status='awaiting_payment' where id=$1`,[id]);
+  await db.query(`update quotes set state='approved' where id=$1`,[a.related_quote_id]);
+  assert.equal((await db.query(`select count(*) from invoice_items where invoice_id=$1`,[invoice.id])).rows[0].count,3);
+ });
+ await t.test('anonymous and non-admin cannot read private promotion configuration or modify approval',async()=>{await db.exec('set role anon');await assert.rejects(db.query('select * from promotion_programs'),/permission denied/);await db.exec("reset role;set role authenticated;set test.admin='false'");assert.equal((await db.query('select * from request_promotion_applications')).rows.length,0);await assert.rejects(db.query("update request_promotion_applications set eligibility_status='approved'"),/permission denied/);await db.exec('reset role')});
+ await db.close();
+});

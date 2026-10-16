@@ -150,7 +150,7 @@ function travelCalculationMarkup(calculation) {
 }
 
 async function loadMobileTravelCard({force=false}={}) {
-  const panel=$("#mobileTravelCard");if(!panel||selectedRequest?.service_type!=="mobile")return;
+  const panel=$("#mobileTravelCard");if(!panel||!["mobile","print"].includes(selectedRequest?.service_type))return;
   const status=$("#mobileTravelStatus",panel),results=$("#mobileTravelResults",panel);
   try{
     const state=await invokeMobileTravel("get_request"),detail=state.detail||{},destination=[detail.street_address,detail.unit,detail.city,detail.state,detail.zip].filter(Boolean).join(", ");
@@ -167,7 +167,7 @@ async function loadMobileTravelCard({force=false}={}) {
 }
 
 async function calculateMobileTravel(force=false){const panel=$("#mobileTravelCard"),status=$("#mobileTravelStatus",panel),origin=$("#mobileTravelOrigin",panel),oneTime=origin.value==="one-time";status.textContent="Calculating driving route…";try{const body={force,origin_id:oneTime?null:origin.value};if(oneTime)body.one_time_origin={label:"One-time origin",street_address:$("#oneTimeOriginStreet",panel).value,city:$("#oneTimeOriginCity",panel).value,state:$("#oneTimeOriginState",panel).value,zip:$("#oneTimeOriginZip",panel).value};const data=await invokeMobileTravel("calculate",body);$("#mobileTravelResults",panel).innerHTML=travelCalculationMarkup(data.calculation);status.textContent=data.cached?"Saved route result reused.":"Route calculated. Review the suggestion before changing the quote.";bindMobileTravelActions();return true;}catch(error){status.textContent=error.message;return false;}}
-function bindMobileTravelActions(){const panel=$("#mobileTravelCard");if(!panel)return;const origin=$("#mobileTravelOrigin",panel);origin?.addEventListener("change",()=>{$("#oneTimeOriginFields",panel).hidden=origin.value!=="one-time";if(origin.value!=="one-time")void calculateMobileTravel(false);});$("#recalculateMobileTravel",panel)?.addEventListener("click",()=>calculateMobileTravel(true));$("#applyMobileTravel",panel)?.addEventListener("click",async()=>{try{await invokeMobileTravel("apply_to_quote",{calculation_id:$(".mobile-travel-results",panel)?.dataset.calculationId,actual_fee:Number($("#mobileTravelFee",panel).value),operator_note:$("#mobileTravelNote",panel).value});showToast("Mobile travel charge applied through the maintained quote workflow.");await selectRequest(selectedRequest.id);}catch(error){alert(error.message);}});$("#applyManualMobileTravel",panel)?.addEventListener("click",async()=>{try{await invokeMobileTravel("apply_manual",{round_trip_miles:Number($("#manualTravelMiles",panel).value),actual_fee:Number($("#manualTravelFee",panel).value),operator_note:$("#manualTravelNote",panel).value});showToast("Manual Mobile travel charge applied with audit history.");await selectRequest(selectedRequest.id);}catch(error){alert(error.message);}});}
+function bindMobileTravelActions(){const panel=$("#mobileTravelCard");if(!panel)return;const origin=$("#mobileTravelOrigin",panel);origin?.addEventListener("change",()=>{$("#oneTimeOriginFields",panel).hidden=origin.value!=="one-time";if(origin.value!=="one-time")void calculateMobileTravel(false);});$("#recalculateMobileTravel",panel)?.addEventListener("click",()=>calculateMobileTravel(true));$("#applyMobileTravel",panel)?.addEventListener("click",async()=>{try{const promotion=selectedRequest.request_promotion_applications?.[0]||selectedRequest.request_promotion_applications;if(promotion?.id){showToast("Use the neighborhood pricing review to apply this mileage calculation.");return;}await invokeMobileTravel("apply_to_quote",{calculation_id:$(".mobile-travel-results",panel)?.dataset.calculationId,actual_fee:Number($("#mobileTravelFee",panel).value),operator_note:$("#mobileTravelNote",panel).value});showToast("Mobile travel charge applied through the maintained quote workflow.");await selectRequest(selectedRequest.id);}catch(error){alert(error.message);}});$("#applyManualMobileTravel",panel)?.addEventListener("click",async()=>{try{const promotion=selectedRequest.request_promotion_applications?.[0]||selectedRequest.request_promotion_applications;const result=await invokeMobileTravel(promotion?.id?"record_manual":"apply_manual",{round_trip_miles:Number($("#manualTravelMiles",panel).value),actual_fee:Number($("#manualTravelFee",panel).value),operator_note:$("#manualTravelNote",panel).value});if(promotion?.id){$("#mobileTravelResults",panel).innerHTML=travelCalculationMarkup(result.calculation);showToast("Manual mileage saved. Complete Change Pricing Program to prepare the revised quote.");}else{showToast("Manual Mobile travel charge applied with audit history.");await selectRequest(selectedRequest.id);}}catch(error){alert(error.message);}});}
 
 function playNewRequestSound() {
   try {
@@ -530,7 +530,10 @@ function filteredRequests() {
         "final_balance_due",
       ].includes(requestStatus)) ||
       (quick === "completed" && requestStatus === "completed");
-    return serviceOk && statusOk && archiveOk && quickOk;
+    const promotion = $("#promotionFilter")?.value || "all";
+    const application = r.request_promotion_applications?.[0] || r.request_promotion_applications;
+    const promotionOk = promotion === "all" || (promotion === "yard_sign" && r.acquisition_utm_source === "yard_sign") || (promotion === "neighborhood" ? Boolean(application?.id) : application?.eligibility_status === promotion);
+    return serviceOk && statusOk && archiveOk && quickOk && promotionOk;
   });
 }
 
@@ -591,7 +594,7 @@ function renderRequestList() {
         <strong>${escapeHtml(name)}</strong>
         <small>${created}</small>
         <span class="service-tag ${serviceColor(r.service_type)}">${serviceLabel(r.service_type)}</span>
-        <span class="status-pill">${statusLabel(r.status)}</span>${requestUrgencyBadge(r)}${archivedBadge}
+        <span class="status-pill">${statusLabel(r.status)}</span>${requestUrgencyBadge(r)}${archivedBadge}${(r.request_promotion_applications?.[0] || r.request_promotion_applications)?.id ? `<span class="status-pill">Camden Park · ${escapeHtml(statusLabel((r.request_promotion_applications?.[0] || r.request_promotion_applications).eligibility_status))}</span>` : ""}
       </button>
     `;
     })
@@ -1123,7 +1126,7 @@ function invoiceRowsFromDom() {
     const unit_price =
       Number(row.querySelector('[data-field="unit_price"]')?.value || 0) || 0;
     return {
-      item_type: "service",
+      item_type: row.dataset.itemType || "service",
       description,
       quantity,
       unit_price,
@@ -1144,7 +1147,7 @@ function renderInvoiceRows(rows) {
       const lineTotal = quantity * unitPrice;
 
       return `
-        <div class="invoice-row" data-row-index="${index}">
+        <div class="invoice-row" data-item-type="${escapeHtml(item.item_type || "service")}" data-row-index="${index}">
           <label class="invoice-field invoice-field--description">
             <span>Service / item</span>
             <input
@@ -1171,7 +1174,7 @@ function renderInvoiceRows(rows) {
             <input
               data-field="unit_price"
               type="number"
-              min="0"
+              min="${item.item_type === "promotion" ? unitPrice : 0}"
               step="0.01"
               value="${unitPrice.toFixed(2)}"
             />
@@ -1293,6 +1296,48 @@ function defaultInvoiceRows(request = {}) {
       line_total: 0,
     },
   ];
+}
+
+function pricingProgramPanel(request) {
+  const a = request.request_promotion_applications?.[0] || request.request_promotion_applications;
+  if (!a?.id) return "";
+  const applicable = ["mobile", "print"].includes(request.service_type);
+  return `<section class="admin-detail-section" data-v3-tab-target="overview"><h3>Camden Park Neighborhood Services</h3><p><strong>${escapeHtml(statusLabel(a.eligibility_status))}</strong> · Applied pricing: ${escapeHtml(a.applied_pricing_program)}</p><p><strong>Submitted service address:</strong> ${escapeHtml(a.submitted_service_address)}</p><p>Acquisition: ${escapeHtml(a.acquisition_source)} · Review the address for Camden Park Neighborhood in Waxahachie, Texas.</p>${a.financial_adjustment_required ? '<p role="status">Existing invoice/payment history is protected. Use the existing financial adjustment/refund controls; this review has not changed customer charges.</p><label>Financial reconciliation reason<textarea id="pricingResolutionReason"></textarea></label><button type="button" class="btn dark" id="resolvePricingAdjustment">Verify Invoice/Refund Reconciliation</button><p id="pricingResolutionResult" role="status"></p>' : ''}${applicable ? `<p>Approved travel: Mobile Notary $25; document service/delivery $4. These replace the applicable base once per visit. For denial, first calculate standard mileage in the existing travel calculator below.</p><label>Eligibility decision<select id="pricingProgramDecision"><option value="approved">Approved</option><option value="denied">Denied — outside service area</option><option value="owner_exception">Owner-approved exception</option></select></label><label>Review reason<textarea id="pricingProgramReason" required></textarea></label><button type="button" class="btn gold" id="reviewPricingProgram">Preview Pricing Change</button><p id="pricingProgramResult" role="status"></p>` : '<p>RON and Loan Signing retain standard pricing. No neighborhood travel discount applies.</p><button type="button" class="btn dark" id="reviewPricingProgram">Confirm Standard Pricing Review</button><p id="pricingProgramResult" role="status"></p>'}<details><summary>Original intake estimate</summary><ul>${(request.estimate_components?.components || []).map(line => `<li>${escapeHtml(line.label)}: ${money(line.line_amount)}</li>`).join('')}</ul></details></section>`;
+}
+
+async function resolvePricingAdjustment() {
+  const a = selectedRequest.request_promotion_applications?.[0] || selectedRequest.request_promotion_applications;
+  const reason = $("#pricingResolutionReason")?.value.trim();
+  const output = $("#pricingResolutionResult");
+  if (!reason) { output.textContent = "Record the reconciliation reason first."; return; }
+  try {
+    const {error} = await adminClient.rpc("aps_resolve_pricing_adjustment", {p_request:selectedRequest.id,p_revision:a.revision,p_reason:reason});
+    if (error) throw error;
+    const id = selectedRequest.id; await loadRequests(); await selectRequest(id);
+    showToast("Financial adjustment verified against invoice/refund records.");
+  } catch(error) { output.textContent = error.message; }
+}
+
+async function reviewPricingProgram() {
+  const a = selectedRequest.request_promotion_applications?.[0] || selectedRequest.request_promotion_applications;
+  const physical = ["mobile","print"].includes(selectedRequest.service_type);
+  const decision = $("#pricingProgramDecision")?.value || "denied", reason = $("#pricingProgramReason")?.value.trim() || (!physical ? "Standard pricing retained: no physical neighborhood travel applies." : "");
+  const output = $("#pricingProgramResult"), button = $("#reviewPricingProgram");
+  if (!reason) { output.textContent = "Record the address review reason first."; return; }
+  const calculationId = $(".mobile-travel-results")?.dataset.calculationId || null;
+  if (physical && decision === "denied" && !calculationId) { output.textContent = "Calculate standard mileage first, then review the pricing change."; return; }
+  const base = selectedRequest.estimate_components?.components?.find(line => ["mobile:base","print:mobile_base","print:courier","print:mobile_service"].includes(line.key));
+  const mobile = ["mobile:base","print:mobile_base"].includes(base?.key);
+  const standard = mobile ? 50 : 20, discount = decision === "denied" ? 0 : mobile ? 25 : 16;
+  if (physical && !confirm(`Review pricing: standard base $${standard}; promotional adjustment −$${discount}. ${decision === "denied" ? "Standard mileage is added from the displayed calculation." : `Travel total $${standard-discount}.`} Existing invoices/payments will be preserved. Apply this decision and prepare a revised draft quote?`)) return;
+  button.disabled = true;
+  try {
+    const {data,error} = await adminClient.rpc("aps_review_pricing_program", {p_request:selectedRequest.id,p_status:decision,p_reason:reason,p_revision:a.revision,p_travel_calculation:calculationId});
+    if (error) throw error;
+    const requestId = selectedRequest.id;
+    await loadRequests(); await selectRequest(requestId);
+    showToast(data.standard_pricing_unchanged ? "Review recorded. Standard pricing remains unchanged." : data.financial_adjustment_required ? "Decision recorded. Use existing financial adjustment controls for the issued invoice." : "Revised itemized draft prepared. Review it in Quote Builder before sending.");
+  } catch(error) { output.textContent = error.message; button.disabled = false; }
 }
 
 function estimateRequirementsSummary(request = {}) {
@@ -1757,6 +1802,7 @@ async function selectRequest(id) {
       </div>
     </section>
 
+    ${pricingProgramPanel(selectedRequest)}
     ${internalWorkflowGuide(selectedRequest)}
 
     <div class="admin-detail-section invoice-builder-card" data-v3-tab-target="quote" data-payment-group="quote">
@@ -1788,7 +1834,7 @@ async function selectRequest(id) {
 
     ${patch32AdminPanels(patch32Records)}
 
-    ${selectedRequest.service_type === "mobile" ? `<section class="admin-detail-section mobile-travel-card" id="mobileTravelCard" data-v3-tab-target="fulfillment"><div class="admin-v3-section-heading"><span class="small-label">Mobile Notary</span><h3>Travel Distance &amp; Quote</h3></div><div class="mobile-travel-route"><label>Starting location<select id="mobileTravelOrigin"><option>Loading saved origins…</option></select></label><div><span class="small-label">Destination</span><strong id="mobileTravelDestination">Loading structured service address…</strong></div><button id="recalculateMobileTravel" class="btn dark" type="button">Recalculate</button></div><div id="oneTimeOriginFields" class="admin-detail-grid" hidden><label>Street<input id="oneTimeOriginStreet"></label><label>City<input id="oneTimeOriginCity"></label><label>State<input id="oneTimeOriginState" maxlength="2"></label><label>ZIP<input id="oneTimeOriginZip"></label></div><p id="mobileTravelStatus" class="admin-muted" role="status" aria-live="polite">Loading travel configuration…</p><div id="mobileTravelResults"></div><details class="mobile-travel-manual"><summary>Manual mileage/travel charge fallback</summary><p>Use this only when automatic routing is unavailable. A reason is required and the route is not falsified.</p><div class="admin-detail-grid"><label>Round-trip miles<input id="manualTravelMiles" type="number" min="0" step=".1"></label><label>Travel fee<input id="manualTravelFee" type="number" min="0" step=".01"></label><label>Required reason<textarea id="manualTravelNote"></textarea></label></div><button id="applyManualMobileTravel" class="btn dark" type="button">Add Manual Travel to Quote</button></details></section>` : ""}
+    ${["mobile","print"].includes(selectedRequest.service_type) ? `<section class="admin-detail-section mobile-travel-card" id="mobileTravelCard" data-v3-tab-target="fulfillment"><div class="admin-v3-section-heading"><span class="small-label">Mobile Notary</span><h3>Travel Distance &amp; Quote</h3></div><div class="mobile-travel-route"><label>Starting location<select id="mobileTravelOrigin"><option>Loading saved origins…</option></select></label><div><span class="small-label">Destination</span><strong id="mobileTravelDestination">Loading structured service address…</strong></div><button id="recalculateMobileTravel" class="btn dark" type="button">Recalculate</button></div><div id="oneTimeOriginFields" class="admin-detail-grid" hidden><label>Street<input id="oneTimeOriginStreet"></label><label>City<input id="oneTimeOriginCity"></label><label>State<input id="oneTimeOriginState" maxlength="2"></label><label>ZIP<input id="oneTimeOriginZip"></label></div><p id="mobileTravelStatus" class="admin-muted" role="status" aria-live="polite">Loading travel configuration…</p><div id="mobileTravelResults"></div><details class="mobile-travel-manual"><summary>Manual mileage/travel charge fallback</summary><p>Use this only when automatic routing is unavailable. A reason is required and the route is not falsified.</p><div class="admin-detail-grid"><label>Round-trip miles<input id="manualTravelMiles" type="number" min="0" step=".1"></label><label>Travel fee<input id="manualTravelFee" type="number" min="0" step=".01"></label><label>Required reason<textarea id="manualTravelNote"></textarea></label></div><button id="applyManualMobileTravel" class="btn dark" type="button">Add Manual Travel to Quote</button></details></section>` : ""}
 
     ${selectedRequest.service_type === "loan_signing" ? '<section class="admin-detail-section lsa-fulfillment-workspace" id="loanSigningFulfillmentPanel" data-v3-tab-target="fulfillment"><div class="admin-v3-section-heading"><span class="small-label">Loan Signing Fulfillment</span><h3>Loading Assignment Requirements…</h3></div></section>' : ""}
 
@@ -1820,7 +1866,7 @@ async function selectRequest(id) {
       <p class="admin-muted">Record what was actually purchased and fulfilled. A zero balance alone does not complete an order.</p>
       <fieldset><legend>Purchased service components</legend>${({ron:["ron"],mobile:["mobile"],print:["print_copy","scan","courier"]}[selectedRequest.service_type] || []).map(component => `<label class="check"><input class="completion-component" type="checkbox" value="${component}" ${(completionFacts.components || []).includes(component) ? "checked" : ""}> ${escapeHtml(statusLabel(component))}</label>`).join("")}</fieldset>
       <div class="admin-detail-grid">
-        ${(selectedRequest.service_type === "ron" ? [["ron_session_completed","RON session completed"]] : selectedRequest.service_type === "mobile" ? [["mobile_service_completed","Mobile service performed"]] : selectedRequest.service_type === "loan_signing" ? [["signing_completed","Signing completed"],["post_signing_qc_completed","Post-signing quality check completed"],["return_completed","Authorized return completed"]] : [["production_completed","Print/Copy production completed"],["scan_completed","Scanning completed"],...(String(serviceDetails.fulfillment_type||"").toLowerCase()==="pickup"?[["pickup_completed","Legacy pickup/handoff completed"]]:[]),["delivery_completed","Delivery/handoff completed"],["proof_of_delivery_present","Proof of delivery present"]]).map(([key,label]) => `<label class="check"><input class="completion-fact" data-key="${key}" type="checkbox" ${completionFacts[key] ? "checked" : ""}> ${label}</label>`).join("")}
+        ${(selectedRequest.service_type === "ron" ? [["ron_session_completed","RON session completed"]] : selectedRequest.service_type === "mobile" ? [["mobile_service_completed","Mobile service performed"],...(serviceDetails.print_add_on?[["production_completed","Requested printing completed"]]:[]),...(serviceDetails.scan_to_pdf_needed?[["scan_completed","Requested scanning completed"]]:[])] : selectedRequest.service_type === "loan_signing" ? [["signing_completed","Signing completed"],["post_signing_qc_completed","Post-signing quality check completed"],["return_completed","Authorized return completed"]] : [["production_completed","Print/Copy production completed"],["scan_completed","Scanning completed"],...(String(serviceDetails.fulfillment_type||"").toLowerCase()==="pickup"?[["pickup_completed","Legacy pickup/handoff completed"]]:[]),["delivery_completed","Delivery/handoff completed"],["proof_of_delivery_present","Proof of delivery present"]]).map(([key,label]) => `<label class="check"><input class="completion-fact" data-key="${key}" type="checkbox" ${completionFacts[key] ? "checked" : ""}> ${label}</label>`).join("")}
       </div>
       <div class="admin-detail-grid">
         <label>Document readiness<select id="completionDocumentState"><option value="pending" ${selectedRequest.document_state === "pending" ? "selected" : ""}>Pending / review required</option><option value="approved" ${selectedRequest.document_state === "approved" ? "selected" : ""}>Reviewed and ready</option><option value="not_applicable" ${selectedRequest.document_state === "not_applicable" ? "selected" : ""}>Not applicable</option></select></label>
@@ -2004,6 +2050,8 @@ async function selectRequest(id) {
   $("#saveCompletionFactsBtn", detail)?.addEventListener("click", saveCompletionFacts);
   $("#completeWithExceptionBtn", detail)?.addEventListener("click", completeWithException);
   populateInvoicePresetSelect();
+  $("#reviewPricingProgram", detail)?.addEventListener("click", reviewPricingProgram);
+  $("#resolvePricingAdjustment", detail)?.addEventListener("click", resolvePricingAdjustment);
 
   $$(".resolve-customer-action", detail).forEach((button) => button.addEventListener("click", async () => { try { await resolveCustomerAction(button); } catch (error) { alert(error.message || "Action could not be resolved."); } }));
   $$(".open-refund-workflow", detail).forEach((button) => button.addEventListener("click", async () => { try { await openRefundWorkflow(button.closest(".admin-action-request")?.dataset.actionId); } catch (error) { alert(error.message || "Refund workflow could not be opened."); } }));
@@ -2848,6 +2896,14 @@ async function saveInvoice() {
     return false;
   }
 
+  const promotion = selectedRequest.request_promotion_applications?.[0] || selectedRequest.request_promotion_applications;
+  if (promotion?.id && selectedRequest.current_quote_id) {
+    const {data: currentQuote, error} = await adminClient.from("quotes").select("state").eq("id",selectedRequest.current_quote_id).single();
+    if (error || ["sent","approved"].includes(currentQuote?.state)) {
+      alert(error?.message || "Use the neighborhood pricing review to prepare a new revision of this issued quote.");
+      return false;
+    }
+  }
   const items = invoiceRowsFromDom();
   const total = items.reduce((sum, item) => sum + item.line_total, 0);
   const invoiceNumber =
@@ -2984,7 +3040,7 @@ async function loadRequests() {
   const { data, error } = await adminClient
     .from("service_requests")
     .select(
-      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,estimate_components,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,pdf_page_count_review_required,pdf_page_count_changed_after_quote,is_same_day_request,is_next_day_request,quote_expires_at,customer_reported_source,customer_reported_source_detail,acquisition_landing_page,acquisition_referrer_host,acquisition_utm_source,acquisition_utm_medium,acquisition_utm_campaign,first_touch_source,review_request_state,review_request_eligible_at,review_request_sent_at,customers(id,first_name,last_name,email,phone,preferred_contact,created_at,normalized_email,normalized_phone,normalized_name,merged_at,first_acquisition_source,first_acquisition_at),request_participants(participant_type,first_name,middle_name,last_name,full_legal_name,email),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
+      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,estimate_components,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,pdf_page_count_review_required,pdf_page_count_changed_after_quote,is_same_day_request,is_next_day_request,quote_expires_at,customer_reported_source,customer_reported_source_detail,acquisition_landing_page,acquisition_referrer_host,acquisition_utm_source,acquisition_utm_medium,acquisition_utm_campaign,first_touch_source,review_request_state,review_request_eligible_at,review_request_sent_at,customers(id,first_name,last_name,email,phone,preferred_contact,created_at,normalized_email,normalized_phone,normalized_name,merged_at,first_acquisition_source,first_acquisition_at),request_promotion_applications(*),request_participants(participant_type,first_name,middle_name,last_name,full_legal_name,email),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
     )
     .order("created_at", {
       ascending: false,
@@ -3220,6 +3276,7 @@ async function initDashboard() {
     window.location.href = "admin-login.html";
   });
   $("#refreshRequests")?.addEventListener("click", loadRequests);
+  $("#promotionFilter")?.addEventListener("change", renderRequestList);
   $("#refreshSupport")?.addEventListener("click", loadSupportTickets);
   $("#requestFilter")?.addEventListener("change", renderRequestList);
   $("#statusFilter")?.addEventListener("change", renderRequestList);

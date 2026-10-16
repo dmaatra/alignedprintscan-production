@@ -136,7 +136,7 @@ test("manual screenshot pack has 19 unique governed states and valid captured as
   assert.doesNotMatch(screenshotFixtures, /Brandi Turnbo/i);
   assert.match(manual, /Version: 2\.3/);
   assert.match(manual, /Appendix I — Instructional Visual Atlas/);
-  assert.equal(vercelIgnore.trim(), "docs/");
+  assert.ok(vercelIgnore.split(/\r?\n/).includes("docs/"));
 });
 test("manual documents analytics, review, UTM, RON/local, ownership, and external boundaries", () => {
   for (const phrase of ["UTM standard","No satisfaction question","Google Business Profile","GA4 is **ACTIVE**","Authoritative ownership matrix","EXTERNAL PROVIDER BOUNDARY","naturally unverified","Google Search Console"]) assert.match(manual, new RegExp(phrase.replaceAll("*", "\\*"), "i"));

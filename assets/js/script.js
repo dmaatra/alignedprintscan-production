@@ -289,18 +289,23 @@ function publicEstimateInput() {
   };
 }
 
+function isScanOnlyRequest() {
+  return activeService === "print" && numericValue("pages") === 0 && numericValue("scanPages") > 0;
+}
+
 function currentEstimateSnapshot() {
-  return window.APSEstimateComponents.build(
+  const snapshot = window.APSEstimateComponents.build(
     activeService,
     publicEstimateInput(),
     PRICING,
   );
+  return window.APSNeighborhoodPricing?.apply(snapshot, document.body.dataset.promotion) || snapshot;
 }
 
 function calculateEstimate() {
   if (!wizard) return;
   const estimate = currentEstimateSnapshot();
-  const items = estimate.components.filter((item) => item.billable && item.line_amount > 0);
+  const items = estimate.components.filter((item) => item.billable && item.line_amount !== 0);
   qs("#estimateTotal").textContent = money(estimate.total);
   qs("#lineItems").innerHTML = items.length
     ? items.map((item) => `${item.label}: ${money(item.line_amount)}`).join("<br>")
@@ -687,7 +692,7 @@ function validateStep(showErrors = false) {
     need(["firstName", "lastName", "email", "phone"]);
   }
   if (currentStep === 1) {
-    const uploadException = wizard.elements.documentUploadException?.checked;
+    const uploadException = !isScanOnlyRequest() && wizard.elements.documentUploadException?.checked;
     if (uploadException) {
       need(["documentUploadExceptionReason", "documentUploadExceptionDetail"]);
     }
@@ -713,7 +718,7 @@ function validateStep(showErrors = false) {
       if (!uploadException) need(["mobileFiles"]);
     }
     if (activeService === "print") {
-      if (!uploadException) need(["printFiles"]);
+      if (!uploadException && !isScanOnlyRequest()) need(["printFiles"]);
       if (
         (+wizard.elements.pages.value || 0) <= 0 &&
         (+wizard.elements.scanPages.value || 0) <= 0
@@ -996,6 +1001,7 @@ async function submitRequestToSupabase(e) {
     const urgencyFlags = appointmentUrgencyFlags(f.preferredDate.value || null);
     const servicePayload = {
       service_type: activeService,
+      requested_promotion: document.body.dataset.promotion || null,
       status: "under_review",
       preferred_date: f.preferredDate.value || null,
       preferred_time_window: f.timeWindow.value || null,
@@ -1255,6 +1261,7 @@ async function submitPublicRequestSecurely(event) {
     const { normalizePersonInput, normalizeEmail } = await import("./aps-data-standard.mjs");
     const customer = { ...normalizePersonInput({ first_name: f.firstName.value, last_name: f.lastName.value, email: f.email.value, phone: f.phone.value }), preferred_contact: f.contactMethod?.value || null };
     const files = await selectedFilesPayload();
+    if (isScanOnlyRequest() && f.documentUploadException) f.documentUploadException.checked = false;
     const exception = Boolean(f.documentUploadException?.checked && !files.length);
     const urgency = appointmentUrgencyFlags(f.preferredDate.value || null);
     const acquisition = window.APSGrowth?.attribution?.() || {};
@@ -1262,6 +1269,7 @@ async function submitPublicRequestSecurely(event) {
     const firstTouch = acquisition.first_touch || {};
     const request = {
       service_type: activeService,
+      requested_promotion: document.body.dataset.promotion || null,
       status: "under_review",
       workflow_status: "under_review",
       preferred_date: f.preferredDate.value || null,
@@ -1269,14 +1277,14 @@ async function submitPublicRequestSecurely(event) {
       notes: f.notes.value || null,
       estimated_total: estimateNumber(),
       request_completeness: "submitted",
-      document_state: exception ? "pending" : "received",
+      document_state: isScanOnlyRequest() && !files.length ? "physical_originals_expected" : exception ? "pending" : "received",
       participant_state: ["ron", "mobile", "loan_signing"].includes(activeService) ? "submitted" : "not_applicable",
       fulfillment_state: "not_started",
       document_upload_exception_reason: exception ? f.documentUploadExceptionReason?.value || null : null,
       document_upload_exception_detail: exception ? f.documentUploadExceptionDetail?.value || null : null,
       customer_reported_source: f.customerReportedSource?.value || null,
       customer_reported_source_detail: f.customerReportedSource?.value === "other" ? f.customerReportedSourceOther?.value?.trim() || null : null,
-      acquisition_landing_page: requestTouch.landing_page || null,
+      acquisition_landing_page: document.body.dataset.promotion === "CAMDEN_PARK" ? "/neighborhood" : requestTouch.landing_page || null,
       acquisition_referrer_host: requestTouch.referrer_host || null,
       acquisition_utm_source: requestTouch.utm_source || null,
       acquisition_utm_medium: requestTouch.utm_medium || null,
@@ -1449,6 +1457,21 @@ function initWizard() {
   wizard.addEventListener("change", (event) => {
     const el = event.target;
     if (!el.matches("input,select,textarea")) return;
+    if (el.name === "fulfillment" && el.value === "mobile-notary" && activeService === "print") {
+      const f = wizard.elements;
+      for (const [target,source] of [["street","printStreet"],["city","printCity"],["zip","printZip"],["mobilePrintPages","pages"],["mobileScanPages","scanPages"],["mobileColor","color"],["mobileSides","sides"],["mobilePaperSize","paperSize"],["mobilePaperType","paperType"]]) {
+        if (f[target] && f[source]) f[target].value = f[source].value;
+      }
+      f.mobilePrintAddon.checked = numericValue("pages") > 0;
+      f.mobileScanAddon.checked = numericValue("scanPages") > 0;
+      if (selectedRequestFiles.has("printFiles")) selectedRequestFiles.set("mobilePrintFiles", new Map(selectedRequestFiles.get("printFiles")));
+      el.value = "mobile-service";
+      applyService("mobile");
+      renderSelectedRequestFiles(f.mobilePrintFiles);
+      showStep(1, true);
+      qs("#detailsHelp").textContent = "Your print and scan selections are retained. Complete the full Mobile Notary details, signer identities, acts, documents, witnesses, and readiness requirements.";
+      return;
+    }
     if (el.type === "file") accumulateRequestFiles(el);
     if (el.name === "documentUploadException" && el.checked && hasSelectedRequestFiles()) {
       el.checked = false;
@@ -2628,6 +2651,8 @@ async function initSuccessPage() {
     successBox.innerHTML = `<div class="next-panel"><h2>Secure customer access required</h2><p>Open the secure access link sent to the email address on your request. Contact APS support if you need a replacement link.</p><a class="btn primary" href="support.html">Contact Support</a></div>`;
     return;
   }
+  const promotion = result.promotion;
+  const promotionNotice = promotion?.promotion_code === "CAMDEN_PARK" ? `<div class="next-panel"><h3>Camden Park Neighborhood Services</h3><p>${promotion.financial_adjustment_required ? "Your eligibility review is recorded. APS is reviewing any financial adjustment; existing invoice and payment records remain unchanged." : promotion.eligibility_status === "pending_review" ? "Thank you for choosing Aligned Print &amp; Scan. Your request has been received and is pending neighborhood eligibility and pricing review. RON pricing is unchanged." : promotion.eligibility_status === "denied" ? "Standard APS pricing applies. Review your itemized quote before approving payment." : "Neighborhood eligibility approved. Your itemized quote shows the reviewed pricing."}</p></div>` : "";
   const request = result.request || {};
   if (!request.id && requestId) request.id = requestId;
   window.__alignedCurrentRequestId = request.id || requestId || null;
@@ -2705,6 +2730,7 @@ async function initSuccessPage() {
   const canPay = primaryAction?.key === "payment";
   const actionRequired = primaryAction ? `<section class="next-panel portal-action-required reveal" aria-labelledby="customerActionHeading"><p class="eyebrow">Action Required</p><h3 id="customerActionHeading">${escapePublic(primaryAction.title)}</h3>${primaryAction.detail ? `<p>${escapePublic(primaryAction.detail)}</p>` : ""}<a class="btn primary" href="${tabLink(primaryAction.tab)}" data-portal-action="${escapePublic(primaryAction.tab)}">${escapePublic(primaryAction.label)}</a></section>` : `<section class="portal-no-action reveal"><strong>No action required</strong><span>${escapePublic(copy.body)}</span></section>`;
   successBox.innerHTML = `
+    ${promotionNotice}
     <div class="success-ref reveal">${escapePublic(reference)}</div>
     <div class="portal-scroll-shell portal-tabs-shell" data-scroll-cue>
       <nav class="customer-portal-tabs" aria-label="Request sections" tabindex="0">
@@ -2834,6 +2860,7 @@ async function initSuccessPage() {
   }
 
   successBox.innerHTML = `
+    ${promotionNotice}
     <div class="success-ref reveal">${escapePublic(reference)}</div>
     ${actionRequired}
     ${statusTimeline(displayStatus, request.service_type)}

@@ -4503,3 +4503,17 @@ button.btn.secondary:hover {
 .application-review dt{color:var(--aps-text-muted);font-size:var(--aps-text-caption);font-weight:700}.application-review dd{overflow-wrap:anywhere}
 @media(max-width:900px){.business-accounts-page .business-service-grid,.business-accounts-page .benefit-grid,.business-process{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:640px){.business-accounts-page .business-service-grid,.business-accounts-page .benefit-grid,.business-process,.service-check-grid,.application-review{grid-template-columns:1fr}.business-application{min-height:0;padding:var(--aps-space-5) var(--aps-space-4)}.application-progress>div:first-child{display:grid}.application-actions{position:static}.application-actions .btn{flex:1 1 0}}
+
+/* Team directory uses the shared APS card and color system. */
+.aps-team-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:2rem; }
+.aps-team-card { max-width:850px; display:grid; grid-template-columns:minmax(160px, .8fr) 1fr; gap:2rem; align-items:center; }
+.aps-team-portrait { width:100%; height:auto; aspect-ratio:1; object-fit:cover; border-radius:18px; }
+.aps-team-card ul { padding-left:1.25rem; line-height:1.9; }
+@media(max-width:600px) { .aps-team-card { grid-template-columns:1fr; } .aps-team-portrait { max-width:320px; } }
+
+.neighborhood-page .page-hero .container { display:block; }
+.neighborhood-page .page-hero h1 { max-width:850px; }
+.neighborhood-page .page-hero .lead { max-width:760px; margin:1.5rem 0; }
+.neighborhood-offers { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.neighborhood-offers s { font-size:.65em; opacity:.65; margin-right:.4rem; }
+@media(max-width:760px) { .neighborhood-offers { grid-template-columns:1fr; } }

@@ -211,6 +211,12 @@ async function materializeInitialInvoice(
     throw new Error("Request not found.");
   }
 
+  const promotionResponse = await supabaseFetch(`request_promotion_applications?service_request_id=eq.${requestId}&select=eligibility_status,financial_adjustment_required&limit=1`);
+  const promotion = (await readJson(promotionResponse))?.[0];
+  if (promotion && (promotion.eligibility_status === "pending_review" || promotion.financial_adjustment_required || !request.current_quote_id)) {
+    throw new Error("APS must finish the neighborhood pricing review before quote approval.");
+  }
+
   const amountDue = Number(
     request.initial_payment_amount ||
       request.quote_amount ||

@@ -482,8 +482,12 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Request-scoped access has already been checked. Never expose review notes or boundaries.
+    const promotionResponse = await supabaseFetch(`request_promotion_applications?service_request_id=eq.${requestId}&select=promotion_code,eligibility_status,applied_pricing_program,approved_travel_amount,financial_adjustment_required&limit=1`);
+    const promotion = promotionResponse.ok ? (await promotionResponse.json())?.[0] || null : null;
     return json({
       ok: true,
+      promotion,
       request: publicRequest,
       items: items.map(publicItem),
       invoices: publicInvoices,

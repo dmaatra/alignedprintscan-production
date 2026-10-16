@@ -24,7 +24,7 @@ test("owner-supplied credential artwork remains byte-for-byte unchanged", () => 
 
 test("homepage adds the approved standard without a credential badge or new section", () => {
   const home = read("index.html");
-  assert.match(home, /APS notaries maintain active membership with the National Notary[\s\S]*Certified Notary Signing Agent credential/);
+  assert.match(home, /Aligned Print &amp; Scan is committed to professional, credentialed document and notarization services\. Our commissioned notaries and signing agents maintain the qualifications and certifications applicable to their respective roles\./);
   assert.doesNotMatch(home, /nna-member-2026|nna-certified-notary-signing-agent-2026/);
   assert.equal((home.match(/id="about"/g) || []).length, 1);
 });
