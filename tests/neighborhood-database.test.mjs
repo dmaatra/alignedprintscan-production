@@ -11,6 +11,7 @@ test('promotion migration, RLS, quote revision and paid-history integration', {s
  grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
  await db.exec(read('tests/fixtures/neighborhood-schema.sql'));
  await db.exec(read('supabase/migrations/20261016032854_neighborhood_pricing_program.sql'));
+ await db.exec(read('supabase/migrations/20261016045905_neighborhood_review_hardening.sql'));
  const user='11111111-1111-4111-8111-111111111111';
  await db.exec(`set test.user_id='${user}';set test.admin='true';`);
  const request='22222222-2222-4222-8222-222222222222';
@@ -23,6 +24,10 @@ test('promotion migration, RLS, quote revision and paid-history integration', {s
  await t.test('unauthorized reviewer denied',async()=>{await db.exec("set test.admin='false'");await assert.rejects(review('approved',0),/Administrator/);await db.exec("set test.admin='true'")});
  await t.test('approval creates exactly one locked adjustment and original estimate survives',async()=>{await review('approved',0);const {rows}=await db.query(`select * from invoice_items where service_request_id=$1`,[request]);assert.equal(rows.reduce((s,x)=>s+Number(x.line_total),0),35);assert.equal(rows.filter(x=>x.item_type==='promotion').length,1);const state=(await db.query(`select * from service_requests where id=$1`,[request])).rows[0];assert.deepEqual(state.estimate_components,snapshot);assert.equal(state.acquisition_landing_page,'/neighborhood');});
  await t.test('stale concurrent review is rejected',async()=>{await assert.rejects(review('approved',0),/refresh/)});
+ await t.test('quote and request cannot issue totals that differ from reviewed items',async()=>{
+  await assert.rejects(db.query(`update quotes set amount=1,state='sent' where id=(select current_quote_id from service_requests where id=$1)`,[request]),/itemized charges/);
+  await assert.rejects(db.query(`update service_requests set quote_amount=1,status='quote_ready' where id=$1`,[request]),/itemized charges/);
+ });
  await t.test('approved quote can be issued',async()=>{await db.query(`update service_requests set status='quote_ready' where id=$1`,[request])});
  await t.test('issued quote and its line items cannot be silently edited',async()=>{
   await db.query(`update quotes set state='sent' where id=(select current_quote_id from service_requests where id=$1)`,[request]);

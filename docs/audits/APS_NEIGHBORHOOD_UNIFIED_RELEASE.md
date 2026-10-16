@@ -4,9 +4,9 @@ Date: 2026-10-16. **CONFIRMED IN CODE** unless explicitly labeled otherwise.
 
 ## Release status
 
-Implementation is prepared on `codex/aps-neighborhood-team-unified-update`. Production release is **incomplete and blocked** by full recovery verification. Draft PR: [#159](https://github.com/dmaatra/alignedprintscan-production/pull/159), OPEN and not merged. Implementation/artwork revision: `af1a6328f4f9aefda7e0b3b1dd3c1703103c6c73`; a documentation-only follow-up records this handoff. It must not merge while the recovery gate is open because `main` triggers production deployment.
+Implementation is prepared on `codex/aps-neighborhood-team-unified-update`. Production release is **incomplete and blocked** by recovery, service-conversion and hosted integration gaps. Draft PR: [#159](https://github.com/dmaatra/alignedprintscan-production/pull/159), OPEN and not merged. The current audit corrections are on this same branch. It must not merge while the recovery gate is open because `main` triggers production deployment.
 
-No production migration, production Edge Function deployment, production application deployment, payment/refund, customer test email, data deletion, or database reset was performed. PATC resources were not modified. The original APS checkout and its unrelated Supabase temporary changes remain untouched.
+No production migration, production Edge Function deployment, production application deployment, payment/refund, data deletion, or database reset was performed. The owner subsequently authorized two test correspondence emails, recorded below. PATC resources were not modified. The original APS checkout and its unrelated Supabase temporary changes remain untouched.
 
 Verified targets:
 
@@ -56,7 +56,7 @@ Production URLs intended for release: `/`, `/team`, `/doneisha`, `/neighborhood`
 
 ## Eligibility, pricing and operations
 
-One additive migration: `supabase/migrations/20261016032854_neighborhood_pricing_program.sql`.
+Initial additive migration: `supabase/migrations/20261016032854_neighborhood_pricing_program.sql`.
 
 - `promotion_programs`: manual Camden Park Neighborhood in Waxahachie, Texas configuration, enabled/effective dates and extensible JSON boundary configuration. No ZIP/geofence auto-approval.
 - `request_promotion_applications`: original acquisition source and submitted address; pending/approved/denied/exception decision; reviewer/reason/time; applied program; authorized travel amounts; revision and financial-adjustment state.
@@ -68,7 +68,7 @@ One additive migration: `supabase/migrations/20261016032854_neighborhood_pricing
 - Issued/paid financial records are preserved. A later pricing decision requires separate invoice/refund records. The reconciliation RPC verifies the exact reviewed net difference before clearing the financial flag. It does not itself move money.
 - Existing review queue and completion controls block unresolved eligibility/financial work. Admin has a Camden Park badge/filter and yard-sign campaign filter, review panel and financial reconciliation action.
 - Customer Portal receives a request-authorized, limited promotion projection; internal review notes and operating address are not exposed.
-- Existing Resend acknowledgment remains in the maintained communication history, with deterministic provider idempotency and independent admin-alert retry protection. No customer test messages were sent.
+- Existing Resend acknowledgment remains in the maintained communication history, with deterministic provider idempotency and independent admin-alert retry protection. Two explicitly authorized general-correspondence test emails were sent on 2026-10-16, as documented below; automatic request-trigger delivery is not verified.
 - Existing Stripe Checkout uses the exact invoice balance when negative discount rows cannot be represented as Stripe prices. APS invoice itemization is retained. Existing webhook verification and invoice-linked payment handling are unchanged.
 
 ## Yard sign and QR assets
@@ -103,7 +103,7 @@ Existing service request fields identify submissions, workflow completion, and p
 
 ## Verification
 
-Latest complete Node suite: **569 passed, 0 failed, 0 skipped** using Node's TypeScript transform flag and isolated PGlite. Includes invoice/payment/webhook/portal/security regressions and new pricing, reconciliation, scan, attribution and Checkout cases. Tests cover both price increases and decreases using separate records, repeated approvals, stale review revisions, quote tampering, RLS, and scan fulfillment gates.
+Latest complete Node suite: **576 passed, 0 failed, 0 skipped** using Node's TypeScript transform flag and isolated PGlite. Includes invoice/payment/webhook/portal/security regressions and new pricing, reconciliation, scan, attribution and Checkout cases. Tests cover both price increases and decreases using separate records, repeated approvals, stale review revisions, quote tampering, RLS, and scan fulfillment gates.
 
 Deno checks cover the eight deployment entrypoints listed below. Changed JavaScript syntax and `git diff --check` pass. Browser verification covers six page/width combinations (390/1440) without overflow or JavaScript errors, two intercepted scan-only submissions with exact campaign payloads, and full-Mobile-intake transition. Intercepted submissions deliberately return a local error after payload capture; they do not create real requests. Screenshots are under `output/qa/`.
 
@@ -121,11 +121,56 @@ No claim of complete customer-ready production operation is made while these gro
 After full recovery verification and integration checks:
 
 1. Reconfirm APS project/domain/repo identities and current production baseline; review any new main changes.
-2. Apply only migration `20261016032854` through the migration tool; do not bulk-push the historical local migration directory because deployed migration history differs.
+2. After renewed release authorization, apply only the reviewed migrations `20261016032854` and `20261016045905` through the migration tool; do not bulk-push the historical local migration directory because deployed migration history differs.
 3. Deploy these functions to APS only, preserving current JWT settings: `public-request-submit`, `get-request-status`, `send-request-email`, `admin-route-distance`, `admin-service-adjustment`, `client-quote-action`, `create-embedded-checkout`, `update-request-status` (shared completion dependency).
 4. Verify admin review, quote issue/approval, Invoice #1/#2, partial/final payment, refunds, duplicate webhook delivery, file authorization, completion and email retry using isolated/synthetic records.
 5. Merge the reviewed PR and verify the Vercel deployment belongs to the recorded APS project. Check public pages, standard intake, protected portal/admin, QR URL/UTM persistence and source-to-completed/paid reporting.
 6. On a release defect, stop new writes/deployments and restore the prior Vercel deployment/function versions. Retain additive promotion/history tables. Do **not** drop financial/history data or run an automatic down migration. Disable new promotional intake through configuration only as part of a coordinated rollback; previously reviewed requests still require their audit history.
 7. Database recovery, if necessary, follows the private backup README after restore has been verified; never perform an untested destructive production restore.
 
-The remaining owner action is a compatible isolated Supabase recovery target. Existing implementation/deployment authorization remains in force; no further pricing or eligibility decision is needed.
+Current owner instruction supersedes prior release authorization: keep PR #159 draft; do not merge, deploy, run production migrations, install/download software, or create cloud resources. No further pricing or eligibility decision is needed.
+
+
+## Existing-environment investigation and expanded audit (2026-10-16)
+
+### 1. Existing local environment
+
+The established APS checkout is `/Users/doneishawilson/Development/alignedprintscan-production`. It is a static HTML/JavaScript application, started using `python3 -m http.server 8000` per `docs/DEPLOYMENT_AND_TESTING.md`. Both public/admin scripts point to hosted Supabase project `sfsdniavqldgbiretply`; the linked project ref matches. Repository configuration contains Edge Function settings, not a configured disposable local database stack. No root `.env` files were found. Git history, prior reports, existing scripts, older checkouts and active local servers were inspected. This explains why local application development worked: the local frontend uses hosted Supabase. It does not establish a local full-platform restore environment.
+
+Available existing tools were reused: Supabase CLI 2.101.0, Python, Node 25.8.2, cached Playwright/Chrome, Deno and its populated default cache, PGlite, PostgreSQL 17.11 client/export tools, and the existing isolated PostgreSQL 17.10 server. No software was installed or downloaded during this investigation. No new project was created. No PostgreSQL tools/container runtime were on PATH; no Docker/Podman/Colima/OrbStack installation or local stack directory was found in the inspected locations. The Mac is Intel x86_64.
+
+### 2. Exact recovery blocker
+
+The existing standalone PostgreSQL server cannot restore `pg_net` 0.20.0 and `supabase_vault` 0.3.1 because their extension binaries/control files are absent. The 11 restore errors comprise extension creation/comments, Vault table data, and dependent net/Vault ACLs. A local web server, Supabase CLI, and PGlite do not provide these missing platform extensions or Vault's managed encryption environment.
+
+The archive SHA-256 was independently rechecked. The existing private-socket isolated restore was restarted with TCP and shared preload workers disabled: all **123 tables / 2,436 rows** matched again, with zero mismatches. The new hardening migration applied there successfully. That server was stopped afterward. This is partial recovery evidence, not full Supabase recovery. No existing development or production database was overwritten. Full recovery remains blocked using the currently located resources; no installation or infrastructure workaround was attempted.
+
+### 3. Customer-facing results
+
+`tests/neighborhood-browser-customer.cjs` exercised the actual local wizard and actual server-side validation with synthetic data and blocked external transport. All **12 combinations** passed: Mobile Notary, RON, printing, scanning, print+scan, and Mobile Notary+print+scan at 1440 and 390 pixels. Each reached the synthetic success response and retained neighborhood campaign/source fields. Notification calls were mocked. Earlier six-page responsive checks and scan-only/combined-transition checks also passed without JavaScript errors or page overflow. This does not prove hosted request/storage persistence.
+
+### 4. Administrative-side results
+
+`tests/neighborhood-browser-admin.cjs` exercises the actual admin interface against synthetic PGlite records and the actual eligibility/reconciliation SQL functions. Passed: new pending-request visibility; campaign preservation; manual Mobile Notary approval with $25 base; document-service approval with $4 base; quote save; appointment date/time editing; denial blocked without mileage; denial after a synthetic recorded 18-mile/$10 calculation, producing the standard $70 quote; and two retained pricing-history entries. All eight request tabs were exercised at desktop/mobile widths without JavaScript errors or page overflow.
+
+The harness mocks administrator authentication and provider APIs. Mileage recording uses a fixture adapter; it does not call a live mapping provider. Documents, participant, communications and notification list fixtures are empty. Those views passing layout checks is not functional verification of their full lifecycle. Existing Node tests cover invoice creation, payment status, financial reconciliation, webhook/idempotency and access/RLS rules; these are automated checks, not a hosted end-to-end payment or Auth test. Full invoice/payment/notification/provider lifecycle and live RLS remain unverified. No actual payment or customer-record modification occurred.
+
+At the owner's explicit request, the authenticated APS production **Messages → Compose APS Email** interface sent two clearly labeled synthetic general-correspondence messages (no order): `[APS TEST] Neighborhood customer email — PR #159` to `ra.doneisha@gmail.com` at 01:20:52 local, and `[APS TEST] Neighborhood admin email — PR #159` to `hello@alignedprintscan.com` at 01:21:09 local. Both appeared as **Sent** in APS history. Inbox receipt was not independently verified. These manual sends verify the existing correspondence path, not the new automatic submission-notification trigger.
+
+### 5. Corrections and regression evidence
+
+- Used the owner's transparent long logo, preserving its exact pixels and alpha. The supplied asset itself contains faint semitransparent navy pixels.
+- Forced neighborhood-origin submissions into eligibility review even after internal navigation; did not authorize discounts from URL/ZIP.
+- Rejected nonfinite estimates.
+- Added migration `20261016045905_neighborhood_review_hardening.sql` to reject issued quote totals that do not reconcile with reviewed line items.
+- Blocked direct mileage-apply operations that could bypass neighborhood review.
+- Added an early service-conversion safety guard: the existing conversion implementation would otherwise write some details before the immutable reviewed-quote guard rejected a later write. Conversion is now explicitly unavailable for neighborhood requests until an atomic revision workflow is implemented and verified. This is an unresolved feature blocker, not completed conversion support.
+
+Regression result: **576 Node tests passed**, **201 Deno tests passed**, and eight Deno entrypoint checks passed. Existing cached dependencies were used. No skipped tests are being counted as recovery/provider verification.
+
+### 6. Remaining release blockers
+
+1. Full compatible Supabase recovery, including missing extensions/Vault environment and separately preserved platform resources.
+2. Atomic neighborhood service conversion with eligibility/quote revisions and rollback-safe persistence.
+3. Isolated hosted end-to-end customer/admin lifecycle: Auth/RLS, document storage, quote approval/invoices, partial/final payments and refunds, automatic communications/notifications, and appointment conversion/provider integrations. Local fixture/UI and unit tests do not replace this evidence.
+4. Owner release authorization: the current instruction explicitly prohibits merge/deploy/production migrations. PR #159 must remain draft.

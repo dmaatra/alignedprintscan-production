@@ -19,13 +19,14 @@
   "qr_quiet_zone_modules": 4,
   "qr_error_correction": "H",
   "logo_effective_dpi": 100,
-  "logo_source": "assets/images/logo-full-original.png",
+  "logo_alpha_preserved": true,
+  "logo_source": "assets/images/logo-full-transparent.png",
   "font_handling": "PDF embedded; SVG outlined; editable generator and fonts included",
   "double_sided": "Upload same file for both sides; no mirroring",
   "physical_camera_scan": "Not performed",
   "sha256": {
-    "output/print/neighborhood-services/aps-yard-sign-24x18-front-and-back.pdf": "26fdfb02cafa2b86271039528662ffab0163e3ced71ee49f4100dd3422a805bb",
-    "output/print/neighborhood-services/aps-yard-sign-24x18-front-and-back.png": "c9f05651f2088cce703f0850feeb654d04c2ac5d9283e1b66884a46dd52c13b1",
+    "output/print/neighborhood-services/aps-yard-sign-24x18-front-and-back.pdf": "3da9fae535149b417bc078e2bc0f7cce4d03e3cefec8e06b4323b133dd7a3cc6",
+    "output/print/neighborhood-services/aps-yard-sign-24x18-front-and-back.png": "394c3ccc5c4fd432ae091b7d72ee441e87a48a4848b792f45fcfbc784e8dde93",
     "assets/qr/neighborhood/neighborhood-services-qr.svg": "17f03165e3bf53fbdea36f73f521e9abe34dfe46ef3a849edddb630fce0aaf5f",
     "assets/qr/neighborhood/neighborhood-services-qr.png": "236adced7021cd3dde6e6db5cd340eb869ba910cadedf46dce083ff2c6cc7184"
   }

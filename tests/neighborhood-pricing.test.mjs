@@ -55,3 +55,14 @@ test('scan completion still requires actual scanning and released digital output
  assert.equal(evaluateCompletion({...b,facts:{scan_completed:true}}).allowed,false);
  assert.equal(evaluateCompletion({...b,facts:{scan_completed:true},files:[{customer_visible:true,eligible_for_delivery:true,document_classification:'customer_deliverable',review_state:'approved',uploaded_by:'admin'}]}).allowed,true);
 });
+
+test('neighborhood acquisition survives navigation into standard-price intake',()=>{
+ for (const path of ['/neighborhood','/neighborhood.html','/neighborhood/']) {
+  const b=valid();b.request.acquisition_landing_page=path;b.request.acquisition_utm_campaign='neighborhood_services';
+  const result=validate(b);assert.equal(result.request.requested_promotion,'CAMDEN_PARK');
+  assert.equal(result.request.estimate_components.total,3);assert.equal(result.request.acquisition_utm_campaign,'neighborhood_services');
+ }
+});
+test('invalid nonfinite estimate totals are rejected',()=>{
+ for (const key of ['estimated_total','snapshot']) {const b=valid();if(key==='snapshot')b.request.estimate_components.total='not-a-number';else b.request.estimated_total='not-a-number';assert.throws(()=>validate(b),/estimate total/);}
+});

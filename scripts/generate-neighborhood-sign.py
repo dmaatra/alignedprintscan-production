@@ -21,7 +21,7 @@ qrdir=root/'assets/qr/neighborhood';qrdir.mkdir(parents=True,exist_ok=True)
 fontdir=out/'fonts';fontdir.mkdir(exist_ok=True)
 fonts={}
 for name,source in [('Montserrat',args.montserrat),('Playfair',args.playfair)]:
- f=TTFont(source)
+ f=TTFont(source, recalcTimestamp=False)
  if 'fvar' in f:f=instantiateVariableFont(f,{'wght':700},inplace=False)
  dest=fontdir/(name+'-Bold.ttf');f.save(dest);pdfmetrics.registerFont(RLFont(name,str(dest)));fonts[name]=f
 url='https://alignedprintscan.com/neighborhood?utm_source=yard_sign&utm_medium=offline&utm_campaign=neighborhood_services'
@@ -31,7 +31,7 @@ qrsvg=f'<svg xmlns="http://www.w3.org/2000/svg" width="5in" height="5in" viewBox
 (qrdir/'neighborhood-services-qr.svg').write_text(qrsvg)
 qr.make_image(fill_color='#161c4d',back_color='white').convert('RGB').save(qrdir/'neighborhood-services-qr.png',dpi=(300,300))
 W,H=1728,1296;B=9;navy='#161c4d';gold='#c8a96b';white='#ffffff';elements=[f'<rect width="{W}" height="{H}" fill="{navy}"/>'];texts=[]
-logo=root/'assets/images/logo-full-original.png';encoded=base64.b64encode(logo.read_bytes()).decode()
+logo=root/'assets/images/logo-full-transparent.png';encoded=base64.b64encode(logo.read_bytes()).decode()
 # Clip only empty outer padding; all original wordmark pixels/colors/aspect remain unchanged.
 scale=.72; lx=(W-910*scale)/2;ly=40;lw=910*scale;lh=345*scale
 logo_el=f'<defs><clipPath id="logoClip"><rect x="{lx}" y="{ly}" width="{lw}" height="{lh}"/></clipPath></defs><image x="{lx-290*scale}" y="{ly-270*scale}" width="{1536*scale}" height="{1024*scale}" href="data:image/png;base64,{encoded}" clip-path="url(#logoClip)"/>'
@@ -55,7 +55,7 @@ svg=f'<svg xmlns="http://www.w3.org/2000/svg" width="24in" height="18in" viewBox
 pdf=out/'aps-yard-sign-24x18-front-and-back.pdf';c=canvas.Canvas(str(pdf),pagesize=(W+2*B,H+2*B),pageCompression=1)
 c.setTitle('APS Neighborhood Services - identical front and back - 24 x 18 inches');c.setAuthor('Aligned Print & Scan')
 c.setTrimBox((B,B,W+B,H+B));c.setBleedBox((0,0,W+2*B,H+2*B));c.setFillColor(HexColor(navy));c.rect(0,0,W+2*B,H+2*B,fill=1,stroke=0);c.translate(B,B)
-c.saveState();clip=c.beginPath();clip.rect(lx,H-ly-lh,lw,lh);c.clipPath(clip,stroke=0);c.drawImage(str(logo),lx-290*scale,H-(ly-270*scale)-1024*scale,width=1536*scale,height=1024*scale);c.restoreState()
+c.saveState();clip=c.beginPath();clip.rect(lx,H-ly-lh,lw,lh);c.clipPath(clip,stroke=0);c.drawImage(str(logo),lx-290*scale,H-(ly-270*scale)-1024*scale,width=1536*scale,height=1024*scale,mask="auto");c.restoreState()
 for value,font,size,x,baseline,color in texts:c.setFillColor(HexColor(color));c.setFont(font,size);c.drawString(x,H-baseline,value)
 c.setFillColor(HexColor(white));c.rect(qx,H-qy-qs,qs,qs,fill=1,stroke=0);c.setFillColor(HexColor(navy))
 for y,row in enumerate(matrix):
@@ -70,5 +70,5 @@ for path in [qrdir/'neighborhood-services-qr.png',png]:
  if path==png:img=img[round(qy*300/72):round((qy+qs)*300/72),round(qx*300/72):round((qx+qs)*300/72)]
  decoded,points,_=cv2.QRCodeDetector().detectAndDecode(img);assert decoded==url,(path,decoded)
 assert all(value in page.get_text() for value,*_ in texts)
-metadata={'url':url,'finished_inches':[24,18],'pdf_media_inches':[24.25,18.25],'bleed_inches':.125,'minimum_safe_margin_inches':.5,'png_pixels':[7200,5400],'png_dpi':300,'qr_modules_including_quiet_zone':n,'qr_quiet_zone_modules':4,'qr_error_correction':'H','logo_effective_dpi':100,'logo_source':str(logo.relative_to(root)),'font_handling':'PDF embedded; SVG outlined; editable generator and fonts included','double_sided':'Upload same file for both sides; no mirroring','physical_camera_scan':'Not performed','sha256':{str(f.relative_to(root)):hashlib.sha256(f.read_bytes()).hexdigest() for f in [pdf,png,qrdir/'neighborhood-services-qr.svg',qrdir/'neighborhood-services-qr.png']}}
+metadata={'url':url,'finished_inches':[24,18],'pdf_media_inches':[24.25,18.25],'bleed_inches':.125,'minimum_safe_margin_inches':.5,'png_pixels':[7200,5400],'png_dpi':300,'qr_modules_including_quiet_zone':n,'qr_quiet_zone_modules':4,'qr_error_correction':'H','logo_effective_dpi':100,'logo_alpha_preserved':True,'logo_source':str(logo.relative_to(root)),'font_handling':'PDF embedded; SVG outlined; editable generator and fonts included','double_sided':'Upload same file for both sides; no mirroring','physical_camera_scan':'Not performed','sha256':{str(f.relative_to(root)):hashlib.sha256(f.read_bytes()).hexdigest() for f in [pdf,png,qrdir/'neighborhood-services-qr.svg',qrdir/'neighborhood-services-qr.png']}}
 (out/'verification.json').write_text(json.dumps(metadata,indent=2)+'\n');print(json.dumps(metadata,indent=2))

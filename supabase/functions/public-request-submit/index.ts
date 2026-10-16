@@ -127,6 +127,7 @@ function validatedEstimateSnapshot(
     ) * 100,
   ) / 100;
   if (
+    !Number.isFinite(Number(estimatedTotal)) || !Number.isFinite(Number(snapshot.total)) || total < 0 ||
     Math.abs(total - Number(estimatedTotal || 0)) > 0.011 ||
     Math.abs(total - Number(snapshot.total || 0)) > 0.011
   ) {
@@ -213,6 +214,11 @@ function validate(body: Record<string, unknown>, adminRequest = false) {
     if (bases.length !== 1 || bases[0].key !== expectedBase || Number(bases[0].quantity) !== 1 || Number(bases[0].unit_amount) !== standard || adjustments.length !== 1 || Number(adjustments[0].quantity) !== 1 || Number(adjustments[0].unit_amount) !== -discount) throw new Error("The neighborhood travel estimate is invalid.");
     const address = service === "mobile" ? [detail.street_address, detail.city, detail.state, detail.zip].filter(Boolean).join(", ") : String(detail.delivery_address || "");
     if (address.trim().length < 10) throw new Error("A complete service address is required for neighborhood review.");
+  }
+  // Acquisition triggers review only, never eligibility or a discount. A customer
+  // may navigate from the neighborhood page to the standard-price intake.
+  if (["/neighborhood", "/neighborhood.html"].includes(String(request.acquisition_landing_page || "").split("?")[0].replace(/\/$/, ""))) {
+    request.requested_promotion = "CAMDEN_PARK";
   }
   if (!scanOnly && files.length && exceptionReason) {
     throw new Error("Remove the upload exception when documents are selected.");
