@@ -1,5 +1,8 @@
 # APS unified neighborhood release — implementation and recovery report
 
+**Latest financial verification:** [Final financial verification and hosted preparation](APS_PR159_FINAL_FINANCIAL_VERIFICATION.md). 614 Node / 201 Deno tests pass. Paid service conversion is confirmed blocked before writes; it is not certified complete. Fresh production checks were metadata-only.
+
+
 **Current checkpoint:** [Revised release strategy and verification](APS_PR159_REVISED_RELEASE_STRATEGY.md). 597 Node / 201 Deno tests pass; local native concurrency verified. Paid conversion remains incomplete; hosted and full-recovery gates remain open. No merge/deployment authorization is inferred. Earlier counts and infrastructure recommendations below are historical.
 
 
