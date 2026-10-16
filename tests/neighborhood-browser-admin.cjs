@@ -6,7 +6,7 @@ const root=require('node:path').resolve(__dirname,'..');
  const {PGlite}=await import(process.env.APS_PGLITE_MODULE || '@electric-sql/pglite');const db=new PGlite();
  await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create function auth.uid() returns uuid language sql as $$select '11111111-1111-4111-8111-111111111111'::uuid$$;create function public.is_admin() returns boolean language sql as $$select true$$;`);
  await db.exec(fs.readFileSync(root+'/tests/fixtures/neighborhood-schema.sql','utf8'));
- for(const f of ['20261016032854_neighborhood_pricing_program.sql','20261016045905_neighborhood_review_hardening.sql','20261016092536_neighborhood_atomic_conversion.sql'])await db.exec(fs.readFileSync(root+'/supabase/migrations/'+f,'utf8'));
+ for(const f of ['20261016032854_neighborhood_pricing_program.sql','20261016045905_neighborhood_review_hardening.sql','20261016092536_neighborhood_atomic_conversion.sql','20261016101212_neighborhood_financial_history_integrity.sql'])await db.exec(fs.readFileSync(root+'/supabase/migrations/'+f,'utf8'));
  await db.exec(`create table ron_requests(id uuid primary key default gen_random_uuid(),service_request_id uuid,number_of_signers integer,number_of_notarizations integer,witness_review_required boolean);create table proof_transactions(id uuid primary key default gen_random_uuid(),service_request_id uuid,aps_status text);`);
  await db.exec(`create table request_status_updates(id uuid default gen_random_uuid(),service_request_id uuid,status text,message text,sent_email boolean,sent_sms boolean,created_at timestamptz default now());`);
  const ids=['22222222-2222-4222-8222-222222222222','44444444-4444-4444-8444-444444444444'];

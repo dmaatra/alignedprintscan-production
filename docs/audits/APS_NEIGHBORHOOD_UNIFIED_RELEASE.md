@@ -1,5 +1,29 @@
 # APS unified neighborhood release — implementation and recovery report
 
+## Release-gate follow-up — 2026-10-16
+
+**Final release decision: BLOCKED.** Owner authorization now permits merge/deploy automatically **after** all mandatory gates pass. It does not waive recovery, hosted lifecycle, or financial-history conversion. PR #159 remains draft and production is unchanged.
+
+| Mandatory gate | Status | Evidence and exact limitation |
+|---|---|---|
+| Complete isolated recovery | **BLOCKED** | Fresh local inventory found no Docker, Podman, Colima, Docker.app, Postgres.app, or existing Docker/Colima configuration. Existing isolated PostgreSQL runs through a private Unix socket with TCP and preload workers disabled. Its `pg_available_extensions` contains neither `pg_net` nor `supabase_vault`. Prior full restore still has 11 extension/dependency errors; matching rows do not constitute full recovery. |
+| Existing hosted test infrastructure | **BLOCKED** | Connected Supabase inventory returns only APS production `sfsdniavqldgbiretply` and zero development branches. Vercel preview `alignedprintscan-production-m4z1dcqa8-doneishas-projects.vercel.app` is READY at `6baedc6`, but public and admin scripts hardcode that production backend. No request/payment/refund/upload fixture was submitted there. |
+| Hosted frontend smoke | **PASSED (limited scope)** | Actual preview `/neighborhood` renders the approved $25/$4 rates and pending-review disclosure. Synthetic scan-only intake with three pages progresses to Options with no file or upload exception and a $7 estimate. Direct unauthenticated Operations Portal access redirects to admin-login. This is not hosted end-to-end certification. |
+| Financial-history service conversion | **FAILED / incomplete implementation** | Neighborhood conversion still rejects invoice/payment/refund history before writes. Existing non-neighborhood conversion performs sequential REST writes and cannot serve as an atomic replacement. Full conversion, adjustment issuance/approval, refund execution and final reconciliation remain required. This is an implementation gap, not solely an infrastructure limitation. |
+| Issued-price reconciliation safeguards | **PASSED locally for tested scope** | New forward migration `20261016101212_neighborhood_financial_history_integrity.sql` snapshots original payments at review time and rejects changed invoice amount/number/source quote or void classification, altered historical payments/successful refunds/invoice-linked items/issued quote, unlinked successful refunds, and refunds exceeding the original payment. No history is backfilled or rewritten. Old reviews without snapshots fail closed for investigation. This does not complete service conversion. |
+| Customer/admin regression | **PASSED locally; hosted gate remains blocked** | 592 Node tests, 201 Deno tests and eight cached-only Edge entrypoint type checks pass. Existing customer browser harness exercises six intake paths at desktop/mobile. Operations Portal harness covers eligibility, quote itemization, appointment edits, mileage denial, pre-invoice conversions, invoice retry and payment views, global financial/review/calendar modules and denied/anonymous access using synthetic fixtures. See the existing workflow matrix for provider/auth/storage limitations. |
+
+**CONFIRMED IN CODE:** Previous reconciliation checked net invoice/refund totals without proving preservation of original records. New tests demonstrate that a rewritten original invoice or payment cannot satisfy reconciliation, an unlinked refund is rejected, a changed successful refund is rejected, and valid separate supplemental invoice/refund records still reconcile.
+
+**Validation:** The new migration applies successfully to the existing real restored schema inside `BEGIN`/`ROLLBACK`; anonymous resolver execution is denied and authenticated execution remains granted subject to the function's admin checks. No local restored data changes persisted. The isolated server was stopped afterward. This check establishes migration compatibility, not disaster recovery or hosted authorization certification.
+
+**Smallest external unblock:** Identify and grant access to an existing disposable APS Supabase-compatible target (local or hosted) with the required extensions and Vault recovery prerequisites. Its data-preservation/disposal status must be confirmed before restore. Hosted workflow testing additionally needs an isolated APS backend bound to the preview, authorized test identities, private test storage, Stripe test configuration and a controlled Resend recipient route. None was found in the connected APS project inventory. Do not use PATC resources. If no such target exists, establishing one requires a separate infrastructure decision; no installation, project creation, purchase or production reconfiguration was performed.
+
+**Remaining engineering work:** Implement and verify an atomic, history-preserving financial conversion/reconciliation lifecycle, including partial/paid/void invoices, refunds, duplicate provider delivery, concurrent changes and completion guards. The new preservation checks are a correction toward this gate, not a claim that it has passed.
+
+Evidence logs retained locally: `/private/tmp/aps-release-gate-node.log`, `/private/tmp/aps-release-gate-deno.log`, `/private/tmp/aps-release-gate-types.log`, `/private/tmp/aps-release-gate-admin.log`, `/private/tmp/aps-release-gate-customer.log`. Earlier sections below are historical checkpoints unless explicitly restated above.
+
+
 Date: 2026-10-16. **CONFIRMED IN CODE** unless explicitly labeled otherwise.
 
 ## Release status

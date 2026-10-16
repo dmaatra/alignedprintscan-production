@@ -12,6 +12,7 @@ test('promotion migration, RLS, quote revision and paid-history integration', {s
  await db.exec(read('tests/fixtures/neighborhood-schema.sql'));
  await db.exec(read('supabase/migrations/20261016032854_neighborhood_pricing_program.sql'));
  await db.exec(read('supabase/migrations/20261016045905_neighborhood_review_hardening.sql'));
+ await db.exec(read('supabase/migrations/20261016101212_neighborhood_financial_history_integrity.sql'));
  const user='11111111-1111-4111-8111-111111111111';
  await db.exec(`set test.user_id='${user}';set test.admin='true';`);
  const request='22222222-2222-4222-8222-222222222222';
@@ -41,10 +42,21 @@ test('promotion migration, RLS, quote revision and paid-history integration', {s
  await t.test('reapproval does not duplicate travel or discount',async()=>{await review('owner_exception',2);const rows=(await db.query(`select * from invoice_items where service_request_id=$1`,[request])).rows;assert.equal(rows.reduce((s,x)=>s+Number(x.line_total),0),35);assert.equal(rows.length,3)});
  await t.test('tampered promotion blocks quote issuance',async()=>{await db.query(`update invoice_items set line_total=-50 where item_type='promotion'`);await assert.rejects(db.query(`update service_requests set status='quote_ready' where id=$1`,[request]),/authorized pricing/);await db.query(`update invoice_items set line_total=-25 where item_type='promotion'`)});
  await db.query(`insert into invoices(service_request_id,status,amount_due,amount_paid) values($1,'paid',35,35)`,[request]);
+ await db.query(`insert into request_payments(service_request_id,invoice_id,amount,payment_method,is_test) select service_request_id,id,35,'test',true from invoices where service_request_id=$1`,[request]);
  await t.test('paid history is untouched and review requires financial adjustment',async()=>{const before=(await db.query('select * from invoices')).rows;const count=(await db.query('select count(*) from quotes')).rows[0].count;const result=await review('denied',3,travel);assert.equal(result.rows[0].result.financial_adjustment_required,true);assert.deepEqual((await db.query('select * from invoices')).rows,before);assert.equal((await db.query('select count(*) from quotes')).rows[0].count,count)});
  await t.test('unreconciled financial change blocks completion and resolution',async()=>{
   await assert.rejects(db.query(`update service_requests set status='completed' where id=$1`,[request]),/financial review/);
   await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,4,'Verified financial records')`,[request]),/reconcile/);
+ });
+ await t.test('matching totals cannot conceal rewritten historical invoices',async()=>{
+  await db.query(`update invoices set amount_due=70 where service_request_id=$1`,[request]);
+  await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,4,'Reject edited history')`,[request]),/Historical invoice terms/);
+  await db.query(`update invoices set amount_due=35 where service_request_id=$1`,[request]);
+ });
+ await t.test('historical payment mutation is rejected',async()=>{
+  await db.query(`update request_payments set amount=70 where service_request_id=$1`,[request]);
+  await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,4,'Reject edited payment')`,[request]),/Historical payment changed/);
+  await db.query(`update request_payments set amount=35 where service_request_id=$1`,[request]);
  });
  await t.test('separate supplemental invoice resolves the exact difference without rewriting paid invoice',async()=>{
   await db.query(`insert into invoices(service_request_id,status,amount_due,amount_paid) values($1,'issued',35,0)`,[request]);
@@ -56,8 +68,20 @@ test('promotion migration, RLS, quote revision and paid-history integration', {s
   await review('approved',5);
   await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,6,'Check refund is complete')`,[request]),/reconcile/);
   await db.query(`insert into refunds(service_request_id,amount,status) values($1,35,'succeeded')`,[request]);
+  await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,6,'Reject unlinked refund')`,[request]),/original request payment/);
+  await db.query(`update refunds set payment_id=p.id,invoice_id=p.invoice_id from request_payments p where refunds.service_request_id=p.service_request_id and p.service_request_id=$1`,[request]);
   await db.query(`select aps_resolve_pricing_adjustment($1,6,'Confirmed completed refund record')`,[request]);
   assert.equal((await db.query('select count(*) from invoices')).rows[0].count,2);
+ });
+ await t.test('successful historical refunds cannot be rewritten',async()=>{
+  await review('denied',7,travel);
+  const original=(await db.query('select * from refunds')).rows[0];
+  await db.query(`update refunds set amount=34 where id=$1`,[original.id]);
+  await assert.rejects(db.query(`select aps_resolve_pricing_adjustment($1,8,'Reject changed successful refund')`,[request]),/Historical successful refund changed/);
+  await db.query(`update refunds set amount=35 where id=$1`,[original.id]);
+  await db.query(`insert into invoices(service_request_id,status,amount_due,amount_paid) values($1,'issued',35,0)`,[request]);
+  await db.query(`select aps_resolve_pricing_adjustment($1,8,'Verified new supplemental invoice')`,[request]);
+  assert.deepEqual((await db.query('select * from refunds')).rows[0],original);
  });
  await t.test('document delivery receives one locked four-dollar base and quote approval remains idempotent',async()=>{
   const id='44444444-4444-4444-8444-444444444444';const est={components:[{key:'print:courier',label:'Courier Delivery Base',quantity:1,unit_amount:20,line_amount:20,billable:true},{key:'scan',label:'Scan to PDF',quantity:3,unit_amount:1,line_amount:3,billable:true},{key:'promotion:CAMDEN_PARK',label:'Camden Park Promotional Adjustment',quantity:1,unit_amount:-16,line_amount:-16,billable:true}],total:7};
