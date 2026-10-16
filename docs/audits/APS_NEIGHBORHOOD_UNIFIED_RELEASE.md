@@ -103,7 +103,7 @@ Existing service request fields identify submissions, workflow completion, and p
 
 ## Verification
 
-Latest complete Node suite: **576 passed, 0 failed, 0 skipped** using Node's TypeScript transform flag and isolated PGlite. Includes invoice/payment/webhook/portal/security regressions and new pricing, reconciliation, scan, attribution and Checkout cases. Tests cover both price increases and decreases using separate records, repeated approvals, stale review revisions, quote tampering, RLS, and scan fulfillment gates.
+Latest complete Node suite: **579 passed, 0 failed, 0 skipped** using Node's TypeScript transform flag and isolated PGlite. Includes invoice/payment/webhook/portal/security regressions and new pricing, reconciliation, scan, attribution and Checkout cases. Tests cover both price increases and decreases using separate records, repeated approvals, stale review revisions, quote tampering, RLS, and scan fulfillment gates.
 
 Deno checks cover the eight deployment entrypoints listed below. Changed JavaScript syntax and `git diff --check` pass. Browser verification covers six page/width combinations (390/1440) without overflow or JavaScript errors, two intercepted scan-only submissions with exact campaign payloads, and full-Mobile-intake transition. Intercepted submissions deliberately return a local error after payload capture; they do not create real requests. Screenshots are under `output/qa/`.
 
@@ -166,7 +166,7 @@ At the owner's explicit request, the authenticated APS production **Messages →
 - Blocked direct mileage-apply operations that could bypass neighborhood review.
 - Added an early service-conversion safety guard: the existing conversion implementation would otherwise write some details before the immutable reviewed-quote guard rejected a later write. Conversion is now explicitly unavailable for neighborhood requests until an atomic revision workflow is implemented and verified. This is an unresolved feature blocker, not completed conversion support.
 
-Regression result: **576 Node tests passed**, **201 Deno tests passed**, and eight Deno entrypoint checks passed. Existing cached dependencies were used. No skipped tests are being counted as recovery/provider verification.
+Regression result: **579 Node tests passed**, **201 Deno tests passed**, and eight Deno entrypoint checks passed. Existing cached dependencies were used. No skipped tests are being counted as recovery/provider verification.
 
 ### 6. Remaining release blockers
 
@@ -174,3 +174,12 @@ Regression result: **576 Node tests passed**, **201 Deno tests passed**, and eig
 2. Atomic neighborhood service conversion with eligibility/quote revisions and rollback-safe persistence.
 3. Isolated hosted end-to-end customer/admin lifecycle: Auth/RLS, document storage, quote approval/invoices, partial/final payments and refunds, automatic communications/notifications, and appointment conversion/provider integrations. Local fixture/UI and unit tests do not replace this evidence.
 4. Owner release authorization: the current instruction explicitly prohibits merge/deploy/production migrations. PR #159 must remain draft.
+
+
+## Invoice lifecycle follow-up (2026-10-16)
+
+Fault-injection tests against the actual `materializeInitialInvoice` helper reproduced two failures: invoice-item linking and request-status updates could fail while approval still returned success. Retrying then returned the already-created invoice without repairing those steps. The helper now checks both REST results and retries unfinished finalization for the same unpaid invoice. Paid/partially paid records and later request statuses remain preserved. Three new regression tests cover both failures/retries and payment preservation.
+
+The existing admin browser harness now runs the actual quote-approval helper through a synthetic REST adapter into the same PGlite database used for manual eligibility review. Verified the approved $7 document-service quote creates one invoice, attaches all three reviewed line items, transitions to awaiting payment, and remains one invoice after retry. Synthetic partial ($2 paid/$5 balance) and full ($7 paid/$0 balance) states survive repeated approval unchanged and appear in the actual admin payment view. Desktop/mobile tabs still pass with no overflow or JavaScript errors. No payment provider was called; this is database/helper/UI integration, not a real payment test.
+
+Updated complete suite: **579 passed, zero failed/skipped**. Changed Edge Function type-check passed with remote/npm resolution disabled. Atomic service conversion and full recovery remain blockers; this follow-up does not remove the conversion safety guard or authorize release.

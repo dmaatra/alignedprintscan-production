@@ -202,7 +202,7 @@ async function materializeInitialInvoice(
   expectedQuoteId = "",
 ) {
   const requestResponse = await supabaseFetch(
-    `service_requests?select=id,quote_amount,initial_payment_amount,estimated_total,invoice_number,current_quote_id&id=eq.${requestId}&limit=1`,
+    `service_requests?select=id,quote_amount,initial_payment_amount,estimated_total,invoice_number,current_quote_id,status&id=eq.${requestId}&limit=1`,
   );
   const requestRows = await readJson(requestResponse);
   const request = requestRows?.[0];
@@ -278,7 +278,10 @@ async function materializeInitialInvoice(
     ) > 0;
     // Approval is idempotent. Never reset a paid or partially paid primary
     // invoice when the customer double-clicks or revisits an old portal page.
-    if (paid || alreadyApproved || hasRecordedPayment) return existingInvoice;
+    if (paid || hasRecordedPayment) return existingInvoice;
+    if (alreadyApproved) {
+      return finalizeInitialInvoice(request, existingInvoice, amountDue, invoiceNumber);
+    }
   }
 
   let invoice;
@@ -336,29 +339,36 @@ async function materializeInitialInvoice(
     throw new Error("The initial invoice could not be created.");
   }
 
+  return finalizeInitialInvoice(request, invoice, amountDue, invoiceNumber);
+}
+
+async function finalizeInitialInvoice(request: any, invoice: any, amountDue: number, invoiceNumber: string) {
+  const requestId = request.id;
   // Quote rows begin with invoice_id = null while the quote is editable. Once
   // approved, attach them to Invoice #1 so all payment methods share one record.
-  await supabaseFetch(
+  await readJson(await supabaseFetch(
     `invoice_items?service_request_id=eq.${requestId}&invoice_id=is.null`,
     {
       method: "PATCH",
       body: JSON.stringify({ invoice_id: invoice.id }),
     },
-  );
+  ));
 
-  await supabaseFetch(`service_requests?id=eq.${requestId}`, {
-    method: "PATCH",
-    body: JSON.stringify({
-      status: "awaiting_payment",
-      workflow_status: "awaiting_payment",
-      invoice_status: "approved",
-      payment_status: "awaiting_payment",
-      payment_state: "invoice_1_due",
-      invoice_number: invoiceNumber,
-      initial_payment_amount: amountDue,
-      balance_due: amountDue,
-    }),
-  });
+  if (["quote_ready", "awaiting_approval", "under_review", "awaiting_payment"].includes(String(request.status || ""))) {
+    await readJson(await supabaseFetch(`service_requests?id=eq.${requestId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "awaiting_payment",
+        workflow_status: "awaiting_payment",
+        invoice_status: "approved",
+        payment_status: "awaiting_payment",
+        payment_state: "invoice_1_due",
+        invoice_number: invoiceNumber,
+        initial_payment_amount: amountDue,
+        balance_due: amountDue,
+      }),
+    }));
+  }
 
   return invoice;
 }

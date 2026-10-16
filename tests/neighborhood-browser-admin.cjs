@@ -67,6 +67,30 @@ const root=require('node:path').resolve(__dirname,'..');
  assert.equal((await db.query('select quote_amount from service_requests where id=$1',[ids[0]])).rows[0].quote_amount,'70');assert.equal((await db.query('select count(*) from request_pricing_reviews where service_request_id=$1',[ids[0]])).rows[0].count,2);console.log('ADMIN_DENIAL_STANDARD_MILEAGE_HISTORY_PASS');
  await page.locator('[data-id="'+ids[1]+'"]').first().click();await page.locator('#pricingProgramReason').fill('Synthetic document address reviewed');await page.locator('#reviewPricingProgram').click();await page.waitForFunction(()=>document.querySelector('#requestDetail')?.innerText.includes('Applied pricing: CAMDEN_PARK'));
  assert.equal((await db.query('select approved_travel_amount from request_promotion_applications where service_request_id=$1',[ids[1]])).rows[0].approved_travel_amount,'4');console.log('ADMIN_APPROVAL_DOCUMENT_PASS');
+ // Execute the actual quote-approval helper against the same synthetic database.
+ const vm=require('node:vm'),{stripTypeScriptTypes}=require('node:module');
+ const invoiceContext=vm.createContext({Deno:{env:{get:()=>''},serve(){}},Response,console,fetch:async(url,options={})=>{
+  const u=new URL(url);assert.equal(u.pathname.startsWith('/rest/v1/'),true,'Only synthetic REST is allowed');
+  const filters=[];for(const [key,value] of u.searchParams){if(['select','order','limit'].includes(key))continue;const dot=value.indexOf('.'),op=value.slice(0,dot),raw=value.slice(dot+1);assert.ok(['eq','is'].includes(op));filters.push([op,key,raw==='null'?null:raw]);}
+  const method=options.method||'GET';const result=await dispatch({kind:'table',table:u.pathname.split('/').at(-1),filters,operation:method==='PATCH'?'update':method==='POST'?'insert':undefined,value:options.body?JSON.parse(options.body):undefined});
+  return new Response(JSON.stringify(result.error||result.data),{status:result.error?400:200});
+ }});
+ vm.runInContext(stripTypeScriptTypes(fs.readFileSync(root+'/supabase/functions/client-quote-action/index.ts','utf8').replace(/^import .*;\n/gm,''),{mode:'transform'}),invoiceContext);
+ const quote=(await db.query('select current_quote_id from service_requests where id=$1',[ids[1]])).rows[0].current_quote_id;
+ invoiceContext.requestId=ids[1];invoiceContext.quoteId=quote;
+ const invoice=await vm.runInContext('materializeInitialInvoice(requestId,quoteId)',invoiceContext);
+ assert.equal(Number(invoice.amount_due),7);assert.equal((await db.query('select count(*) from invoice_items where invoice_id=$1',[invoice.id])).rows[0].count,3);
+ assert.equal((await db.query('select status from service_requests where id=$1',[ids[1]])).rows[0].status,'awaiting_payment');
+ await vm.runInContext('materializeInitialInvoice(requestId,quoteId)',invoiceContext);assert.equal((await db.query('select count(*) from invoices')).rows[0].count,1);
+ console.log('QUOTE_APPROVAL_INVOICE_ITEMIZATION_RETRY_PASS');
+ for(const [paid,balance,status] of [[2,5,'partially_paid'],[7,0,'paid']]){
+  await db.query('update invoices set amount_paid=$1,paid_amount=$1,balance_due=$2,status=$3,payment_status=$3 where id=$4',[paid,balance,status,invoice.id]);
+  const before=(await db.query('select * from invoices where id=$1',[invoice.id])).rows;
+  await vm.runInContext('materializeInitialInvoice(requestId,quoteId)',invoiceContext);
+  assert.deepEqual((await db.query('select * from invoices where id=$1',[invoice.id])).rows,before);
+  await page.reload();await page.locator('[data-id="'+ids[1]+'"]').first().click();await page.locator('[data-workspace-tab="payments"]').click();
+  assert.match(await page.locator('#requestDetail').innerText(),/INV-44444444-01/);console.log('ADMIN_INVOICE_PAYMENT_VIEW_PASS',status);
+ }
  for(const id of ids)assert.equal((await db.query('select acquisition_utm_campaign from service_requests where id=$1',[id])).rows[0].acquisition_utm_campaign,'neighborhood_services');
  for(const width of [1440,390]){await page.setViewportSize({width,height:1000});for(const tab of ['overview','customer','documents','quote','payments','messages','fulfillment','timeline']){await page.locator('[data-workspace-tab="'+tab+'"]').click();await page.waitForTimeout(80);assert.equal(await page.locator('[data-workspace-tab="'+tab+'"]').getAttribute('aria-selected'),'true');}await page.locator('[data-workspace-tab="overview"]').click();await page.screenshot({path:'/private/tmp/aps-admin-audit-'+width+'.png',fullPage:true});console.log('ADMIN_TABS',width,'overflow',await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth));}
  console.log('JS_ERRORS',errors);console.log('UNMODELED_READ_TABLES',[...missing]);fs.writeFileSync('/private/tmp/aps-admin-audit-results.json',JSON.stringify({errors,calls,missing:[...missing]},null,2));assert.deepEqual(errors,[]);await browser.close();await db.close();
