@@ -15,6 +15,7 @@ function componentSet(input) {
     if (String(detail.fulfillment_type || "").toLowerCase() === "courier") components.add("courier");
   }
   if (type === "mobile" && input.detail?.scan_to_pdf_needed) components.add("scan");
+  if (type === "mobile" && input.detail?.print_add_on) components.add("print_copy");
   if (type === "loan_signing") components.add("loan_signing");
   return components;
 }

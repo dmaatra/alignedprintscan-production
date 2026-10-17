@@ -1,0 +1,5 @@
+
+# Print artifacts are binary; do not apply text diffs or line-ending conversion.
+*.pdf binary
+*.png binary
+*.ttf binary

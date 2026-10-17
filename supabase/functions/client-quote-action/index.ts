@@ -202,7 +202,7 @@ async function materializeInitialInvoice(
   expectedQuoteId = "",
 ) {
   const requestResponse = await supabaseFetch(
-    `service_requests?select=id,quote_amount,initial_payment_amount,estimated_total,invoice_number,current_quote_id&id=eq.${requestId}&limit=1`,
+    `service_requests?select=id,quote_amount,initial_payment_amount,estimated_total,invoice_number,current_quote_id,status&id=eq.${requestId}&limit=1`,
   );
   const requestRows = await readJson(requestResponse);
   const request = requestRows?.[0];
@@ -211,6 +211,19 @@ async function materializeInitialInvoice(
     throw new Error("Request not found.");
   }
 
+  const promotionResponse = await supabaseFetch(`request_promotion_applications?service_request_id=eq.${requestId}&select=eligibility_status,financial_adjustment_required&limit=1`);
+  const promotion = (await readJson(promotionResponse))?.[0];
+  if (promotion && (promotion.eligibility_status === "pending_review" || promotion.financial_adjustment_required || !request.current_quote_id)) {
+    throw new Error("APS must finish the neighborhood pricing review before quote approval.");
+  }
+
+  // Conversion has already recorded only the charge difference. Approval must
+  // never materialize another full-price primary invoice or rewrite old terms.
+  const conversionRows = promotion ? await readJson(await supabaseFetch(
+    `neighborhood_conversion_operations?service_request_id=eq.${requestId}&select=result`,
+  )) : [];
+  const paidConversion = (conversionRows || []).find((row: any) =>
+    row.result?.financial_version && row.result?.quote_id === request.current_quote_id);
   const amountDue = Number(
     request.initial_payment_amount ||
       request.quote_amount ||
@@ -246,6 +259,12 @@ async function materializeInitialInvoice(
     `invoices?select=*&service_request_id=eq.${requestId}&order=created_at.asc`,
   );
   const existingRows = await readJson(invoiceLookupResponse);
+  if (paidConversion) {
+    const retained = (existingRows || []).filter((row: any) => !["void", "cancelled"].includes(String(row.status)));
+    const selected = retained.find((row: any) => row.id === paidConversion.result.adjustment_invoice_id) || retained[0];
+    if (!selected) throw new Error("The preserved conversion invoices require administrator review.");
+    return {...selected, conversion_reused: true, request_balance_due: retained.reduce((sum: number, row: any) => sum + Number(row.balance_due || 0), 0)};
+  }
   const existingInvoice = (existingRows || []).find((row: any) => {
     return (
       String(row.invoice_type || "").includes("initial") ||
@@ -272,7 +291,10 @@ async function materializeInitialInvoice(
     ) > 0;
     // Approval is idempotent. Never reset a paid or partially paid primary
     // invoice when the customer double-clicks or revisits an old portal page.
-    if (paid || alreadyApproved || hasRecordedPayment) return existingInvoice;
+    if (paid || hasRecordedPayment) return existingInvoice;
+    if (alreadyApproved) {
+      return finalizeInitialInvoice(request, existingInvoice, amountDue, invoiceNumber);
+    }
   }
 
   let invoice;
@@ -330,29 +352,36 @@ async function materializeInitialInvoice(
     throw new Error("The initial invoice could not be created.");
   }
 
+  return finalizeInitialInvoice(request, invoice, amountDue, invoiceNumber);
+}
+
+async function finalizeInitialInvoice(request: any, invoice: any, amountDue: number, invoiceNumber: string) {
+  const requestId = request.id;
   // Quote rows begin with invoice_id = null while the quote is editable. Once
   // approved, attach them to Invoice #1 so all payment methods share one record.
-  await supabaseFetch(
+  await readJson(await supabaseFetch(
     `invoice_items?service_request_id=eq.${requestId}&invoice_id=is.null`,
     {
       method: "PATCH",
       body: JSON.stringify({ invoice_id: invoice.id }),
     },
-  );
+  ));
 
-  await supabaseFetch(`service_requests?id=eq.${requestId}`, {
-    method: "PATCH",
-    body: JSON.stringify({
-      status: "awaiting_payment",
-      workflow_status: "awaiting_payment",
-      invoice_status: "approved",
-      payment_status: "awaiting_payment",
-      payment_state: "invoice_1_due",
-      invoice_number: invoiceNumber,
-      initial_payment_amount: amountDue,
-      balance_due: amountDue,
-    }),
-  });
+  if (["quote_ready", "awaiting_approval", "under_review", "awaiting_payment"].includes(String(request.status || ""))) {
+    await readJson(await supabaseFetch(`service_requests?id=eq.${requestId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "awaiting_payment",
+        workflow_status: "awaiting_payment",
+        invoice_status: "approved",
+        payment_status: "awaiting_payment",
+        payment_state: "invoice_1_due",
+        invoice_number: invoiceNumber,
+        initial_payment_amount: amountDue,
+        balance_due: amountDue,
+      }),
+    }));
+  }
 
   return invoice;
 }
@@ -382,6 +411,13 @@ Deno.serve(async (request) => {
         requestId,
         String(body.quote_id || "").trim(),
       );
+
+      if (invoice.conversion_reused) {
+        await logTimeline(requestId, "conversion_quote_approved", "Revised quote approved",
+          "The revised service quote was approved. Original invoices and payments remain unchanged; any additional balance is recorded separately.",
+          "customer", {invoice_id: invoice.id, balance_due: invoice.request_balance_due}, "customer");
+        return json({ok: true, status: invoice.request_balance_due > 0 ? "awaiting_payment" : "paid", reference_number: reference, invoice});
+      }
 
       await supabaseFetch("request_status_updates", {
         method: "POST",

@@ -245,7 +245,9 @@ export async function deliverCustomerCommunication(options, sendProvider) {
     return { message: begun.message, duplicate: true, provider: null };
   }
   try {
-    const provider = await sendProvider();
+    // On a failed-delivery retry, send the original recorded content. This
+    // preserves the same secure link and provider idempotency key.
+    const provider = await sendProvider(begun.message);
     await completeCustomerCommunication({
       ...options,
       messageId: begun.message.id,

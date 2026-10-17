@@ -1,5 +1,5 @@
 import { customerPortalUrl, recipientGreeting, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
-import { deliverCustomerCommunication } from "../_shared/communication-history.mjs";
+import { deliverSecureCustomerCommunication } from "../_shared/secure-customer-delivery.mjs";
 
 // Aligned Print & Scan — Branded order-status emails
 // Purpose: Send customer + admin emails for every client workflow phase.
@@ -76,14 +76,14 @@ async function readJsonOrEmpty(response: Response) {
   try { return await response.json(); } catch (_) { return null; }
 }
 
-async function sendEmail(to: string | string[], subject: string, html: string) {
+async function sendEmail(to: string | string[], subject: string, html: string, idempotencyKey?: string) {
   if (!RESEND_API_KEY) throw new Error("RESEND_API_KEY is not configured.");
   const recipients = Array.isArray(to) ? to.filter(Boolean) : [to].filter(Boolean);
   if (!recipients.length) return null;
 
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
-    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json", ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
     body: JSON.stringify({ from: FROM_EMAIL, to: recipients, subject, html }),
   });
 
@@ -297,10 +297,11 @@ Deno.serve(async (req) => {
     const customerHtml = emailShell(customerContent.html, customerContent.preheader);
     const customerText = customerContent.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     const idempotencyKey = String(body.idempotency_key || `request:${requestId}:${status}:${invoiceId || "current"}`);
-    const customerDelivery = await deliverCustomerCommunication({ supabaseUrl: SUPABASE_URL, serviceRoleKey: SERVICE_ROLE_KEY, requestId, templateId, templateKey, recipient: customer.email, subject: customerContent.subject, renderedHtml: customerHtml, renderedText: customerText, associatedStatus: status, sourceType: String(body.source_type || "workflow"), sourceEvent: String(body.source_event || status), idempotencyKey, metadata: { invoice_id: invoiceId || null, portal_tab: status === "appointment_confirmed" || status === "appointment_needs_rescheduling" ? "fulfillment" : status === "completed" ? "overview" : "quote-payment" } }, () => sendEmail(customer.email, customerContent.subject, customerHtml));
+    const portalTab = ["quote_ready", "awaiting_approval", "awaiting_payment", "final_balance_due", "payment_received", "final_payment_received"].includes(status) ? "quote-payment" : ["appointment_confirmed", "appointment_needs_rescheduling"].includes(status) ? "fulfillment" : "overview";
+    const customerDelivery = await deliverSecureCustomerCommunication({ supabaseUrl: SUPABASE_URL, serviceRoleKey: SERVICE_ROLE_KEY, requestId, templateId, templateKey, recipient: customer.email, subject: customerContent.subject, renderedHtml: customerHtml, renderedText: customerText, associatedStatus: status, sourceType: String(body.source_type || "workflow"), sourceEvent: String(body.source_event || status), idempotencyKey, metadata: { invoice_id: invoiceId || null, portal_tab: portalTab } }, { siteUrl: SITE_URL, portalUrl: customerPortalUrl(SITE_URL, requestId, portalTab), sendProvider: (html: string, subject: string) => sendEmail(customer.email, subject, html, idempotencyKey) });
     let adminSend: any = null;
     let adminSubject = "Not sent";
-    if (shouldSendAdmin) {
+    if (shouldSendAdmin && !customerDelivery.duplicate) {
       const adminContent = buildAdminContent(status, request, customer, note);
       adminSubject = adminContent.subject;
       adminSend = await sendEmail(ADMIN_EMAIL, adminContent.subject, emailShell(adminContent.html, adminContent.preheader));
