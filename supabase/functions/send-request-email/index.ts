@@ -51,7 +51,6 @@ Deno.serve(async (req) => {
     if (!RESEND_API_KEY) throw new Error("RESEND_API_KEY is not configured.");
     const body = await req.json();
     const requestId = body.request_id || "";
-    const ref = body.reference_number || body.ref || "APS-REQUEST";
     const statusUrl = customerPortalUrl(SITE_URL, requestId, "overview");
 
     let request: any = null;
@@ -75,6 +74,7 @@ Deno.serve(async (req) => {
     }
 
     if (!request?.customer_id || !customer?.id || !customer.email) throw new Error("A saved request and customer are required for customer email.");
+    const ref = `APS-${String(request.id).slice(0, 8).toUpperCase()}`;
 
     if (isReservedSyntheticRecipient(customer.email)) {
       return json({

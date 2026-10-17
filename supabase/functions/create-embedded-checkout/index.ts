@@ -96,6 +96,14 @@ Deno.serve(async (request) => {
     }
 
     if (!await authorizePortal(request, requestId, body.access_token, SUPABASE_URL, SERVICE_ROLE_KEY)) return json({ok:false,error:"Verified customer access is required."},403);
+    // Scoped, read-only release preflight. Never return a key or create a
+    // Checkout Session while verifying provider isolation.
+    if (body.preflight_only === true) {
+      return json({
+        ok: true,
+        test_mode_ready: STRIPE_SECRET_KEY.startsWith("sk_test_") && STRIPE_PUBLISHABLE_KEY.startsWith("pk_test_"),
+      });
+    }
     const requestResponse = await supabaseFetch(
       `service_requests?select=id,status,current_quote_id,customers(email,first_name,last_name)&id=eq.${requestId}&limit=1`,
     );
