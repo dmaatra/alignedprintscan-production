@@ -23,6 +23,15 @@
 
   const detailRoot = $("#requestDetail");
   const workspace = $(".admin-v3-workspace");
+  const workspaceHeader = $(".admin-v3-workspace-header");
+  // Wrapped actions and long names change header height at intermediate widths.
+  // Keep the sticky tabs below the rendered header instead of a fixed estimate.
+  if (workspace && workspaceHeader && typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(() => {
+      workspace.style.setProperty("--aps-rendered-header-height", `${workspaceHeader.getBoundingClientRect().height}px`);
+    }).observe(workspaceHeader);
+  }
+
 
 
   /**
