@@ -99,9 +99,11 @@ Deno.serve(async (request) => {
     // Scoped, read-only release preflight. Never return a key or create a
     // Checkout Session while verifying provider isolation.
     if (body.preflight_only === true) {
+      const secretMode = STRIPE_SECRET_KEY.startsWith("sk_test_") ? "test" : STRIPE_SECRET_KEY.startsWith("sk_live_") ? "live" : "unknown";
+      const publicMode = STRIPE_PUBLISHABLE_KEY.startsWith("pk_test_") ? "test" : STRIPE_PUBLISHABLE_KEY.startsWith("pk_live_") ? "live" : "unknown";
       return json({
         ok: true,
-        test_mode_ready: STRIPE_SECRET_KEY.startsWith("sk_test_") && STRIPE_PUBLISHABLE_KEY.startsWith("pk_test_"),
+        stripe_mode: secretMode === publicMode ? secretMode : "mixed_or_unknown",
       });
     }
     const requestResponse = await supabaseFetch(

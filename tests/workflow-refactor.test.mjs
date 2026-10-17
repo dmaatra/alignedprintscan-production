@@ -48,9 +48,11 @@ test("Stripe webhook verifies signatures and deduplicates sessions", async () =>
   assert.match(source, /verifyStripeSignature/);
   assert.match(source, /external_reference=eq/);
   assert.match(source, /duplicate: true/);
-  assert.match(source, /const newPaid = currentPaid \+ amount/);
+  assert.match(source, /const newPaid = invoicePayments\.reduce/);
+  assert.match(source, /session\.payment_status !== "paid"/);
+  assert.match(source, /checkout\.session\.async_payment_succeeded/);
   assert.match(source, /paidInFull \? invoiceStatus : "partially_paid"/);
-  assert.match(source, /paymentResponse\.status === 409/);
+  assert.match(source, /paymentResponse\.status !== 409/);
 });
 
 test("admin service-role mutations require administrator authorization", async () => {
