@@ -43,3 +43,9 @@ Final local Node regression: 629 passed, zero failures/skips. The first backup r
 - Eight changed Edge entrypoints passed cached Deno type checks. Current production source bundles for all eight were downloaded into a separate private rollback directory; all downloads succeeded.
 - Production ADMIN_EMAIL and SUPPORT_EMAIL overrides are absent in secret-name inventory; the verified functions fall back to authorized hello@alignedprintscan.com. RESEND_API_KEY and Stripe key names are present; values were not logged.
 - Owner removed a visible synthetic-label requirement. Internal test-record inventory remains required to avoid touching real customer requests. Checkout launch/amount/return smoke is still pending; no payment-processing pass is claimed.
+
+## Hosted verification access checkpoint
+
+The existing Vercel preview was verified as project prj_4cNexKhxu8bOOQojeZ8KmktDKVMe, team team_QSapNMivK8QSY3fQxSQE2Xtm. Authorized temporary preview access succeeded; the application then correctly redirected to APS Admin Login. The production browser session is authenticated but is not shared across preview origins. Owner was asked to sign in to the open preview tab (no password requested in chat). Backend activation and merge remain pending so the required hosted administrator canary can be completed in the release window.
+
+Preserved pre-release function versions/JWT enforcement: public-request-submit 17/false; get-request-status 38/false; send-request-email 46/false; admin-route-distance 29/true; admin-service-adjustment 8/true; client-quote-action 33/false; create-embedded-checkout 43/false; update-request-status 17/true. Do not change these JWT settings during deployment.
