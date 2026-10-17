@@ -1,6 +1,7 @@
 import { customerPortalUrl, emailButton, recipientGreeting, renderCustomerEmailShell } from "../_shared/customer-email.mjs";
-import { deliverCustomerCommunication, safeDeliveryError } from "../_shared/communication-history.mjs";
+import { safeDeliveryError } from "../_shared/communication-history.mjs";
 import { isReservedSyntheticRecipient } from "../_shared/synthetic-recipient.ts";
+import { deliverSecureCustomerCommunication } from "../_shared/secure-customer-delivery.mjs";
 
 // Aligned Print & Scan — New request notification emails
 // Sends a branded customer confirmation and an admin alert to hello@alignedprintscan.com.
@@ -73,7 +74,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (!customer.email) throw new Error("Customer email missing.");
+    if (!request?.customer_id || !customer?.id || !customer.email) throw new Error("A saved request and customer are required for customer email.");
 
     if (isReservedSyntheticRecipient(customer.email)) {
       return json({
@@ -101,7 +102,7 @@ Deno.serve(async (req) => {
 
     const adminHtml = emailShell(`${neighborhood ? `<p><strong>${esc(neighborhoodCopy)}</strong></p>` : ""}<p style="letter-spacing:.16em;text-transform:uppercase;color:#c8a96b;font-weight:800;margin:0 0 10px">New Request</p><h1 style="font-family:Georgia,serif;color:#161c4d;margin:0 0 12px;font-size:32px">New Client Request Received</h1><p>A new request was submitted and needs admin review.</p><div style="background:#fffaf2;border:1px solid #e7dcc5;border-radius:16px;padding:18px;margin:18px 0"><strong style="color:#161c4d">Reference:</strong> ${esc(ref)}<br><strong style="color:#161c4d">Client:</strong> ${esc([customer.first_name, customer.last_name].filter(Boolean).join(" ") || "Client")}<br><strong style="color:#161c4d">Email:</strong> ${esc(customer.email)}<br><strong style="color:#161c4d">Phone:</strong> ${esc(customer.phone || "Not provided")}<br><strong style="color:#161c4d">Preferred Contact:</strong> ${esc(customer.preferred_contact || "Not provided")}<br><strong style="color:#161c4d">Service:</strong> ${esc(serviceLabel(request?.service_type))}</div><p><a href="${SITE_URL}/admin-dashboard.html" style="display:inline-block;background:#c8a96b;color:#111522;padding:14px 22px;border-radius:999px;text-decoration:none;font-weight:bold">Open Admin Dashboard</a></p>`, `New request: ${ref}`);
 
-    const customerDelivery = await deliverCustomerCommunication({ supabaseUrl: SUPABASE_URL, serviceRoleKey: SERVICE_ROLE_KEY, requestId, templateId: template.id, templateKey: "request_received", recipient: customer.email, subject: customerSubject, renderedHtml: customerHtml, renderedText: customerText, associatedStatus: "under_review", sourceType: "automatic", sourceEvent: "request_created", idempotencyKey: `request:${requestId}:request_received`, metadata: { portal_tab: "overview" } }, () => sendEmail(customer.email, customerSubject, customerHtml, `request:${requestId}:customer`));
+    const customerDelivery = await deliverSecureCustomerCommunication({ supabaseUrl: SUPABASE_URL, serviceRoleKey: SERVICE_ROLE_KEY, requestId, templateId: template.id, templateKey: "request_received", recipient: customer.email, subject: customerSubject, renderedHtml: customerHtml, renderedText: customerText, associatedStatus: "under_review", sourceType: "automatic", sourceEvent: "request_created", idempotencyKey: `request:${requestId}:request_received`, metadata: { portal_tab: "overview" } }, { siteUrl: SITE_URL, portalUrl: statusUrl, sendProvider: (html: string, subject: string) => sendEmail(customer.email, subject, html, `request:${requestId}:customer`) });
     let adminSend: any = null;
     let adminAlertError: string | null = null;
     try { const priorAlert = await supabaseFetch(`request_status_updates?service_request_id=eq.${encodeURIComponent(requestId)}&message=eq.Customer%20acknowledgment%20and%20administrator%20alert%20sent.&sent_email=eq.true&select=id&limit=1`); if (!priorAlert.ok) throw new Error("Administrator notification history is unavailable."); const alreadySent = (await priorAlert.json()).length > 0; if (!alreadySent) adminSend = await sendEmail(ADMIN_EMAIL, `New request received: ${ref}`, adminHtml, `request:${requestId}:admin`); } catch (error) { adminAlertError = safeDeliveryError(error); }

@@ -171,7 +171,7 @@ test("idempotent insert conflict re-reads history and never duplicates delivery"
 
 test("request acknowledgment preserves customer success independently of admin alert", async () => {
   const source = await read("supabase/functions/send-request-email/index.ts");
-  const customerAt = source.indexOf("deliverCustomerCommunication");
+  const customerAt = source.indexOf("deliverSecureCustomerCommunication");
   const adminAt = source.indexOf("try { const priorAlert = await supabaseFetch");
   assert.ok(customerAt > 0 && adminAt > customerAt);
   assert.match(source, /admin_alert_sent: !adminAlertError/);
@@ -189,8 +189,9 @@ test("workflow, payment, invoice, action, and admin paths use unified history", 
     "supabase/functions/admin-resolve-customer-action/index.ts",
   ];
   for (const path of paths) {
-    assert.match(await read(path), /deliverCustomerCommunication/);
+    assert.match(await read(path), /deliver(?:Secure)?CustomerCommunication/);
   }
+  assert.match(await read("supabase/functions/_shared/secure-customer-delivery.mjs"), /deliverCustomerCommunication/);
   assert.match(
     await read("supabase/functions/stripe-webhook/index.ts"),
     /stripe:\$\{session\.id\}:payment_confirmation/,
