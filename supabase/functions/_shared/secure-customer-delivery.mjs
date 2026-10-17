@@ -12,12 +12,14 @@ export async function deliverSecureCustomerCommunication(options, {
   }
   const token = await issuePortalToken(options.requestId, options.supabaseUrl, options.serviceRoleKey);
   const secureUrl = `${portalUrl}#access_token=${token}`;
+  const htmlPortalUrl = portalUrl.replaceAll("&", "&amp;");
+  const htmlSecureUrl = secureUrl.replaceAll("&", "&amp;");
   const secure = {
     ...options,
-    renderedHtml: options.renderedHtml.replaceAll(portalUrl, secureUrl),
+    renderedHtml: options.renderedHtml.replaceAll(htmlPortalUrl, htmlSecureUrl).replaceAll(portalUrl, secureUrl),
     renderedText: options.renderedText.replaceAll(portalUrl, secureUrl),
   };
-  if (!secure.renderedHtml.includes(secureUrl)) throw new Error("Customer email is missing the secure portal link.");
+  if (!secure.renderedHtml.includes(htmlSecureUrl) && !secure.renderedHtml.includes(secureUrl)) throw new Error("Customer email is missing the secure portal link.");
   return deliverCustomerCommunication(secure, (message) =>
     sendProvider(message.rendered_html, message.subject));
 }

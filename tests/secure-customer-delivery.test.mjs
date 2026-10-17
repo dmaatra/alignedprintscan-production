@@ -39,7 +39,7 @@ test('automatic customer email has a scoped portal token; retry reuses recorded 
     if (url.pathname.endsWith('/request_timeline_events')) return Response.json([]);
     throw new Error(`Unexpected fixture endpoint: ${url.pathname}`);
   };
-  const options = { supabaseUrl: 'https://example.invalid', serviceRoleKey: 'fixture-key', requestId, recipient: 'approved@example.invalid', subject: 'Quote ready', renderedHtml: `<a href="${portalUrl}">Review</a>`, renderedText: `Review: ${portalUrl}`, sourceType: 'automatic', sourceEvent: 'quote_ready', idempotencyKey: 'request:1:quote_ready' };
+  const options = { supabaseUrl: 'https://example.invalid', serviceRoleKey: 'fixture-key', requestId, recipient: 'approved@example.invalid', subject: 'Quote ready', renderedHtml: `<a href="${portalUrl.replaceAll('&', '&amp;')}">Review</a>`, renderedText: `Review: ${portalUrl}`, sourceType: 'automatic', sourceEvent: 'quote_ready', idempotencyKey: 'request:1:quote_ready' };
   const sendProvider = async (html, subject) => {
     sends.push({ html, subject });
     if (failOnce) { failOnce = false; throw new Error('Simulated provider timeout'); }
