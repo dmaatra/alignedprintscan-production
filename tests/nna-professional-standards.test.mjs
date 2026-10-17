@@ -24,7 +24,7 @@ test("owner-supplied credential artwork remains byte-for-byte unchanged", () => 
 
 test("homepage adds the approved standard without a credential badge or new section", () => {
   const home = read("index.html");
-  assert.match(home, /APS notaries maintain active membership with the National Notary[\s\S]*Certified Notary Signing Agent credential/);
+  assert.match(home, /Aligned Print &amp; Scan is committed to professional, credentialed document and notarization services\. Our commissioned notaries and signing agents maintain the qualifications and certifications applicable to their respective roles\./);
   assert.doesNotMatch(home, /nna-member-2026|nna-certified-notary-signing-agent-2026/);
   assert.equal((home.match(/id="about"/g) || []).length, 1);
 });
@@ -33,7 +33,7 @@ test("the approved About destination remains the existing homepage section", () 
   assert.equal(existsSync(path.join(root, "about.html")), false);
   assert.doesNotMatch(read("sitemap.xml"), /about\.html/);
   for (const { name, html } of publicHtml.filter(({ html }) => html.includes('<footer class="site-footer footer">'))) {
-    assert.match(html, /href="(?:\.\.\/){0,2}index\.html#about">About<\/a>/, name);
+    assert.match(html, /href="(?:\/|(?:\.\.\/){0,2})index\.html#about">About<\/a>/, name);
     assert.doesNotMatch(html, /href="(?:\.\.\/){0,2}about\.html">About<\/a>/, name);
   }
 });

@@ -51,6 +51,13 @@ window.adminClient = adminClient;
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const money = (n) => "$" + Number(n || 0).toFixed(2);
+// Customer portal links are bearer credentials. Keep the stored email intact,
+// but never render its token in administrative views or screenshots.
+const redactPortalAccessTokens = (value) => String(value || "").replace(
+  /(access_token(?:=|%3D))([a-f0-9]{32,})/gi,
+  "$1[REDACTED]",
+);
+window.redactPortalAccessTokens = redactPortalAccessTokens;
 const refFromId = (id) =>
   id ? "APS-" + String(id).slice(0, 8).toUpperCase() : "APS-REQUEST";
 const serviceLabel = (s) =>
@@ -150,7 +157,7 @@ function travelCalculationMarkup(calculation) {
 }
 
 async function loadMobileTravelCard({force=false}={}) {
-  const panel=$("#mobileTravelCard");if(!panel||selectedRequest?.service_type!=="mobile")return;
+  const panel=$("#mobileTravelCard");if(!panel||!["mobile","print"].includes(selectedRequest?.service_type))return;
   const status=$("#mobileTravelStatus",panel),results=$("#mobileTravelResults",panel);
   try{
     const state=await invokeMobileTravel("get_request"),detail=state.detail||{},destination=[detail.street_address,detail.unit,detail.city,detail.state,detail.zip].filter(Boolean).join(", ");
@@ -167,7 +174,7 @@ async function loadMobileTravelCard({force=false}={}) {
 }
 
 async function calculateMobileTravel(force=false){const panel=$("#mobileTravelCard"),status=$("#mobileTravelStatus",panel),origin=$("#mobileTravelOrigin",panel),oneTime=origin.value==="one-time";status.textContent="Calculating driving route…";try{const body={force,origin_id:oneTime?null:origin.value};if(oneTime)body.one_time_origin={label:"One-time origin",street_address:$("#oneTimeOriginStreet",panel).value,city:$("#oneTimeOriginCity",panel).value,state:$("#oneTimeOriginState",panel).value,zip:$("#oneTimeOriginZip",panel).value};const data=await invokeMobileTravel("calculate",body);$("#mobileTravelResults",panel).innerHTML=travelCalculationMarkup(data.calculation);status.textContent=data.cached?"Saved route result reused.":"Route calculated. Review the suggestion before changing the quote.";bindMobileTravelActions();return true;}catch(error){status.textContent=error.message;return false;}}
-function bindMobileTravelActions(){const panel=$("#mobileTravelCard");if(!panel)return;const origin=$("#mobileTravelOrigin",panel);origin?.addEventListener("change",()=>{$("#oneTimeOriginFields",panel).hidden=origin.value!=="one-time";if(origin.value!=="one-time")void calculateMobileTravel(false);});$("#recalculateMobileTravel",panel)?.addEventListener("click",()=>calculateMobileTravel(true));$("#applyMobileTravel",panel)?.addEventListener("click",async()=>{try{await invokeMobileTravel("apply_to_quote",{calculation_id:$(".mobile-travel-results",panel)?.dataset.calculationId,actual_fee:Number($("#mobileTravelFee",panel).value),operator_note:$("#mobileTravelNote",panel).value});showToast("Mobile travel charge applied through the maintained quote workflow.");await selectRequest(selectedRequest.id);}catch(error){alert(error.message);}});$("#applyManualMobileTravel",panel)?.addEventListener("click",async()=>{try{await invokeMobileTravel("apply_manual",{round_trip_miles:Number($("#manualTravelMiles",panel).value),actual_fee:Number($("#manualTravelFee",panel).value),operator_note:$("#manualTravelNote",panel).value});showToast("Manual Mobile travel charge applied with audit history.");await selectRequest(selectedRequest.id);}catch(error){alert(error.message);}});}
+function bindMobileTravelActions(){const panel=$("#mobileTravelCard");if(!panel)return;const origin=$("#mobileTravelOrigin",panel);origin?.addEventListener("change",()=>{$("#oneTimeOriginFields",panel).hidden=origin.value!=="one-time";if(origin.value!=="one-time")void calculateMobileTravel(false);});$("#recalculateMobileTravel",panel)?.addEventListener("click",()=>calculateMobileTravel(true));$("#applyMobileTravel",panel)?.addEventListener("click",async()=>{try{const promotion=selectedRequest.request_promotion_applications?.[0]||selectedRequest.request_promotion_applications;if(promotion?.id){showToast("Use the neighborhood pricing review to apply this mileage calculation.");return;}await invokeMobileTravel("apply_to_quote",{calculation_id:$(".mobile-travel-results",panel)?.dataset.calculationId,actual_fee:Number($("#mobileTravelFee",panel).value),operator_note:$("#mobileTravelNote",panel).value});showToast("Mobile travel charge applied through the maintained quote workflow.");await selectRequest(selectedRequest.id);}catch(error){alert(error.message);}});$("#applyManualMobileTravel",panel)?.addEventListener("click",async()=>{try{const promotion=selectedRequest.request_promotion_applications?.[0]||selectedRequest.request_promotion_applications;const result=await invokeMobileTravel(promotion?.id?"record_manual":"apply_manual",{round_trip_miles:Number($("#manualTravelMiles",panel).value),actual_fee:Number($("#manualTravelFee",panel).value),operator_note:$("#manualTravelNote",panel).value});if(promotion?.id){$("#mobileTravelResults",panel).innerHTML=travelCalculationMarkup(result.calculation);showToast("Manual mileage saved. Complete Change Pricing Program to prepare the revised quote.");}else{showToast("Manual Mobile travel charge applied with audit history.");await selectRequest(selectedRequest.id);}}catch(error){alert(error.message);}});}
 
 function playNewRequestSound() {
   try {
@@ -530,7 +537,10 @@ function filteredRequests() {
         "final_balance_due",
       ].includes(requestStatus)) ||
       (quick === "completed" && requestStatus === "completed");
-    return serviceOk && statusOk && archiveOk && quickOk;
+    const promotion = $("#promotionFilter")?.value || "all";
+    const application = r.request_promotion_applications?.[0] || r.request_promotion_applications;
+    const promotionOk = promotion === "all" || (promotion === "yard_sign" && r.acquisition_utm_source === "yard_sign") || (promotion === "neighborhood" ? Boolean(application?.id) : application?.eligibility_status === promotion);
+    return serviceOk && statusOk && archiveOk && quickOk && promotionOk;
   });
 }
 
@@ -591,7 +601,7 @@ function renderRequestList() {
         <strong>${escapeHtml(name)}</strong>
         <small>${created}</small>
         <span class="service-tag ${serviceColor(r.service_type)}">${serviceLabel(r.service_type)}</span>
-        <span class="status-pill">${statusLabel(r.status)}</span>${requestUrgencyBadge(r)}${archivedBadge}
+        <span class="status-pill">${statusLabel(r.status)}</span>${requestUrgencyBadge(r)}${archivedBadge}${(r.request_promotion_applications?.[0] || r.request_promotion_applications)?.id ? `<span class="status-pill">Camden Park · ${escapeHtml(statusLabel((r.request_promotion_applications?.[0] || r.request_promotion_applications).eligibility_status))}</span>` : ""}
       </button>
     `;
     })
@@ -1123,7 +1133,7 @@ function invoiceRowsFromDom() {
     const unit_price =
       Number(row.querySelector('[data-field="unit_price"]')?.value || 0) || 0;
     return {
-      item_type: "service",
+      item_type: row.dataset.itemType || "service",
       description,
       quantity,
       unit_price,
@@ -1144,7 +1154,7 @@ function renderInvoiceRows(rows) {
       const lineTotal = quantity * unitPrice;
 
       return `
-        <div class="invoice-row" data-row-index="${index}">
+        <div class="invoice-row" data-item-type="${escapeHtml(item.item_type || "service")}" data-row-index="${index}">
           <label class="invoice-field invoice-field--description">
             <span>Service / item</span>
             <input
@@ -1171,7 +1181,7 @@ function renderInvoiceRows(rows) {
             <input
               data-field="unit_price"
               type="number"
-              min="0"
+              min="${item.item_type === "promotion" ? unitPrice : 0}"
               step="0.01"
               value="${unitPrice.toFixed(2)}"
             />
@@ -1295,6 +1305,53 @@ function defaultInvoiceRows(request = {}) {
   ];
 }
 
+function pricingProgramPanel(request) {
+  const a = request.request_promotion_applications?.[0] || request.request_promotion_applications;
+  if (!a?.id) return "";
+  const applicable = ["mobile", "print"].includes(request.service_type);
+  const mobile = request.mobile_notary_requests?.[0] || request.mobile_notary_requests || {};
+  const document = request.print_scan_requests?.[0] || request.print_scan_requests || {};
+  const currentAddress = request.service_type === "mobile"
+    ? [mobile.street_address, mobile.unit, mobile.city, mobile.state, mobile.zip].filter(Boolean).join(", ")
+    : request.service_type === "print" ? document.delivery_address : "Remote service — no travel address";
+  return `<section class="admin-detail-section" data-v3-tab-target="overview"><h3>Camden Park Neighborhood Services</h3><p><strong>${escapeHtml(statusLabel(a.eligibility_status))}</strong> · Applied pricing: ${escapeHtml(a.applied_pricing_program)}</p><p><strong>Original submitted address:</strong> ${escapeHtml(a.submitted_service_address)}</p><p><strong>Current service address to review:</strong> ${escapeHtml(currentAddress || "Complete the destination service address before reviewing eligibility.")}</p><p>Acquisition: ${escapeHtml(a.acquisition_source)} · Review the address for Camden Park Neighborhood in Waxahachie, Texas.</p>${a.financial_adjustment_required ? '<p role="status">Existing invoice/payment history is protected. Use the existing financial adjustment/refund controls; this review has not changed customer charges.</p><label>Financial reconciliation reason<textarea id="pricingResolutionReason"></textarea></label><button type="button" class="btn dark" id="resolvePricingAdjustment">Verify Invoice/Refund Reconciliation</button><p id="pricingResolutionResult" role="status"></p>' : ''}${applicable ? `<p>Approved travel: Mobile Notary $25; document service/delivery $4. These replace the applicable base once per visit. For denial, first calculate standard mileage in the existing travel calculator below.</p><label>Eligibility decision<select id="pricingProgramDecision"><option value="approved">Approved</option><option value="denied">Denied — outside service area</option><option value="owner_exception">Owner-approved exception</option></select></label><label>Review reason<textarea id="pricingProgramReason" required></textarea></label><button type="button" class="btn gold" id="reviewPricingProgram">Preview Pricing Change</button><p id="pricingProgramResult" role="status"></p>` : '<p>RON and Loan Signing retain standard pricing. No neighborhood travel discount applies.</p><button type="button" class="btn dark" id="reviewPricingProgram">Confirm Standard Pricing Review</button><p id="pricingProgramResult" role="status"></p>'}<details><summary>Original intake estimate</summary><ul>${(request.estimate_components?.components || []).map(line => `<li>${escapeHtml(line.label)}: ${money(line.line_amount)}</li>`).join('')}</ul></details></section>`;
+}
+
+async function resolvePricingAdjustment() {
+  const a = selectedRequest.request_promotion_applications?.[0] || selectedRequest.request_promotion_applications;
+  const reason = $("#pricingResolutionReason")?.value.trim();
+  const output = $("#pricingResolutionResult");
+  if (!reason) { output.textContent = "Record the reconciliation reason first."; return; }
+  try {
+    const {error} = await adminClient.rpc("aps_resolve_pricing_adjustment", {p_request:selectedRequest.id,p_revision:a.revision,p_reason:reason});
+    if (error) throw error;
+    const id = selectedRequest.id; await loadRequests(); await selectRequest(id);
+    showToast("Financial adjustment verified against invoice/refund records.");
+  } catch(error) { output.textContent = error.message; }
+}
+
+async function reviewPricingProgram() {
+  const a = selectedRequest.request_promotion_applications?.[0] || selectedRequest.request_promotion_applications;
+  const physical = ["mobile","print"].includes(selectedRequest.service_type);
+  const decision = $("#pricingProgramDecision")?.value || "denied", reason = $("#pricingProgramReason")?.value.trim() || (!physical ? "Standard pricing retained: no physical neighborhood travel applies." : "");
+  const output = $("#pricingProgramResult"), button = $("#reviewPricingProgram");
+  if (!reason) { output.textContent = "Record the address review reason first."; return; }
+  const calculationId = $(".mobile-travel-results")?.dataset.calculationId || null;
+  if (physical && decision === "denied" && !calculationId) { output.textContent = "Calculate standard mileage first, then review the pricing change."; return; }
+  const base = selectedRequest.estimate_components?.components?.find(line => ["mobile:base","print:mobile_base","print:courier","print:mobile_service"].includes(line.key));
+  const mobile = ["mobile:base","print:mobile_base"].includes(base?.key);
+  const standard = mobile ? 50 : 20, discount = decision === "denied" ? 0 : mobile ? 25 : 16;
+  if (physical && !confirm(`Review pricing: standard base $${standard}; promotional adjustment −$${discount}. ${decision === "denied" ? "Standard mileage is added from the displayed calculation." : `Travel total $${standard-discount}.`} Existing invoices/payments will be preserved. Apply this decision and prepare a revised draft quote?`)) return;
+  button.disabled = true;
+  try {
+    const {data,error} = await adminClient.rpc("aps_review_pricing_program", {p_request:selectedRequest.id,p_status:decision,p_reason:reason,p_revision:a.revision,p_travel_calculation:calculationId});
+    if (error) throw error;
+    const requestId = selectedRequest.id;
+    await loadRequests(); await selectRequest(requestId);
+    showToast(data.standard_pricing_unchanged ? "Review recorded. Standard pricing remains unchanged." : data.financial_adjustment_required ? "Decision recorded. Use existing financial adjustment controls for the issued invoice." : "Revised itemized draft prepared. Review it in Quote Builder before sending.");
+  } catch(error) { output.textContent = error.message; button.disabled = false; }
+}
+
 function estimateRequirementsSummary(request = {}) {
   const snapshot = request.estimate_components;
   if (!snapshot || !Array.isArray(snapshot.components)) return "";
@@ -1353,7 +1410,7 @@ function patch32AdminPanels(records = {}) {
   const approvedRefunds = actions.filter(a => Number(a.approved_refund_amount || 0) > 0).map(a => ({ action: a, recorded: refunds.filter(r => r.customer_action_request_id === a.id && r.status === "succeeded").reduce((sum, r) => sum + Number(r.amount || 0), 0) })).filter(row => Number(row.action.approved_refund_amount || 0) > row.recorded + .009);
   const refundWork = approvedRefunds.map(row => `<div class="admin-action-request" data-action-id="${escapeHtml(row.action.id)}"><strong>REFUND PROCESSING REQUIRED</strong><p>Approved: ${money(row.action.approved_refund_amount)} · Recorded: ${money(row.recorded)}</p><button class="btn primary open-refund-workflow" type="button">Process / Record Refund</button></div>`).join("");
   const refundRows = refunds.length ? `<ul class="admin-file-list">${refunds.map(r => `<li><strong>${money(r.amount)} refunded via ${escapeHtml(statusLabel(r.refund_method))}</strong><small>${escapeHtml(statusLabel(r.status))} · ${r.issued_at ? new Date(r.issued_at).toLocaleString() : "Pending"}${r.provider_refund_id ? ` · Provider ${escapeHtml(r.provider_refund_id)}` : r.external_reference ? ` · Reference ${escapeHtml(r.external_reference)}` : ""}</small></li>`).join("")}</ul>` : '<p class="admin-muted">No refunds recorded. Original payment history remains unchanged.</p>';
-  const commRows = (records.communications || []).slice(0, 25).map((c) => `<li><strong>${escapeHtml(c.subject || c.channel || "Communication")}</strong><small>${escapeHtml(c.direction === "inbound" ? "Inbound · Customer" : "Outbound · APS")} · ${escapeHtml(c.delivery_state || c.delivery_status || "")} · ${c.created_at ? new Date(c.created_at).toLocaleString() : ""}</small>${c.rendered_text || c.body ? `<p>${escapeHtml(c.rendered_text || c.body)}</p>` : ""}${c.metadata?.attachment_names?.length ? `<small>Attachments: ${escapeHtml(c.metadata.attachment_names.join(", "))}</small>` : ""}</li>`).join("") || '<li class="admin-muted">No communications logged.</li>';
+  const commRows = (records.communications || []).slice(0, 25).map((c) => `<li><strong>${escapeHtml(c.subject || c.channel || "Communication")}</strong><small>${escapeHtml(c.direction === "inbound" ? "Inbound · Customer" : "Outbound · APS")} · ${escapeHtml(c.delivery_state || c.delivery_status || "")} · ${c.created_at ? new Date(c.created_at).toLocaleString() : ""}</small>${c.rendered_text || c.body ? `<p>${escapeHtml(redactPortalAccessTokens(c.rendered_text || c.body))}</p>` : ""}${c.metadata?.attachment_names?.length ? `<small>Attachments: ${escapeHtml(c.metadata.attachment_names.join(", "))}</small>` : ""}</li>`).join("") || '<li class="admin-muted">No communications logged.</li>';
   const timelineRows = (records.timeline || []).slice(0, 30).map((e) => `<li><strong>${escapeHtml(e.title || e.event_type || "Event")}</strong><p>${escapeHtml(e.detail || "")}</p><small>${escapeHtml(e.actor_type || "system")} · ${e.created_at ? new Date(e.created_at).toLocaleString() : ""}</small></li>`).join("") || '<li class="admin-muted">No timeline events logged.</li>';
   return `<div class="admin-detail-section"><h3>Cancellation & Reschedule Review</h3>${actionRows}${refundWork}</div><div class="admin-detail-section"><h3>Refund History</h3>${refundRows}</div>
   <div class="admin-detail-section"><h3>Communication Log</h3><ul class="admin-file-list">${commRows}</ul></div>
@@ -1392,10 +1449,14 @@ async function openServiceConversionWorkflow(){
   if(!["ron","mobile"].includes(selectedRequest.service_type))return;
   const next=selectedRequest.service_type==="ron"?"mobile":"ron";
   const dialog=document.createElement("dialog");dialog.className="admin-v3-danger-dialog service-adjustment-dialog";
-  dialog.innerHTML=`<form method="dialog"><button class="dialog-close" value="cancel" formnovalidate aria-label="Close">×</button><span class="small-label">History-preserving service conversion</span><h2>Change Service / Convert Service</h2><p><strong>${escapeHtml(refFromId(selectedRequest.id))}</strong> remains the transaction of record. Quotes, invoices, payments, refunds, documents, messages, Timeline, appointments, and Proof history are preserved.</p><div class="admin-detail-grid"><div><span class="small-label">Current service</span><strong>${escapeHtml(serviceLabel(selectedRequest.service_type))}</strong></div><div><span class="small-label">New service</span><strong>${escapeHtml(serviceLabel(next))}</strong></div><div><span class="small-label">Paid to date</span><strong>${money(selectedRequest.paid_amount||0)}</strong></div><label>Recalculated new-service total<input name="total" type="number" min="0" step=".01" required value="${Number(selectedRequest.quote_amount||selectedRequest.estimated_total||0).toFixed(2)}"></label></div>${next==="mobile"?`<fieldset><legend>Mobile destination requirements</legend><div class="admin-detail-grid"><label>Street address<input name="street" required></label><label>Unit<input name="unit"></label><label>City<input name="city" required></label><label>State<input name="state" required></label><label>ZIP<input name="zip" required></label></div></fieldset>`:`<fieldset><legend>RON destination requirements</legend><div class="admin-detail-grid"><label>Number of signers<input name="signers" type="number" min="1" value="1" required></label><label>Number of notarial acts<input name="acts" type="number" min="1" value="1" required></label></div><p>Each signer must have a first name, last name, and individual email before Proof orchestration.</p></fieldset>`}<label>Conversion reason / operator note<textarea name="reason" required></textarea></label><button type="button" class="btn dark preview-conversion">Preview Financial &amp; Workflow Impact</button><div class="workflow-result" role="status" aria-live="polite"></div><div class="status-actions"><button value="cancel" formnovalidate class="btn secondary">Close</button><button type="button" class="btn primary confirm-conversion" disabled>Confirm Service Conversion</button></div></form>`;
+  dialog.innerHTML=`<form method="dialog"><button class="dialog-close" value="cancel" formnovalidate aria-label="Close">×</button><span class="small-label">History-preserving service conversion</span><h2>Change Service / Convert Service</h2><p><strong>${escapeHtml(refFromId(selectedRequest.id))}</strong> remains the transaction of record. Quotes, invoices, payments, refunds, documents, messages, Timeline, appointments, and Proof history are preserved.</p><div class="admin-detail-grid"><div><span class="small-label">Current service</span><strong>${escapeHtml(serviceLabel(selectedRequest.service_type))}</strong></div><div><span class="small-label">New service</span><strong>${escapeHtml(serviceLabel(next))}</strong></div><div><span class="small-label">Paid to date</span><strong>${money(selectedRequest.paid_amount||0)}</strong></div><label>Destination total before neighborhood adjustment<input name="total" type="number" min="0" step=".01" required value="${Number(selectedRequest.quote_amount||selectedRequest.estimated_total||0).toFixed(2)}"></label></div>${next==="mobile"?`<fieldset><legend>Mobile destination requirements</legend><div class="admin-detail-grid"><label>Street address<input name="street" required></label><label>Unit<input name="unit"></label><label>City<input name="city" required></label><label>State<input name="state" required></label><label>ZIP<input name="zip" required></label><label>Number of signers<input name="signers" type="number" min="1" value="1" required></label><label>Number of notarial acts<input name="acts" type="number" min="1" value="1" required></label></div></fieldset>`:`<fieldset><legend>RON destination requirements</legend><div class="admin-detail-grid"><label>Number of signers<input name="signers" type="number" min="1" value="1" required></label><label>Number of notarial acts<input name="acts" type="number" min="1" value="1" required></label></div><p>Each signer must have a first name, last name, and individual email before Proof orchestration.</p></fieldset>`}<label>Conversion reason / operator note<textarea name="reason" required></textarea></label><button type="button" class="btn dark preview-conversion">Preview Financial &amp; Workflow Impact</button><div class="workflow-result" role="status" aria-live="polite"></div><div class="status-actions"><button value="cancel" formnovalidate class="btn secondary">Close</button><button type="button" class="btn primary confirm-conversion" disabled>Confirm Service Conversion</button></div></form>`;
   document.body.append(dialog);dialog.addEventListener("close",()=>dialog.remove());dialog.showModal();const form=dialog.querySelector("form"),result=dialog.querySelector(".workflow-result"),confirmButton=dialog.querySelector(".confirm-conversion");
-  dialog.querySelector(".preview-conversion").addEventListener("click",async()=>{if(!form.reportValidity())return;try{const preview=await invokeServiceAdjustment({command:"preview_service_conversion",new_service_type:next,new_service_total:Number(form.elements.total.value)});result.innerHTML=`<strong>Conversion preview</strong><p>Current paid/net applied: ${money(preview.financials.net_retained)} · New total: ${money(preview.new_service_total)} · Additional due: ${money(preview.additional_amount_due)} · Credit/refund review: ${money(preview.credit_or_refund_due)}</p><p>Same APS request: Yes · Proof history preserved: ${preview.proof_history_preserved?"Yes":"N/A"}</p>`;confirmButton.disabled=false;}catch(error){result.textContent=error.message;}});
-  confirmButton.addEventListener("click",async()=>{if(!form.reportValidity()||!confirm("Convert this APS request while preserving all historical records?"))return;confirmButton.disabled=true;try{await invokeServiceAdjustment({command:"convert_service",new_service_type:next,new_service_total:Number(form.elements.total.value),reason:form.elements.reason.value,street_address:form.elements.street?.value,unit:form.elements.unit?.value,city:form.elements.city?.value,state:form.elements.state?.value,zip:form.elements.zip?.value,number_of_signers:Number(form.elements.signers?.value||1),number_of_notarizations:Number(form.elements.acts?.value||1)});dialog.close();await loadRequests();await selectRequest(selectedRequest.id);showToast("Service converted; financial and fulfillment history preserved.");}catch(error){result.textContent=error.message;confirmButton.disabled=false;}});
+  let conversionPreview = null;
+  let conversionOperation = crypto.randomUUID();
+  const conversionPayload = () => ({new_service_type:next,new_service_total:Number(form.elements.total.value),reason:form.elements.reason.value,street_address:form.elements.street?.value,unit:form.elements.unit?.value,city:form.elements.city?.value,state:form.elements.state?.value,zip:form.elements.zip?.value,number_of_signers:Number(form.elements.signers?.value||1),number_of_notarizations:Number(form.elements.acts?.value||1)});
+  form.addEventListener("input",()=>{conversionPreview=null;confirmButton.disabled=true;});
+  dialog.querySelector(".preview-conversion").addEventListener("click",async()=>{if(!form.reportValidity())return;try{const payload=conversionPayload();conversionPreview=null;confirmButton.disabled=true;const preview=await invokeServiceAdjustment({command:"preview_service_conversion",...payload});if(JSON.stringify(payload)!==JSON.stringify(conversionPayload()))return;conversionPreview=preview;conversionOperation=crypto.randomUUID();result.innerHTML=`<strong>Conversion preview</strong><p>Current paid/net applied: ${money(preview.financials.net_retained)} · New total: ${money(preview.new_service_total)} · Additional due: ${money(preview.additional_amount_due)} · Credit/refund review: ${money(preview.credit_or_refund_due)}</p>${preview.requires_quote_review?`<p>A revised draft quote requires review. ${preview.separate_invoice?"A separate invoice records only the increased charge; the original unpaid balance remains due. No payment is processed.":"No invoice or payment is created by this conversion."}</p>`:""}${preview.requires_financial_review?`<p>${escapeHtml(preview.financial_review_message)}</p>`:""}${preview.requires_neighborhood_review?"<p>The destination address returns to pending neighborhood eligibility review. No promotional rate is applied yet.</p>":""}<p>Same APS request: Yes · Proof history preserved: ${preview.proof_history_preserved?"Yes":"N/A"}</p>`;confirmButton.disabled=Boolean(preview.requires_financial_review);}catch(error){result.textContent=error.message;}});
+  confirmButton.addEventListener("click",async()=>{if(!form.reportValidity()||!confirm("Convert this APS request while preserving all historical records?"))return;confirmButton.disabled=true;try{await invokeServiceAdjustment({command:"convert_service",...conversionPayload(),revision:conversionPreview?.revision,expected_quote:conversionPreview?.expected_quote,financial_version:conversionPreview?.financial_version,operation_id:conversionOperation});dialog.close();await loadRequests();await selectRequest(selectedRequest.id);showToast("Service converted; financial and fulfillment history preserved.");}catch(error){result.textContent=error.message+" You can retry the same operation, or preview again if the request changed.";confirmButton.disabled=!conversionPreview||Boolean(conversionPreview.requires_financial_review);}});
 }
 
 async function uploadAdminDocuments(requestId) {
@@ -1757,6 +1818,7 @@ async function selectRequest(id) {
       </div>
     </section>
 
+    ${pricingProgramPanel(selectedRequest)}
     ${internalWorkflowGuide(selectedRequest)}
 
     <div class="admin-detail-section invoice-builder-card" data-v3-tab-target="quote" data-payment-group="quote">
@@ -1788,7 +1850,7 @@ async function selectRequest(id) {
 
     ${patch32AdminPanels(patch32Records)}
 
-    ${selectedRequest.service_type === "mobile" ? `<section class="admin-detail-section mobile-travel-card" id="mobileTravelCard" data-v3-tab-target="fulfillment"><div class="admin-v3-section-heading"><span class="small-label">Mobile Notary</span><h3>Travel Distance &amp; Quote</h3></div><div class="mobile-travel-route"><label>Starting location<select id="mobileTravelOrigin"><option>Loading saved origins…</option></select></label><div><span class="small-label">Destination</span><strong id="mobileTravelDestination">Loading structured service address…</strong></div><button id="recalculateMobileTravel" class="btn dark" type="button">Recalculate</button></div><div id="oneTimeOriginFields" class="admin-detail-grid" hidden><label>Street<input id="oneTimeOriginStreet"></label><label>City<input id="oneTimeOriginCity"></label><label>State<input id="oneTimeOriginState" maxlength="2"></label><label>ZIP<input id="oneTimeOriginZip"></label></div><p id="mobileTravelStatus" class="admin-muted" role="status" aria-live="polite">Loading travel configuration…</p><div id="mobileTravelResults"></div><details class="mobile-travel-manual"><summary>Manual mileage/travel charge fallback</summary><p>Use this only when automatic routing is unavailable. A reason is required and the route is not falsified.</p><div class="admin-detail-grid"><label>Round-trip miles<input id="manualTravelMiles" type="number" min="0" step=".1"></label><label>Travel fee<input id="manualTravelFee" type="number" min="0" step=".01"></label><label>Required reason<textarea id="manualTravelNote"></textarea></label></div><button id="applyManualMobileTravel" class="btn dark" type="button">Add Manual Travel to Quote</button></details></section>` : ""}
+    ${["mobile","print"].includes(selectedRequest.service_type) ? `<section class="admin-detail-section mobile-travel-card" id="mobileTravelCard" data-v3-tab-target="fulfillment"><div class="admin-v3-section-heading"><span class="small-label">Mobile Notary</span><h3>Travel Distance &amp; Quote</h3></div><div class="mobile-travel-route"><label>Starting location<select id="mobileTravelOrigin"><option>Loading saved origins…</option></select></label><div><span class="small-label">Destination</span><strong id="mobileTravelDestination">Loading structured service address…</strong></div><button id="recalculateMobileTravel" class="btn dark" type="button">Recalculate</button></div><div id="oneTimeOriginFields" class="admin-detail-grid" hidden><label>Street<input id="oneTimeOriginStreet"></label><label>City<input id="oneTimeOriginCity"></label><label>State<input id="oneTimeOriginState" maxlength="2"></label><label>ZIP<input id="oneTimeOriginZip"></label></div><p id="mobileTravelStatus" class="admin-muted" role="status" aria-live="polite">Loading travel configuration…</p><div id="mobileTravelResults"></div><details class="mobile-travel-manual"><summary>Manual mileage/travel charge fallback</summary><p>Use this only when automatic routing is unavailable. A reason is required and the route is not falsified.</p><div class="admin-detail-grid"><label>Round-trip miles<input id="manualTravelMiles" type="number" min="0" step=".1"></label><label>Travel fee<input id="manualTravelFee" type="number" min="0" step=".01"></label><label>Required reason<textarea id="manualTravelNote"></textarea></label></div><button id="applyManualMobileTravel" class="btn dark" type="button">Add Manual Travel to Quote</button></details></section>` : ""}
 
     ${selectedRequest.service_type === "loan_signing" ? '<section class="admin-detail-section lsa-fulfillment-workspace" id="loanSigningFulfillmentPanel" data-v3-tab-target="fulfillment"><div class="admin-v3-section-heading"><span class="small-label">Loan Signing Fulfillment</span><h3>Loading Assignment Requirements…</h3></div></section>' : ""}
 
@@ -1820,7 +1882,7 @@ async function selectRequest(id) {
       <p class="admin-muted">Record what was actually purchased and fulfilled. A zero balance alone does not complete an order.</p>
       <fieldset><legend>Purchased service components</legend>${({ron:["ron"],mobile:["mobile"],print:["print_copy","scan","courier"]}[selectedRequest.service_type] || []).map(component => `<label class="check"><input class="completion-component" type="checkbox" value="${component}" ${(completionFacts.components || []).includes(component) ? "checked" : ""}> ${escapeHtml(statusLabel(component))}</label>`).join("")}</fieldset>
       <div class="admin-detail-grid">
-        ${(selectedRequest.service_type === "ron" ? [["ron_session_completed","RON session completed"]] : selectedRequest.service_type === "mobile" ? [["mobile_service_completed","Mobile service performed"]] : selectedRequest.service_type === "loan_signing" ? [["signing_completed","Signing completed"],["post_signing_qc_completed","Post-signing quality check completed"],["return_completed","Authorized return completed"]] : [["production_completed","Print/Copy production completed"],["scan_completed","Scanning completed"],...(String(serviceDetails.fulfillment_type||"").toLowerCase()==="pickup"?[["pickup_completed","Legacy pickup/handoff completed"]]:[]),["delivery_completed","Delivery/handoff completed"],["proof_of_delivery_present","Proof of delivery present"]]).map(([key,label]) => `<label class="check"><input class="completion-fact" data-key="${key}" type="checkbox" ${completionFacts[key] ? "checked" : ""}> ${label}</label>`).join("")}
+        ${(selectedRequest.service_type === "ron" ? [["ron_session_completed","RON session completed"]] : selectedRequest.service_type === "mobile" ? [["mobile_service_completed","Mobile service performed"],...(serviceDetails.print_add_on?[["production_completed","Requested printing completed"]]:[]),...(serviceDetails.scan_to_pdf_needed?[["scan_completed","Requested scanning completed"]]:[])] : selectedRequest.service_type === "loan_signing" ? [["signing_completed","Signing completed"],["post_signing_qc_completed","Post-signing quality check completed"],["return_completed","Authorized return completed"]] : [["production_completed","Print/Copy production completed"],["scan_completed","Scanning completed"],...(String(serviceDetails.fulfillment_type||"").toLowerCase()==="pickup"?[["pickup_completed","Legacy pickup/handoff completed"]]:[]),["delivery_completed","Delivery/handoff completed"],["proof_of_delivery_present","Proof of delivery present"]]).map(([key,label]) => `<label class="check"><input class="completion-fact" data-key="${key}" type="checkbox" ${completionFacts[key] ? "checked" : ""}> ${label}</label>`).join("")}
       </div>
       <div class="admin-detail-grid">
         <label>Document readiness<select id="completionDocumentState"><option value="pending" ${selectedRequest.document_state === "pending" ? "selected" : ""}>Pending / review required</option><option value="approved" ${selectedRequest.document_state === "approved" ? "selected" : ""}>Reviewed and ready</option><option value="not_applicable" ${selectedRequest.document_state === "not_applicable" ? "selected" : ""}>Not applicable</option></select></label>
@@ -1949,7 +2011,7 @@ async function selectRequest(id) {
           <strong>Loading archived customer updates…</strong>
         </div>
       </div>
-      ${requestMessages.length ? `<ul class="admin-file-list communication-history-list">${requestMessages.map(message => `<li><div><span class="small-label">${escapeHtml(statusLabel(message.source_type || (message.created_by ? "admin" : "automatic")))} · ${escapeHtml(message.channel || "email")}${message.template_key ? ` · ${escapeHtml(message.template_key)}` : ""}</span><strong>${escapeHtml(message.subject)}</strong><small>${escapeHtml(message.recipient)} · ${escapeHtml(statusLabel(message.delivery_state))} · ${new Date(message.sent_at || message.failed_at || message.attempted_at || message.created_at).toLocaleString()}</small>${message.error_message ? `<small class="communication-error">${escapeHtml(message.error_message)}</small>` : ""}</div><details><summary>Inspect rendered message</summary><iframe class="communication-rendered-preview" sandbox title="Rendered customer message" srcdoc="${escapeHtml(message.rendered_html || `<pre>${escapeHtml(message.rendered_text || "No rendered content retained.")}</pre>`)}"></iframe>${message.provider_message_id ? `<small>Provider ID: ${escapeHtml(message.provider_message_id)}</small><button type="button" class="btn dark verify-email-provider" data-message-id="${escapeHtml(message.id)}">Verify Email Provider</button>` : ""}</details></li>`).join("")}</ul>` : '<p class="admin-muted">No customer communications logged for this request.</p>'}
+      ${requestMessages.length ? `<ul class="admin-file-list communication-history-list">${requestMessages.map(message => `<li><div><span class="small-label">${escapeHtml(statusLabel(message.source_type || (message.created_by ? "admin" : "automatic")))} · ${escapeHtml(message.channel || "email")}${message.template_key ? ` · ${escapeHtml(message.template_key)}` : ""}</span><strong>${escapeHtml(message.subject)}</strong><small>${escapeHtml(message.recipient)} · ${escapeHtml(statusLabel(message.delivery_state))} · ${new Date(message.sent_at || message.failed_at || message.attempted_at || message.created_at).toLocaleString()}</small>${message.error_message ? `<small class="communication-error">${escapeHtml(message.error_message)}</small>` : ""}</div><details><summary>Inspect rendered message</summary><iframe class="communication-rendered-preview" sandbox title="Rendered customer message" srcdoc="${escapeHtml(redactPortalAccessTokens(message.rendered_html || `<pre>${escapeHtml(message.rendered_text || "No rendered content retained.")}</pre>`))}"></iframe>${message.provider_message_id ? `<small>Provider ID: ${escapeHtml(message.provider_message_id)}</small><button type="button" class="btn dark verify-email-provider" data-message-id="${escapeHtml(message.id)}">Verify Email Provider</button>` : ""}</details></li>`).join("")}</ul>` : '<p class="admin-muted">No customer communications logged for this request.</p>'}
     </section>
 
     <section class="admin-detail-section" data-v3-tab-target="overview">
@@ -2004,6 +2066,8 @@ async function selectRequest(id) {
   $("#saveCompletionFactsBtn", detail)?.addEventListener("click", saveCompletionFacts);
   $("#completeWithExceptionBtn", detail)?.addEventListener("click", completeWithException);
   populateInvoicePresetSelect();
+  $("#reviewPricingProgram", detail)?.addEventListener("click", reviewPricingProgram);
+  $("#resolvePricingAdjustment", detail)?.addEventListener("click", resolvePricingAdjustment);
 
   $$(".resolve-customer-action", detail).forEach((button) => button.addEventListener("click", async () => { try { await resolveCustomerAction(button); } catch (error) { alert(error.message || "Action could not be resolved."); } }));
   $$(".open-refund-workflow", detail).forEach((button) => button.addEventListener("click", async () => { try { await openRefundWorkflow(button.closest(".admin-action-request")?.dataset.actionId); } catch (error) { alert(error.message || "Refund workflow could not be opened."); } }));
@@ -2848,6 +2912,14 @@ async function saveInvoice() {
     return false;
   }
 
+  const promotion = selectedRequest.request_promotion_applications?.[0] || selectedRequest.request_promotion_applications;
+  if (promotion?.id && selectedRequest.current_quote_id) {
+    const {data: currentQuote, error} = await adminClient.from("quotes").select("state").eq("id",selectedRequest.current_quote_id).single();
+    if (error || ["sent","approved"].includes(currentQuote?.state)) {
+      alert(error?.message || "Use the neighborhood pricing review to prepare a new revision of this issued quote.");
+      return false;
+    }
+  }
   const items = invoiceRowsFromDom();
   const total = items.reduce((sum, item) => sum + item.line_total, 0);
   const invoiceNumber =
@@ -2984,7 +3056,7 @@ async function loadRequests() {
   const { data, error } = await adminClient
     .from("service_requests")
     .select(
-      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,estimate_components,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,pdf_page_count_review_required,pdf_page_count_changed_after_quote,is_same_day_request,is_next_day_request,quote_expires_at,customer_reported_source,customer_reported_source_detail,acquisition_landing_page,acquisition_referrer_host,acquisition_utm_source,acquisition_utm_medium,acquisition_utm_campaign,first_touch_source,review_request_state,review_request_eligible_at,review_request_sent_at,customers(id,first_name,last_name,email,phone,preferred_contact,created_at,normalized_email,normalized_phone,normalized_name,merged_at,first_acquisition_source,first_acquisition_at),request_participants(participant_type,first_name,middle_name,last_name,full_legal_name,email),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
+      "id,created_at,service_type,status,preferred_date,preferred_time_window,notes,estimated_total,estimate_components,archived_at,quote_amount,full_quote_amount,initial_payment_amount,paid_amount,quote_notes,current_quote_id,invoice_number,invoice_url,receipt_url,receipt_pdf_url,payment_status,paid_at,appointment_confirmed_at,appointment_date,appointment_time,appointment_timezone,appointment_location,appointment_link,appointment_platform,appointment_instructions,balance_due_at_appointment,appointment_line_items_note,customer_message,review_link_google,review_link_yelp,prep_video_url,invoice_status,balance_due,workflow_status,payment_state,appointment_state,request_completeness,document_state,participant_state,fulfillment_state,detected_pdf_page_count,pdf_page_count_review_required,pdf_page_count_changed_after_quote,is_same_day_request,is_next_day_request,quote_expires_at,customer_reported_source,customer_reported_source_detail,acquisition_landing_page,acquisition_referrer_host,acquisition_utm_source,acquisition_utm_medium,acquisition_utm_campaign,first_touch_source,review_request_state,review_request_eligible_at,review_request_sent_at,customers(id,first_name,last_name,email,phone,preferred_contact,created_at,normalized_email,normalized_phone,normalized_name,merged_at,first_acquisition_source,first_acquisition_at),request_promotion_applications(*),request_participants(participant_type,first_name,middle_name,last_name,full_legal_name,email),ron_requests(ron_platform),mobile_notary_requests(street_address,unit,city,state,zip),print_scan_requests(fulfillment_type,delivery_address)",
     )
     .order("created_at", {
       ascending: false,
@@ -3220,6 +3292,7 @@ async function initDashboard() {
     window.location.href = "admin-login.html";
   });
   $("#refreshRequests")?.addEventListener("click", loadRequests);
+  $("#promotionFilter")?.addEventListener("change", renderRequestList);
   $("#refreshSupport")?.addEventListener("click", loadSupportTickets);
   $("#requestFilter")?.addEventListener("change", renderRequestList);
   $("#statusFilter")?.addEventListener("change", renderRequestList);

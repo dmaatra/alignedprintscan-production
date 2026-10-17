@@ -1,3 +1,4 @@
+import { canItemizeCheckout } from "../_shared/checkout-itemization.mjs";
 import { authorizePortal } from "../_shared/portal-access.ts";
 /**
  * Aligned Print & Scan — Stripe Embedded Checkout.
@@ -95,14 +96,36 @@ Deno.serve(async (request) => {
     }
 
     if (!await authorizePortal(request, requestId, body.access_token, SUPABASE_URL, SERVICE_ROLE_KEY)) return json({ok:false,error:"Verified customer access is required."},403);
+    // Scoped, read-only release preflight. Never return a key or create a
+    // Checkout Session while verifying provider isolation.
+    if (body.preflight_only === true) {
+      const secretMode = STRIPE_SECRET_KEY.startsWith("sk_test_") ? "test" : STRIPE_SECRET_KEY.startsWith("sk_live_") ? "live" : "unknown";
+      const publicMode = STRIPE_PUBLISHABLE_KEY.startsWith("pk_test_") ? "test" : STRIPE_PUBLISHABLE_KEY.startsWith("pk_live_") ? "live" : "unknown";
+      return json({
+        ok: true,
+        stripe_mode: secretMode === publicMode ? secretMode : "mixed_or_unknown",
+      });
+    }
     const requestResponse = await supabaseFetch(
-      `service_requests?select=id,status,customers(email,first_name,last_name)&id=eq.${requestId}&limit=1`,
+      `service_requests?select=id,status,current_quote_id,customers(email,first_name,last_name)&id=eq.${requestId}&limit=1`,
     );
     const requestRows = await readJson(requestResponse);
     const serviceRequest = requestRows?.[0];
 
     if (!serviceRequest) {
       return json({ ok: false, error: "Request not found." }, 404);
+    }
+
+    const promotionResponse = await supabaseFetch(`request_promotion_applications?service_request_id=eq.${requestId}&select=eligibility_status,financial_adjustment_required&limit=1`);
+    const promotion = (await readJson(promotionResponse))?.[0];
+    if (promotion && (promotion.eligibility_status === "pending_review" || promotion.financial_adjustment_required)) {
+      throw new Error("APS must finish the neighborhood pricing review before payment.");
+    }
+
+    if (promotion) {
+      const quoteId = serviceRequest.current_quote_id;
+      const quotes = quoteId ? await readJson(await supabaseFetch(`quotes?id=eq.${quoteId}&service_request_id=eq.${requestId}&select=state&limit=1`)) : [];
+      if (quotes?.[0]?.state !== "approved") throw new Error("Approve the current service quote before making a payment.");
     }
 
     if (!invoiceId) {
@@ -181,11 +204,7 @@ Deno.serve(async (request) => {
 
     // Use line items only when their sum matches the unpaid balance. Otherwise,
     // use one balance line so partial payments remain accurate.
-    const itemTotal = items.reduce((sum: number, item: any) => {
-      return sum + Number(item.line_total || 0);
-    }, 0);
-    const useItemizedCheckout =
-      items.length > 0 && Math.abs(itemTotal - balanceDue) < 0.01;
+    const useItemizedCheckout = canItemizeCheckout(items, balanceDue);
 
     if (useItemizedCheckout) {
       items.forEach((item: any, index: number) => {

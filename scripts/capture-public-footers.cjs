@@ -1,0 +1,9 @@
+// Read-only screenshots of every shared public website footer.
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {chromium}=require(process.env.APS_PLAYWRIGHT_MODULE);
+const root=path.resolve(__dirname,'..'),out=path.join(root,'output/owner-acceptance/footers');
+const files=fs.readdirSync(root).filter(x=>x.endsWith('.html')).concat(fs.readdirSync(path.join(root,'resources'),{recursive:true}).filter(x=>x.endsWith('.html')).map(x=>'resources/'+x)).filter(x=>fs.readFileSync(path.join(root,x),'utf8').includes('class="site-footer footer"'));
+(async()=>{fs.mkdirSync(out,{recursive:true});const browser=await chromium.launch({headless:true,channel:'chrome'}),results=[];
+for(const width of [1440,390]){const page=await browser.newPage({viewport:{width,height:1000}});await page.route('**/*',r=>/supabase|stripe|resend/.test(new URL(r.request().url()).hostname)?r.abort():r.continue());
+for(const file of files){await page.goto('http://127.0.0.1:8032/'+file,{waitUntil:'domcontentloaded'});const footer=page.locator('footer.site-footer');await footer.scrollIntoViewIfNeeded();await page.evaluate(()=>document.fonts.ready);assert.equal(await footer.getByRole('link',{name:'Meet the Team',exact:true}).getAttribute('href'),'/team');assert.equal(await footer.getByRole('link',{name:'About',exact:true}).getAttribute('href'),'/index.html#about');const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);assert.equal(overflow,false,file+' at '+width);await footer.screenshot({path:path.join(out,file.replaceAll('/','--')+'-'+width+'.png')});results.push({file,width,overflow,sharedFooter:true});}
+await page.close();}await browser.close();fs.writeFileSync(path.join(out,'results.json'),JSON.stringify(results,null,2));console.log('SHARED_FOOTER_VIEWS_PASS',results.length);})().catch(e=>{console.error(e);process.exit(1)});

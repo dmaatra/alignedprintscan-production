@@ -82,6 +82,7 @@ function validatedEstimateSnapshot(
   value: unknown,
   service: string,
   estimatedTotal: unknown,
+  promotion = false,
 ) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("A structured estimate component snapshot is required.");
@@ -103,8 +104,8 @@ function validatedEstimateSnapshot(
       !String(line.key || "").slice(0, 100) ||
       !String(line.label || "").slice(0, 160) ||
       !Number.isFinite(quantity) || quantity < 0 ||
-      !Number.isFinite(unitAmount) || unitAmount < 0 ||
-      !Number.isFinite(lineAmount) || lineAmount < 0 ||
+      !Number.isFinite(unitAmount) || (unitAmount < 0 && !(promotion && line.key === "promotion:CAMDEN_PARK")) ||
+      !Number.isFinite(lineAmount) || (lineAmount < 0 && !(promotion && line.key === "promotion:CAMDEN_PARK")) ||
       Math.abs(quantity * unitAmount - lineAmount) > 0.011
     ) throw new Error("An estimate component is invalid.");
     return {
@@ -126,6 +127,7 @@ function validatedEstimateSnapshot(
     ) * 100,
   ) / 100;
   if (
+    !Number.isFinite(Number(estimatedTotal)) || !Number.isFinite(Number(snapshot.total)) || total < 0 ||
     Math.abs(total - Number(estimatedTotal || 0)) > 0.011 ||
     Math.abs(total - Number(snapshot.total || 0)) > 0.011
   ) {
@@ -172,7 +174,26 @@ function validate(body: Record<string, unknown>, adminRequest = false) {
   if (files.length > MAX_FILES) {
     throw new Error(`Select no more than ${MAX_FILES} documents.`);
   }
-  if (!adminRequest && !files.length && !exceptionReason) {
+  const scanOnly = service === "print" &&
+    Number(detail.black_white_pages || 0) === 0 && Number(detail.color_pages || 0) === 0 &&
+    Number.isInteger(Number(detail.scan_pages)) && Number(detail.scan_pages) > 0;
+  if (service === "print") {
+    if (!adminRequest && detail.fulfillment_type === "mobile-notary") throw new Error("Use the full Mobile Notary intake when adding notarization to document services.");
+    const counts = [detail.black_white_pages || 0, detail.color_pages || 0, detail.scan_pages || 0].map(Number);
+    if (counts.some((count) => !Number.isInteger(count) || count < 0) || !counts.some((count) => count > 0)) {
+      throw new Error("Provide a positive print or scan page count.");
+    }
+    if (scanOnly && (!String(detail.delivery_address || "").trim() ||
+      !String(request.preferred_date || "").trim() || !String(request.preferred_time_window || "").trim())) {
+      throw new Error("Scanning requires a service address and preferred schedule.");
+    }
+  }
+  if (scanOnly) {
+    request.document_upload_exception_reason = null;
+    request.document_upload_exception_detail = null;
+    request.document_state = files.length ? "received" : "physical_originals_expected";
+  }
+  if (!adminRequest && !scanOnly && !files.length && !exceptionReason) {
     throw new Error(
       "Upload at least one document or select why it cannot be uploaded yet.",
     );
@@ -181,8 +202,25 @@ function validate(body: Record<string, unknown>, adminRequest = false) {
     request.estimate_components,
     service,
     request.estimated_total,
+    request.requested_promotion === "CAMDEN_PARK" && ["mobile", "print"].includes(service),
   );
-  if (files.length && exceptionReason) {
+  if (request.requested_promotion === "CAMDEN_PARK" && ["mobile", "print"].includes(service)) {
+    const snapshot = request.estimate_components as { components: Array<Record<string, unknown>> };
+    const bases = snapshot.components.filter(line => ["mobile:base", "print:courier", "print:mobile_service", "print:mobile_base"].includes(String(line.key)));
+    const adjustments = snapshot.components.filter(line => line.key === "promotion:CAMDEN_PARK");
+    const expectedBase = service === "mobile" ? "mobile:base" : ({courier:"print:courier", "mobile-service":"print:mobile_service", "mobile-notary":"print:mobile_base"} as Record<string,string>)[String(detail.fulfillment_type)];
+    const standard = ["mobile:base", "print:mobile_base"].includes(expectedBase) ? 50 : 20;
+    const discount = standard === 50 ? 25 : 16;
+    if (bases.length !== 1 || bases[0].key !== expectedBase || Number(bases[0].quantity) !== 1 || Number(bases[0].unit_amount) !== standard || adjustments.length !== 1 || Number(adjustments[0].quantity) !== 1 || Number(adjustments[0].unit_amount) !== -discount) throw new Error("The neighborhood travel estimate is invalid.");
+    const address = service === "mobile" ? [detail.street_address, detail.city, detail.state, detail.zip].filter(Boolean).join(", ") : String(detail.delivery_address || "");
+    if (address.trim().length < 10) throw new Error("A complete service address is required for neighborhood review.");
+  }
+  // Acquisition triggers review only, never eligibility or a discount. A customer
+  // may navigate from the neighborhood page to the standard-price intake.
+  if (["/neighborhood", "/neighborhood.html"].includes(String(request.acquisition_landing_page || "").split("?")[0].replace(/\/$/, ""))) {
+    request.requested_promotion = "CAMDEN_PARK";
+  }
+  if (!scanOnly && files.length && exceptionReason) {
     throw new Error("Remove the upload exception when documents are selected.");
   }
   if (service === "ron" || service === "mobile") {
@@ -311,6 +349,12 @@ Deno.serve(async (req) => {
       "first_touch_source",
     ]);
     requestPayload.request_source = adminRequest ? "admin" : "website";
+    if (!adminRequest) {
+      requestPayload.status = "under_review";
+      requestPayload.workflow_status = "under_review";
+      requestPayload.fulfillment_state = "not_started";
+      requestPayload.document_state = input.request.document_state === "physical_originals_expected" ? "physical_originals_expected" : input.files.length ? "received" : "pending";
+    }
     const resolution = await rows(
       await api("rpc/aps_create_request_with_customer", {
         method: "POST",
@@ -336,6 +380,7 @@ Deno.serve(async (req) => {
         method: "PATCH",
         body: JSON.stringify({
           estimate_components: input.request.estimate_components,
+          ...allowed(input.request, ["acquisition_landing_page", "acquisition_referrer_host", "acquisition_utm_source", "acquisition_utm_medium", "acquisition_utm_campaign", "acquisition_utm_content", "first_touch_source", "customer_reported_source", "customer_reported_source_detail"]),
         }),
       }),
     );
@@ -583,6 +628,14 @@ Deno.serve(async (req) => {
         }),
       );
     }
+    if (input.request.requested_promotion === "CAMDEN_PARK") {
+      const configuration = await rows(await api("promotion_programs?code=eq.CAMDEN_PARK&select=enabled,starts_at,ends_at"));
+      const program = configuration[0];
+      if (!program?.enabled || (program.starts_at && new Date(program.starts_at).getTime() > Date.now()) || (program.ends_at && new Date(program.ends_at).getTime() < Date.now())) throw new Error("Neighborhood requests are currently unavailable. Please use the standard APS request form.");
+      // RON/Loan Signing preserve acquisition but have no physical-travel discount.
+      const address = input.service === "mobile" ? [input.detail.street_address, input.detail.city, input.detail.state, input.detail.zip].filter(Boolean).join(", ") : String(input.detail.delivery_address || "Not applicable — remote or non-promotional service");
+      await rows(await api("request_promotion_applications", { method: "POST", body: JSON.stringify({service_request_id: requestId, promotion_code: "CAMDEN_PARK", acquisition_source: "/neighborhood", submitted_service_address: address, eligibility_status: "pending_review", applied_pricing_program: "pending_review"}) }));
+    }
     failureStage = "timeline_persistence";
     await rows(
       await api("request_timeline_events", {
@@ -597,12 +650,15 @@ Deno.serve(async (req) => {
             } submitted ${input.files.length} document(s) with the request.`
             : adminRequest
             ? "Administrator created the request without attached documents."
+            : input.request.document_state === "physical_originals_expected"
+            ? "Physical originals will be provided onsite for scanning; scanning and digital delivery remain required."
             : "Customer submitted a request without documents and supplied an upload exception.",
           actor_type: adminRequest ? "admin" : "customer",
           visibility: "customer",
           metadata: {
             file_count: input.files.length,
-            upload_exception: !input.files.length,
+            upload_exception: Boolean(input.request.document_upload_exception_reason),
+            physical_originals_expected: input.request.document_state === "physical_originals_expected",
           },
         }),
       }),

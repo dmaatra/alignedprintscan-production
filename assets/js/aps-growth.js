@@ -5,7 +5,7 @@
   const SESSION_KEY = "aps_request_touch_v1";
   const SENT_KEY = "aps_analytics_events_v1";
   const SAFE = /^[a-z0-9._-]{1,100}$/i;
-  const PUBLIC_PATHS = new Set(["/", "/index.html", "/pricing.html", "/remote-online-notary.html", "/mobile-notary.html", "/print-scan.html", "/loan-signing.html", "/business-accounts.html", "/resources/", "/faq.html", "/terms.html", "/privacy.html", "/accessibility.html", "/support.html", "/card", "/card.html", "/doneisha", "/doneisha.html"]);
+  const PUBLIC_PATHS = new Set(["/", "/index.html", "/pricing.html", "/remote-online-notary.html", "/mobile-notary.html", "/print-scan.html", "/loan-signing.html", "/business-accounts.html", "/resources/", "/faq.html", "/terms.html", "/privacy.html", "/accessibility.html", "/support.html", "/card", "/card.html", "/doneisha", "/doneisha.html", "/team", "/team.html", "/neighborhood", "/neighborhood.html"]);
   const ANALYTICS_PATHS = new Set([...PUBLIC_PATHS, "/success.html"]);
 
   function clean(value) {
@@ -33,6 +33,9 @@
       utm_campaign: clean(params.get("utm_campaign")),
       utm_content: clean(params.get("utm_content")),
     };
+    // Internal navigation must not erase the campaign that acquired this request.
+    const previous = read(SESSION_KEY);
+    if (!value.utm_source && !value.utm_campaign && previous && (value.referrer_host === "internal" || value.landing_page === previous.landing_page)) return previous;
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(value));
     if (!localStorage.getItem(STORAGE_KEY)) localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
     return value;

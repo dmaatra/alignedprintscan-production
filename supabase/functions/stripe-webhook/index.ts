@@ -354,13 +354,20 @@ Deno.serve(async (request) => {
       );
     }
 
-    if (event.type !== "checkout.session.completed") {
+    if (!["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(event.type)) {
       return new Response(JSON.stringify({ received: true }), {
         headers: { "Content-Type": "application/json" },
       });
     }
 
     const session = event.data.object;
+    // A completed Checkout Session can still have an asynchronous payment in
+    // progress. Never issue a paid receipt until Stripe reports paid.
+    if (session.payment_status !== "paid") {
+      return new Response(JSON.stringify({ received: true, payment_pending: true }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const requestId = String(session.metadata?.request_id || "").trim();
     const invoiceId = String(session.metadata?.invoice_id || "").trim();
 
@@ -381,7 +388,7 @@ Deno.serve(async (request) => {
     }
 
     const amount = Number(session.amount_total || 0) / 100;
-    if (!Number.isFinite(amount) || amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0 || session.currency !== "usd") {
       throw new Error("Stripe reported an invalid payment amount.");
     }
     const receiptUrl = await receiptUrlForSession(session);
@@ -392,47 +399,41 @@ Deno.serve(async (request) => {
 
     // Avoid duplicate payment records when Stripe retries the webhook.
     const existingPaymentResponse = await supabaseFetch(
-      `request_payments?select=id&external_reference=eq.${
+      `request_payments?select=id,amount,invoice_id&external_reference=eq.${
         encodeURIComponent(session.id)
       }&limit=1`,
     );
     const existingPaymentRows = await readJson(existingPaymentResponse);
-
-    if (existingPaymentRows?.length) {
-      return new Response(JSON.stringify({ received: true, duplicate: true }), {
-        headers: { "Content-Type": "application/json" },
-      });
+    const existingPayment = existingPaymentRows?.[0];
+    if (existingPayment && (existingPayment.invoice_id !== invoiceId || Math.round(Number(existingPayment.amount) * 100) !== Math.round(amount * 100))) {
+      throw new Error("Stripe payment history does not match this invoice.");
     }
-
-    const paymentResponse = await supabaseFetch("request_payments", {
-      method: "POST",
-      body: JSON.stringify({
-        service_request_id: requestId,
-        invoice_id: invoiceId,
-        payment_stage: finalInvoice ? "final" : "initial",
-        amount,
-        payment_method: "stripe",
-        external_reference: session.id,
-        note: `Stripe Checkout payment; event ${event.id || "unknown"}.`,
-        is_test: Boolean(session.livemode === false),
-      }),
-    });
-    if (!paymentResponse.ok) {
-      // A concurrent retry may have won the uniqueness race.
-      if (paymentResponse.status === 409) {
-        return new Response(
-          JSON.stringify({ received: true, duplicate: true }),
-          {
-            headers: { "Content-Type": "application/json" },
-          },
-        );
+    if (!existingPayment) {
+      const remainingBeforePayment = Math.round((Number(invoice.amount_due || 0) - Number(invoice.amount_paid || invoice.paid_amount || 0)) * 100);
+      if (Math.round(amount * 100) !== remainingBeforePayment) {
+        throw new Error("Stripe payment amount does not match the invoice balance.");
       }
-      throw new Error(await paymentResponse.text());
+      const paymentResponse = await supabaseFetch("request_payments", {
+        method: "POST",
+        body: JSON.stringify({
+          service_request_id: requestId,
+          invoice_id: invoiceId,
+          payment_stage: finalInvoice ? "final" : "initial",
+          amount,
+          payment_method: "stripe",
+          external_reference: session.id,
+          note: `Stripe Checkout payment; event ${event.id || "unknown"}.`,
+          is_test: Boolean(session.livemode === false),
+        }),
+      });
+      if (!paymentResponse.ok && paymentResponse.status !== 409) {
+        throw new Error(await paymentResponse.text());
+      }
     }
 
     const amountDue = Number(invoice.amount_due || 0);
-    const currentPaid = Number(invoice.amount_paid || invoice.paid_amount || 0);
-    const newPaid = currentPaid + amount;
+    const invoicePayments = await readJson(await supabaseFetch(`request_payments?select=amount&invoice_id=eq.${invoiceId}`));
+    const newPaid = invoicePayments.reduce((total: number, payment: { amount?: number }) => total + Number(payment.amount || 0), 0);
     const remaining = Math.max(0, amountDue - newPaid);
     const paidInFull = amountDue > 0 && remaining <= 0.009;
 
